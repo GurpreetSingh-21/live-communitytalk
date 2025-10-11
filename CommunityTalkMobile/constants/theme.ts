@@ -1,53 +1,90 @@
+// CommunityTalkMobile/constants/theme.ts
+
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Global design tokens for CommunityTalk Mobile
+ * --------------------------------------------------
+ * These define the app's light/dark palettes and font stacks.
+ * You can use them across components, Tailwind, and custom styles.
  */
 
-import { Platform } from 'react-native';
+import { Platform } from "react-native";
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+/* ─────────────── Brand + Semantic Colors ─────────────── */
+const brandPrimary = "#6366F1"; // Modern indigo-violet
+const brandPrimaryDark = "#818CF8";
+const success = "#10B981";
+const danger = "#EF4444";
+const warning = "#F59E0B";
 
+/* ─────────────── Theme Palette ─────────────── */
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    // Core surfaces
+    background: "#F9FAFB", // App background (soft gray-white)
+    surface: "#FFFFFF", // Cards, modals, etc.
+    muted: "#F3F4F6", // For subtle blocks and input backgrounds
+    // Text
+    text: "#111827",
+    textMuted: "rgba(17,24,39,0.65)",
+    // Icons
+    icon: "#6B7280",
+    // Brand / semantic
+    primary: brandPrimary,
+    success,
+    danger,
+    warning,
+    // Navigation
+    tabIconDefault: "#9CA3AF",
+    tabIconSelected: brandPrimary,
+    tint: brandPrimary,
   },
+
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    // Core surfaces
+    background: "#0A0A0A", // true dark
+    surface: "#111111", // slightly lighter for cards
+    muted: "#1C1C1C", // input backgrounds
+    // Text
+    text: "#F3F4F6",
+    textMuted: "rgba(243,244,246,0.6)",
+    // Icons
+    icon: "#A1A1AA",
+    // Brand / semantic
+    primary: brandPrimaryDark,
+    success,
+    danger,
+    warning,
+    // Navigation
+    tabIconDefault: "#6B7280",
+    tabIconSelected: brandPrimaryDark,
+    tint: brandPrimaryDark,
   },
 };
 
+/* ─────────────── Font Stack ─────────────── */
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
+    sans: "Inter", // Modern, clean sans-serif (Google Fonts)
+    serif: "ui-serif",
+    rounded: "ui-rounded",
+    mono: "ui-monospace",
   },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
+  android: {
+    sans: "Inter",
+    serif: "serif",
+    rounded: "sans-serif-rounded",
+    mono: "monospace",
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    sans: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     serif: "Georgia, 'Times New Roman', serif",
     rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  },
+  default: {
+    sans: "system-ui",
+    serif: "serif",
+    rounded: "system-ui",
+    mono: "monospace",
   },
 });

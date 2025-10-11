@@ -68,11 +68,11 @@ router.get("/:communityId", async (req, res) => {
       .lean();
 
     // Live presence helpers
-    const onlineInCommunity = new Set(
-      Array.isArray(req.presence?.listOnlineInCommunity?.(communityId))
-        ? req.presence.listOnlineInCommunity(communityId)
-        : []
-    );
+  const allOnlineUsers = new Set(
+  Array.isArray(req.presence?.listOnlineUsers?.())
+    ? req.presence.listOnlineUsers()
+    : []
+);
 
     // Normalize
     const normalized = membersRaw.map((m) => {
@@ -87,7 +87,7 @@ router.get("/:communityId", async (req, res) => {
       const avatar = m.avatar || (p && p.avatar) || "/default-avatar.png";
 
       const personId = String(p?._id || m.person || "");
-      const isOnline = personId ? onlineInCommunity.has(personId) : false;
+      const isOnline = personId ? allOnlineUsers.has(personId) : false;
 
       return {
         _id: m._id,
