@@ -9,6 +9,9 @@ export type User = {
   email: string;
   role: UserRole;
   communityIds?: string[];
+  // ↓ add:
+  collegeSlug?: string | null;
+  religionKey?: string | null;
 };
 
 export type CommunityType = "college" | "religion" | "custom";

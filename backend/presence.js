@@ -1,4 +1,4 @@
-// backend/utils/presence.js
+// backend/presence.js
 // In-memory presence tracker (per Node process).
 // ⚠️ If you scale to multiple Node instances, back this with Redis or another shared store.
 

@@ -60,6 +60,41 @@ export const AuthContext = createContext<AuthState>({
 // keep the splash until we hydrate once
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+/** Derive collegeSlug / religionKey from communities when missing on user */
+function deriveScope(user: any | null, communities: any[]) {
+  if (!user) return user;
+
+  const hasCollege = !!user.collegeSlug;
+  const hasReligion = !!user.religionKey;
+
+  if (hasCollege && hasReligion) return user;
+
+  let collegeSlug: string | null | undefined = user.collegeSlug ?? null;
+  let religionKey: string | null | undefined = user.religionKey ?? null;
+
+  if (!collegeSlug) {
+    // look for community typed/marked as college
+    const c =
+      communities.find((x: any) => x?.type === "college" && x?.key) ||
+      communities.find((x: any) => /college/i.test(String(x?.type || "")) && x?.key);
+    if (c?.key) collegeSlug = c.key;
+  }
+
+  if (!religionKey) {
+    // look for community typed/marked as religion/faith
+    const r =
+      communities.find((x: any) => (x?.type === "religion" || x?.type === "faith") && x?.key) ||
+      communities.find((x: any) => /(religion|faith)/i.test(String(x?.type || "")) && x?.key);
+    if (r?.key) religionKey = r.key;
+  }
+
+  return {
+    ...user,
+    collegeSlug: collegeSlug ?? null,
+    religionKey: religionKey ?? null,
+  };
+}
+
 export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -72,19 +107,39 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(true);
   const [user, setUser] = useState<any | null>(null);
   const [communities, setCommunities] = useState<any[]>([]);
+  const clearingRef = useRef(false);
 
   const applyAuthState = useCallback((u: any | null, cs: any[]) => {
     if (!mountedRef.current) return;
-    setUser(u);
-    setCommunities(Array.isArray(cs) ? cs : []);
+
+    const safeCommunities = Array.isArray(cs) ? cs : [];
+
+    // ⬇️ Normalize/augment user with derived scope (collegeSlug, religionKey)
+    const augmentedUser = deriveScope(u, safeCommunities);
+
+    setUser(augmentedUser);
+    setCommunities(safeCommunities);
+
+    if (__DEV__) {
+      console.log("[Auth] applyAuthState", {
+        userHasScope: !!augmentedUser?.collegeSlug && !!augmentedUser?.religionKey,
+        collegeSlug: augmentedUser?.collegeSlug ?? null,
+        religionKey: augmentedUser?.religionKey ?? null,
+        communities: safeCommunities.map((c: any) => ({ id: c?._id, type: c?.type, key: c?.key })),
+      });
+    }
   }, []);
 
   const clearAuthState = useCallback(async () => {
+    if (clearingRef.current) return; // guard
+    clearingRef.current = true;
     try {
       await removeAccessToken();
     } catch {}
     disconnectSocket();
     applyAuthState(null, []);
+    if (mountedRef.current) setIsLoading(false);
+    clearingRef.current = false; // release
   }, [applyAuthState]);
 
   const refreshBootstrap = useCallback(async () => {
@@ -92,12 +147,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       const data = await apiBootstrap();
       applyAuthState(data?.user || null, data?.communities || []);
     } catch (error: any) {
-      // If the token is bad/expired, clear local state + token.
+      // If the token is bad/expired, clear local state + token and STOP here.
       if (error?.response?.status === 401) {
         await clearAuthState();
+        return; // prevents retry loops
       }
-      // Rethrow so callers (e.g. signIn) can surface a meaningful error
-      throw error;
+      throw error; // other errors still bubble
     }
   }, [applyAuthState, clearAuthState]);
 

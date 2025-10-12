@@ -24,11 +24,13 @@ const messageRoutes = require("./routes/messageRoutes");
 const directMessageRoutes = require("./routes/directMessageRoutes");
 const adminRoutes = require("./routes/adminRoutes");
 const publicRoutes = require("./routes/publicRoutes");
+const eventRoutes = require("./routes/events");
+const registerEventSockets = require("./sockets/events");
 
 // 📦 Models
 const Person = require("./person");
 const Member = require("./models/Member");
-const Message = require("./models/Message"); // ⚠️ make sure this exists
+const Message = require("./models/Message"); 
 
 // ⚙️ App + Server
 const app = express();
@@ -81,6 +83,8 @@ io = new Server(server, {
   pingInterval: 20000,
 });
 
+registerEventSockets(io /*, presence */);
+
 const communityRoom = (id) => `community:${id}`;
 
 // Authenticate socket
@@ -89,9 +93,11 @@ io.use(async (socket, next) => {
     const token =
       socket.handshake.auth?.token ||
       (socket.handshake.headers?.authorization || "").split(" ")[1];
+      console.log("🔑 [Socket Auth] Handshake token received:", token ? token.slice(0, 15) + "..." : "❌ None");
     if (!token) return next(new Error("No token provided"));
 
     const decoded = jwt.verify(token, JWT_SECRET);
+    console.log("✅ [Socket Auth] Token verified:", decoded);
     const user = await Person.findById(decoded.id).lean();
     if (!user) return next(new Error("User not found"));
 
@@ -184,6 +190,18 @@ app.use("/api/communities", authenticate, communityRoutes);
 app.use("/api/members", authenticate, memberRoutes);
 app.use("/api/messages", authenticate, messageRoutes);
 app.use("/api/direct-messages", authenticate, directMessageRoutes);
+
+// 🔎 Pre-auth header logger for /api/events
+app.use("/api/events", (req, _res, next) => {
+  console.log("🧭 [/api/events pre-auth]");
+  console.log("→ originalUrl:", req.originalUrl);
+  console.log("→ method:", req.method);
+  console.log("→ headers.authorization:", req.headers?.authorization);
+  console.log("→ headers.Authorization:", req.headers?.Authorization);
+  console.log("→ x-access-token:", req.headers?.["x-access-token"]);
+  next();
+});
+app.use("/api/events", authenticate, eventRoutes);
 
 // 404
 app.use((req, res) => res.status(404).json({ error: "Not Found" }));

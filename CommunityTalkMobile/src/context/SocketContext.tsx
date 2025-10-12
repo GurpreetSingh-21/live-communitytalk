@@ -58,9 +58,8 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       }
       setUnreadThreads(next);
     } catch (error: any) {
-      if (error?.response?.status === 401) {
-        setUnreadThreads({});
-      }
+      // On 401 or network errors, just clear local state and do NOT rethrow
+      setUnreadThreads({});
     }
   }, [isAuthed]);
 
@@ -96,14 +95,34 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
           return;
         }
 
+        // 1) connect socket (token must already be in storage)
         await connectSocket();
         if (!mounted) return;
 
         s = getSocket();
 
+        // 2) join the events room based on user scope
+        const college = user?.collegeSlug ?? user?.collegeId ?? null;
+        const faith = user?.religionKey ?? user?.faithId ?? null;
+        const eventsRoom =
+          typeof college === "string" && typeof faith === "string"
+            ? `college:${college}:faith:${faith}`
+            : null;
+
+        if (eventsRoom) {
+          // centralize the join here so any screen benefits from realtime events
+          s?.emit?.("events:join", { room: eventsRoom });
+        }
+
+        // 3) hydrate unread counts and hook basic socket events
         await refreshUnread();
 
-        const onRoomsInit = () => refreshUnread();
+        const onRoomsInit = () => {
+          // Re-hydrate unread on room init
+          refreshUnread();
+          // Re-join events room on server-driven rejoin scenarios
+          if (eventsRoom) s?.emit?.("events:join", { room: eventsRoom });
+        };
 
         const onReceiveDM = (payload: any) => {
           const myId = userIdRef.current;
@@ -119,17 +138,17 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
 
         s?.on?.("rooms:init", onRoomsInit);
         s?.on?.("receive_direct_message", onReceiveDM);
-        s?.on?.("receive_message", () => {});
-        s?.on?.("message:ack", () => {});
-        s?.on?.("message:updated", () => {});
-        s?.on?.("message:deleted", () => {});
-        s?.on?.("dm_read", () => {});
-        s?.on?.("direct_message:edited", () => {});
-        s?.on?.("direct_message:deleted", () => {});
+
+        // (Optional) you can listen to event notifications here if you want global toasts:
+        // s?.on?.("events:created", () => {});
+        // s?.on?.("events:updated", () => {});
+        // s?.on?.("events:deleted", () => {});
+        // s?.on?.("events:rsvpCount", () => {});
 
         setReady(true);
 
         cleanup = () => {
+          if (eventsRoom) s?.emit?.("events:leave", { room: eventsRoom });
           s?.off?.("rooms:init", onRoomsInit);
           s?.off?.("receive_direct_message", onReceiveDM);
         };
@@ -158,7 +177,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       s?.off?.("direct_message:deleted");
       disconnectSocket();
     };
-  }, [isAuthed, refreshUnread]);
+  }, [isAuthed, refreshUnread, user?.collegeSlug, user?.religionKey, user?.collegeId, user?.faithId]);
 
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
