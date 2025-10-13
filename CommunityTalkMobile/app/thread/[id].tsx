@@ -91,13 +91,11 @@ export default function ThreadScreen() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
-  const [inputHeight, setInputHeight] = useState(44);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const fetchingMoreRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
-  const inputRef = useRef<TextInput>(null); // ✅ ADDED
 
   const headerTitle = useMemo(() => "Thread", []);
 
@@ -111,18 +109,12 @@ export default function ThreadScreen() {
       const items: ChatMessage[] = Array.isArray(data) ? data : [];
       setMessages(items);
       setHasMore(items.length >= 50);
-      
-      // ✅ FIX: Auto-scroll to bottom after loading
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 100);
     } catch (e: any) {
       setError(e?.response?.data?.error || "Failed to load messages");
     } finally {
       setLoading(false);
     }
   }, [communityId]);
-
   useEffect(() => {
     fetchInitial();
   }, [fetchInitial]);
@@ -143,15 +135,10 @@ export default function ThreadScreen() {
     }
   }, [communityId, hasMore, messages]);
 
-  /* ✅ FIXED: send - keeps keyboard open */
+  /* send */
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || sending || !communityId) return;
-
-    // ✅ Clear input immediately and keep focus
-    setInput("");
-    setInputHeight(44);
-
     setSending(true);
     setError(null);
     const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -169,31 +156,15 @@ export default function ThreadScreen() {
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages((prev) => [...prev, optimistic]);
-
-    // ✅ FIX: Scroll to bottom after adding message
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    setInput("");
 
     try {
-      const { data } = await api.post(`/api/messages`, { 
-        content: text, 
-        communityId, 
-        clientMessageId 
-      });
-      
+      const { data } = await api.post(`/api/messages`, { content: text, communityId, clientMessageId });
       setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => m.clientMessageId === clientMessageId || m._id === clientMessageId
-        );
+        const idx = prev.findIndex((m) => m.clientMessageId === clientMessageId || m._id === clientMessageId);
         if (idx === -1) return prev;
         const next = [...prev];
-        next[idx] = { 
-          ...next[idx], 
-          ...data, 
-          _id: String(data._id), 
-          timestamp: data.timestamp || next[idx].timestamp 
-        };
+        next[idx] = { ...next[idx], ...data, _id: String(data._id), timestamp: data.timestamp || next[idx].timestamp };
         return next;
       });
     } catch (e: any) {
@@ -207,49 +178,31 @@ export default function ThreadScreen() {
       setError(e?.response?.data?.error || "Failed to send");
     } finally {
       setSending(false);
-      // ✅ FIX: Re-focus input after sending
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 50);
     }
   }, [input, sending, communityId, user?._id, user?.fullName]);
 
   /* realtime */
   useEffect(() => {
     if (!socket || !communityId) return;
-    
     const onNew = (payload: any) => {
       if (String(payload?.communityId) !== communityId) return;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      
       if (payload?.clientMessageId) {
         setMessages((prev) => {
-          const i = prev.findIndex(
-            (m) => m.clientMessageId === payload.clientMessageId || m._id === payload.clientMessageId
-          );
-          if (i === -1) {
-            // ✅ FIX: Scroll to bottom when new message arrives
-            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-            return [...prev, payload];
-          }
+          const i = prev.findIndex((m) => m.clientMessageId === payload.clientMessageId || m._id === payload.clientMessageId);
+          if (i === -1) return [...prev, payload];
           const next = [...prev];
           next[i] = { ...next[i], ...payload, _id: String(payload._id) };
           return next;
         });
       } else {
-        setMessages((prev) => {
-          // ✅ FIX: Scroll to bottom when new message arrives
-          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-          return [...prev, payload];
-        });
+        setMessages((prev) => [...prev, payload]);
       }
     };
-    
     const onEdited = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
       setMessages((prev) => prev.map((m) => (String(m._id) === String(p._id) ? { ...m, ...p } : m)));
     };
-    
     const onDeleted = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
       setMessages((prev) =>
@@ -260,7 +213,6 @@ export default function ThreadScreen() {
         )
       );
     };
-    
     socket.on?.("receive_message", onNew);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
@@ -367,14 +319,12 @@ export default function ThreadScreen() {
       </View>
     );
   };
-  
   const keyExtractor = (m: ChatMessage) => String(m._id);
 
   return (
     <KeyboardAvoidingView
       className="flex-1"
       behavior={Platform.select({ ios: "padding", android: undefined })}
-      keyboardVerticalOffset={Platform.select({ ios: 0, android: 0 })}
       style={{ backgroundColor: colors.bg }}
     >
       <Stack.Screen options={{ headerShown: false }} />
@@ -493,15 +443,11 @@ export default function ThreadScreen() {
             }
             contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}
             showsVerticalScrollIndicator={false}
-            maintainVisibleContentPosition={{
-              minIndexForVisible: 0,
-              autoscrollToTopThreshold: 10,
-            }}
           />
         )}
       </View>
 
-      {/* ✅ IMPROVED: Modern Composer that keeps keyboard open */}
+      {/* Modern Composer with gradient send button */}
       <View
         style={{
           paddingHorizontal: 16,
@@ -527,33 +473,19 @@ export default function ThreadScreen() {
           }}
         >
           <TextInput
-            ref={inputRef}
             value={input}
             onChangeText={setInput}
             placeholder="Message"
             placeholderTextColor={colors.textSecondary}
             style={{
               color: colors.text,
+              paddingVertical: 8,
               fontSize: 17,
               flex: 1,
-              minHeight: 36,
               maxHeight: 100,
-              height: Math.max(36, inputHeight),
-              paddingVertical: 8,
-              textAlignVertical: "top",
-            }}
-            onContentSizeChange={(e) => {
-              const h = e.nativeEvent.contentSize.height;
-              setInputHeight(Math.min(100, Math.max(36, h)));
             }}
             editable={!sending}
             multiline
-            blurOnSubmit={false}
-            onSubmitEditing={(e) => {
-              if (!e.nativeEvent.text.includes('\n')) {
-                sendMessage();
-              }
-            }}
           />
           <TouchableOpacity
             onPress={sendMessage}
