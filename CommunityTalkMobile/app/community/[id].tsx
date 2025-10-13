@@ -1,3 +1,5 @@
+//CommunityTalkMobile/app/community/[id].tsx
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -15,6 +17,7 @@ import {
   ActionSheetIOS,
   LayoutAnimation,
   UIManager,
+  Keyboard,
 } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -142,6 +145,10 @@ export default function CommunityScreen() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
+  // ✅ FIX: Add ref for TextInput to maintain focus
+  const inputRef = useRef<TextInput>(null);
+  const flatListRef = useRef<FlatList>(null);
+
   /* membership */
   const isMember = useMemo(() => {
     const ids: string[] = Array.isArray(user?.communityIds) ? user.communityIds.map(String) : [];
@@ -231,13 +238,10 @@ export default function CommunityScreen() {
     if (!socket || !isMember || !communityId) return;
 
     const onStatusUpdate = (payload: any) => {
-      // Update member status in real-time
       if (payload?.userId && payload?.status) {
         setMembers((prev) =>
           prev.map((m) =>
-            String(m.person) === String(payload.userId)
-              ? { ...m, status: payload.status }
-              : m
+            String(m.person) === String(payload.userId) ? { ...m, status: payload.status } : m
           )
         );
       }
@@ -268,6 +272,11 @@ export default function CommunityScreen() {
       const items: ChatMessage[] = Array.isArray(data) ? data : [];
       setMessages(items);
       setChatHasMore(items.length >= 50);
+      
+      // ✅ FIX: Auto-scroll to bottom after loading messages
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
     } catch (e: any) {
       setChatError(e?.response?.data?.error || "Failed to load messages");
     } finally {
@@ -300,9 +309,15 @@ export default function CommunityScreen() {
     }
   }, [communityId, chatHasMore, messages]);
 
+  // ✅ FIX: Improved send function that keeps keyboard open
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || sending || !communityId) return;
+
+    // ✅ Clear input immediately and keep focus
+    setInput("");
+    setInputHeight(44);
+    
     setSending(true);
     setChatError(null);
     const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -320,13 +335,23 @@ export default function CommunityScreen() {
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages((prev) => [...prev, optimistic]);
-    setInput("");
-    setInputHeight(44);
+    
+    // ✅ FIX: Scroll to bottom after adding message
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
 
     try {
-      const { data } = await api.post(`/api/messages`, { content: text, communityId, clientMessageId });
+      const { data } = await api.post(`/api/messages`, { 
+        content: text, 
+        communityId, 
+        clientMessageId 
+      });
+      
       setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.clientMessageId === clientMessageId || m._id === clientMessageId);
+        const idx = prev.findIndex(
+          (m) => m.clientMessageId === clientMessageId || m._id === clientMessageId
+        );
         if (idx === -1) return prev;
         const next = [...prev];
         next[idx] = {
@@ -349,6 +374,10 @@ export default function CommunityScreen() {
       setChatError(e?.response?.data?.error || "Failed to send");
     } finally {
       setSending(false);
+      // ✅ FIX: Re-focus input after sending
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
     }
   }, [input, sending, communityId, user?._id, user?.fullName]);
 
@@ -364,19 +393,29 @@ export default function CommunityScreen() {
           const i = prev.findIndex(
             (m) => m.clientMessageId === payload.clientMessageId || m._id === payload.clientMessageId
           );
-          if (i === -1) return [...prev, payload];
+          if (i === -1) {
+            // ✅ FIX: Scroll to bottom when new message arrives
+            setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+            return [...prev, payload];
+          }
           const next = [...prev];
           next[i] = { ...next[i], ...payload, _id: String(payload._id) };
           return next;
         });
       } else {
-        setMessages((prev) => [...prev, payload]);
+        setMessages((prev) => {
+          // ✅ FIX: Scroll to bottom when new message arrives
+          setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+          return [...prev, payload];
+        });
       }
     };
+    
     const onEdited = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
       setMessages((prev) => prev.map((m) => (String(m._id) === String(p._id) ? { ...m, ...p } : m)));
     };
+    
     const onDeleted = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
       setMessages((prev) =>
@@ -664,7 +703,6 @@ export default function CommunityScreen() {
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View>
             <Avatar name={item.fullName} email={item.email} />
-            {/* Online indicator dot */}
             {isOnline && (
               <View
                 style={{
@@ -731,7 +769,6 @@ export default function CommunityScreen() {
 
   const MemberFilters = () => (
     <View style={{ paddingHorizontal: 16, paddingBottom: 12, paddingTop: 8 }}>
-      {/* Search */}
       <View
         style={{
           flexDirection: "row",
@@ -757,7 +794,6 @@ export default function CommunityScreen() {
         />
       </View>
 
-      {/* Filter pills */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -902,6 +938,7 @@ export default function CommunityScreen() {
     <KeyboardAvoidingView
       className="flex-1"
       behavior={Platform.select({ ios: "padding", android: undefined })}
+      keyboardVerticalOffset={Platform.select({ ios: 0, android: 0 })}
       style={{ backgroundColor: colors.bg }}
     >
       <Stack.Screen options={{ header: () => null }} />
@@ -949,6 +986,7 @@ export default function CommunityScreen() {
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               onMomentumScrollEnd={onMomentumEnd}
+              scrollEnabled={true}
             >
               {/* CHAT */}
               <View style={{ width: SCREEN_W, flex: 1 }}>
@@ -976,6 +1014,7 @@ export default function CommunityScreen() {
                     </View>
                   ) : (
                     <FlatList
+                      ref={flatListRef}
                       data={messages}
                       keyExtractor={(m) => String(m._id)}
                       renderItem={renderMessage}
@@ -1028,11 +1067,15 @@ export default function CommunityScreen() {
                       }
                       contentContainerStyle={{ paddingBottom: 110, paddingTop: 8 }}
                       showsVerticalScrollIndicator={false}
+                      maintainVisibleContentPosition={{
+                        minIndexForVisible: 0,
+                        autoscrollToTopThreshold: 10,
+                      }}
                     />
                   )}
                 </View>
 
-                {/* Modern Composer */}
+                {/* ✅ IMPROVED: Modern Composer that keeps keyboard open */}
                 <View
                   style={{
                     paddingHorizontal: 16,
@@ -1058,6 +1101,7 @@ export default function CommunityScreen() {
                     }}
                   >
                     <TextInput
+                      ref={inputRef}
                       value={input}
                       onChangeText={setInput}
                       placeholder="Message"
@@ -1078,6 +1122,12 @@ export default function CommunityScreen() {
                       }}
                       editable={!sending}
                       multiline
+                      blurOnSubmit={false}
+                      onSubmitEditing={(e) => {
+                        if (!e.nativeEvent.text.includes('\n')) {
+                          sendMessage();
+                        }
+                      }}
                     />
 
                     <TouchableOpacity

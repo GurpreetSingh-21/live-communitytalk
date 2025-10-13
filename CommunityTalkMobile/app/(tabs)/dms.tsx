@@ -1,4 +1,4 @@
-// app/(tabs)/dms.tsx
+// CommunityTalkMobile/app/(tabs)/dms.tsx
 import React, {
   useMemo,
   useState,
@@ -32,6 +32,7 @@ import Animated, {
   interpolate,
   withSpring,
   runOnJS,
+  withSequence,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -52,17 +53,18 @@ type MessageContent =
   | { type: 'voice'; content: 'Voice Memo' };
 
 type BaseThread = {
-  id: string;              // partnerId for DM, communityId for community
+  id: string;
   name: string;
   avatar: string;
   lastMsg: MessageContent;
   time: string;
+  timestamp?: number; // ✅ ADDED for accurate sorting
   unread?: number;
   pinned?: boolean;
 };
 
 type DMThread = BaseThread & { kind: 'dm'; online?: boolean; typing?: boolean };
-type CommunityThread = BaseThread & { kind: 'community' };
+type CommunityThread = BaseThread & { kind: 'community'; typing?: boolean }; // ✅ ADDED typing
 
 type Thread = DMThread | CommunityThread;
 
@@ -70,7 +72,7 @@ type ActiveUser = { id: string; name: string; avatar: string };
 
 const FILTERS = ['All', 'Unread', 'Pinned', 'Work', 'Friends'] as const;
 
-/* ───────────────── UI Bits (kept from your original) ───────────────── */
+/* ───────────────── UI Bits ───────────────── */
 
 const ShimmeringView = ({ children, isDark }: { children: ReactNode; isDark: boolean }) => {
   const translateX = useSharedValue(-300);
@@ -117,17 +119,44 @@ const UnreadBadge = ({ count }: { count: number }) => (
   </MotiView>
 );
 
+// ✅ IMPROVED: Animated 3-dot typing indicator
 const TypingIndicator = () => {
-  const scale = useSharedValue(1);
+  const dot1Scale = useSharedValue(1);
+  const dot2Scale = useSharedValue(1);
+  const dot3Scale = useSharedValue(1);
+
   useEffect(() => {
-    scale.value = withRepeat(withTiming(1.2, { duration: 800, easing: Easing.inOut(Easing.ease) }), -1, true);
+    const config = { duration: 600, easing: Easing.inOut(Easing.ease) };
+    dot1Scale.value = withRepeat(withSequence(withTiming(1.4, config), withTiming(1, config)), -1);
+    setTimeout(() => {
+      dot2Scale.value = withRepeat(withSequence(withTiming(1.4, config), withTiming(1, config)), -1);
+    }, 200);
+    setTimeout(() => {
+      dot3Scale.value = withRepeat(withSequence(withTiming(1.4, config), withTiming(1, config)), -1);
+    }, 400);
   }, []);
-  const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return <Animated.View className="w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-white dark:border-black" style={animatedStyle} />;
+
+  const dot1Style = useAnimatedStyle(() => ({ transform: [{ scale: dot1Scale.value }] }));
+  const dot2Style = useAnimatedStyle(() => ({ transform: [{ scale: dot2Scale.value }] }));
+  const dot3Style = useAnimatedStyle(() => ({ transform: [{ scale: dot3Scale.value }] }));
+
+  return (
+    <View className="flex-row items-center gap-1 bg-slate-200 dark:bg-zinc-700 px-2.5 py-1.5 rounded-full">
+      <Animated.View className="w-1.5 h-1.5 rounded-full bg-slate-600 dark:bg-zinc-300" style={dot1Style} />
+      <Animated.View className="w-1.5 h-1.5 rounded-full bg-slate-600 dark:bg-zinc-300" style={dot2Style} />
+      <Animated.View className="w-1.5 h-1.5 rounded-full bg-slate-600 dark:bg-zinc-300" style={dot3Style} />
+    </View>
+  );
 };
 
-const SmartPreview = ({ msg }: { msg: MessageContent }) => {
+// ✅ IMPROVED: Show typing indicator when someone is typing
+const SmartPreview = ({ msg, typing }: { msg: MessageContent; typing?: boolean }) => {
   const isDark = useColorScheme() === 'dark';
+
+  if (typing) {
+    return <TypingIndicator />;
+  }
+
   if (msg.type === 'text') {
     return <Text className="text-slate-600 dark:text-zinc-400" numberOfLines={1}>{msg.content}</Text>;
   }
@@ -139,7 +168,7 @@ const SmartPreview = ({ msg }: { msg: MessageContent }) => {
   );
 };
 
-/* ───────────────── Row (now generic Thread) ───────────────── */
+/* ───────────────── Row ───────────────── */
 
 type RowProps = {
   item: Thread;
@@ -199,9 +228,6 @@ const ThreadRow = React.memo(({ item, onDelete, onPinToggle, onOpen }: RowProps)
                     </Text>
                   </View>
                 </View>
-                {item.kind === 'dm' && (item as DMThread).typing ? (
-                  <View className="absolute bottom-0 right-0"><TypingIndicator /></View>
-                ) : null}
               </View>
 
               <View className="flex-1 py-4 border-b border-slate-100 dark:border-zinc-800 h-full justify-center">
@@ -210,7 +236,7 @@ const ThreadRow = React.memo(({ item, onDelete, onPinToggle, onOpen }: RowProps)
                   <Text className="text-xs text-slate-400 dark:text-zinc-500">{item.time}</Text>
                 </View>
                 <View className="flex-row items-center justify-between mt-1">
-                  <SmartPreview msg={item.lastMsg} />
+                  <SmartPreview msg={item.lastMsg} typing={item.typing} />
                   {!!item.unread && <UnreadBadge count={item.unread} />}
                 </View>
               </View>
@@ -232,13 +258,10 @@ export default function InboxScreen(): React.JSX.Element {
   const { socket, unreadThreads = {}, refreshUnread, markThreadRead } = useSocket();
 
   const { isAuthed, user, communities: myCommunities } = React.useContext(AuthContext) as any;
-  const myId = String(user?._id || "");
-  // Build a stable set of the user's community IDs (top-level hook, not inside effects)
+  const myId = String(user?._id || '');
+
   const myCommunityIds = useMemo<Set<string>>(
-    () =>
-      new Set(
-        (myCommunities || []).map((c: any) => String(c?._id || c?.id || ""))
-      ),
+    () => new Set((myCommunities || []).map((c: any) => String(c?._id || c?.id || ''))),
     [myCommunities]
   );
 
@@ -253,40 +276,51 @@ export default function InboxScreen(): React.JSX.Element {
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
   const scrollY = useSharedValue(0);
 
+  const selfChip = useMemo<ActiveUser>(() => {
+    const name =
+      (typeof user?.fullName === 'string' && user.fullName.split(' ')[0]) ||
+      (typeof user?.name === 'string' && user.name.split(' ')[0]) ||
+      'User';
+    return { id: myId || 'self', name, avatar: '🟢' };
+  }, [myId, user]);
+
   /* ------------------- Fetchers ------------------- */
 
-  // 1) Existing DM thread list (kept as-is, will be empty until you build DMs)
-  const fetchDMThreads = useCallback(async (signal?: AbortSignal) => {
-    if (!isAuthed) return [] as DMThread[];
-    try {
-      const { data } = await api.get('/api/direct-messages', { signal });
-      const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
-      const normalized: DMThread[] = list.map((t: any) => {
-        const last = t?.lastMessage ?? {};
-        const type = last?.type && (last.type === 'photo' || last.type === 'voice') ? last.type : 'text';
-        const content = type === 'text' ? String(last?.content ?? '') : (type === 'photo' ? 'Photo' : 'Voice Memo');
-        const id = String(t.partnerId ?? t.id ?? '');
-        return {
-          kind: 'dm',
-          id,
-          name: String(t.partnerName ?? t.fullName ?? 'Unknown'),
-          avatar: t.avatarEmoji || t.avatar || '🗣️',
-          lastMsg: { type, content } as MessageContent,
-          time: shortTime(t?.lastTimestamp ?? last?.createdAt),
-          unread: 0,
-          online: !!t.online,
-          typing: !!t.typing,
-          pinned: !!t.pinned,
-        };
-      });
-      return normalized;
-    } catch {
-      return [] as DMThread[];
-    }
-  }, [isAuthed]);
+  const fetchDMThreads = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!isAuthed) return [] as DMThread[];
+      try {
+        const { data } = await api.get('/api/direct-messages', { signal });
+        const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+        const normalized: DMThread[] = list.map((t: any) => {
+          const last = t?.lastMessage ?? {};
+          const type = last?.type && (last.type === 'photo' || last.type === 'voice') ? last.type : 'text';
+          const content = type === 'text' ? String(last?.content ?? '') : type === 'photo' ? 'Photo' : 'Voice Memo';
+          const id = String(t.partnerId ?? t.id ?? '');
+          const timestamp = t?.lastTimestamp || last?.createdAt;
 
-  // 2) NEW: Community threads list
-  // 2) NEW: Community threads list
+          return {
+            kind: 'dm',
+            id,
+            name: String(t.partnerName ?? t.fullName ?? 'Unknown'),
+            avatar: t.avatarEmoji || t.avatar || '🗣️',
+            lastMsg: { type, content } as MessageContent,
+            time: formatRelativeTime(timestamp), // ✅ FIXED
+            timestamp: new Date(timestamp).getTime(), // ✅ ADDED
+            unread: 0,
+            online: !!t.online,
+            typing: !!t.typing,
+            pinned: !!t.pinned,
+          };
+        });
+        return normalized;
+      } catch {
+        return [] as DMThread[];
+      }
+    },
+    [isAuthed]
+  );
+
   const fetchCommunityThreads = useCallback(
     async (signal?: AbortSignal) => {
       if (!isAuthed) return [] as CommunityThread[];
@@ -299,7 +333,6 @@ export default function InboxScreen(): React.JSX.Element {
           if (!cId) return null;
 
           try {
-            // ✅ your working endpoint (shows in logs)
             const { data } = await api.get(`/api/messages/${cId}`, {
               params: { limit: 1, order: 'desc' },
               signal,
@@ -307,25 +340,23 @@ export default function InboxScreen(): React.JSX.Element {
 
             const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
             const last = list[0];
-            if (!last) return null; // ⬅️ skip communities with no messages
+            if (!last) return null;
 
-            const type =
-              last?.type === 'photo' ? 'photo' :
-                last?.type === 'voice' ? 'voice' : 'text';
-
-            const content =
-              type === 'text' ? String(last?.content ?? '') :
-                type === 'photo' ? 'Photo' : 'Voice Memo';
+            const type = last?.type === 'photo' ? 'photo' : last?.type === 'voice' ? 'voice' : 'text';
+            const content = type === 'text' ? String(last?.content ?? '') : type === 'photo' ? 'Photo' : 'Voice Memo';
+            const timestamp = last?.createdAt;
 
             const th: CommunityThread = {
               kind: 'community',
               id: cId,
               name: String(c?.name || 'Community'),
               avatar: '🏛️',
-              lastMsg: { type, content } as MessageContent, // ⬅️ SmartPreview will render type chips for non-text
-              time: shortTime(last?.createdAt),
+              lastMsg: { type, content } as MessageContent,
+              time: formatRelativeTime(timestamp), // ✅ FIXED
+              timestamp: new Date(timestamp).getTime(), // ✅ ADDED
               unread: 0,
               pinned: !!c?.pinned,
+              typing: false, // ✅ ADDED
             };
             return th;
           } catch {
@@ -355,14 +386,11 @@ export default function InboxScreen(): React.JSX.Element {
     return () => ac.abort();
   }, [fetchDMThreads, fetchCommunityThreads, refreshUnread]);
 
-  // Keep unread in sync for DMs (community unread can be added later)
+  // Keep unread in sync
   useEffect(() => {
     if (!threads.length) return;
-    setThreads(prev =>
-      prev.map(t => t.kind === 'dm'
-        ? { ...t, unread: Number(unreadThreads[t.id] ?? 0) || 0 }
-        : t
-      )
+    setThreads((prev) =>
+      prev.map((t) => (t.kind === 'dm' ? { ...t, unread: Number(unreadThreads[t.id] ?? 0) || 0 } : t))
     );
   }, [unreadThreads, threads.length]);
 
@@ -372,27 +400,34 @@ export default function InboxScreen(): React.JSX.Element {
     const s = socket;
     if (!s) return;
 
-    // community message arrived
+    // ✅ IMPROVED: Community message with typing reset
     const onCommunityMsg = (payload: any) => {
       const cid = String(payload?.communityId || '');
-      if (!cid || !myCommunityIds.has(cid)) return; // ⬅️ only my memberships
+      if (!cid || !myCommunityIds.has(cid)) return;
 
       const newMsg: MessageContent =
         payload?.type === 'photo'
           ? { type: 'photo', content: 'Photo' }
           : payload?.type === 'voice'
-            ? { type: 'voice', content: 'Voice Memo' }
-            : { type: 'text', content: String(payload?.content ?? '') };
+          ? { type: 'voice', content: 'Voice Memo' }
+          : { type: 'text', content: String(payload?.content ?? '') };
 
-      setThreads(prev => {
-        const idx = prev.findIndex(t => t.kind === 'community' && t.id === cid);
+      const timestamp = payload?.createdAt || Date.now();
+
+      setThreads((prev) => {
+        const idx = prev.findIndex((t) => t.kind === 'community' && t.id === cid);
         if (idx >= 0) {
           const copy = [...prev];
           const th = copy[idx] as CommunityThread;
-          copy[idx] = { ...th, lastMsg: newMsg, time: shortTime(payload?.createdAt) };
+          copy[idx] = {
+            ...th,
+            lastMsg: newMsg,
+            time: formatRelativeTime(timestamp),
+            timestamp: new Date(timestamp).getTime(),
+            typing: false, // ✅ Reset typing
+          };
           return resortByPinnedAndRecent(copy);
         } else {
-          // If it wasn't visible yet (no history), add it now
           const name = (myCommunities || []).find((c: any) => String(c?._id) === cid)?.name || 'Community';
           const added: CommunityThread = {
             kind: 'community',
@@ -400,16 +435,17 @@ export default function InboxScreen(): React.JSX.Element {
             name,
             avatar: '🏛️',
             lastMsg: newMsg,
-            time: shortTime(payload?.createdAt),
+            time: formatRelativeTime(timestamp),
+            timestamp: new Date(timestamp).getTime(),
             unread: 0,
             pinned: false,
+            typing: false,
           };
           return resortByPinnedAndRecent([added, ...prev]);
         }
       });
     };
 
-    // presence from server → convert to boolean
     const onPresence = (payload: any) => {
       const uid = String(payload?.userId || '');
       if (!uid) return;
@@ -418,23 +454,36 @@ export default function InboxScreen(): React.JSX.Element {
           ? payload.online
           : String(payload?.status || '').toLowerCase() === 'online';
 
-      setThreads(prev => prev.map(t =>
-        t.kind === 'dm' && t.id === uid ? ({ ...(t as DMThread), online }) : t
-      ));
-      // optional: active users reel (kept from your version)
-      setActiveUsers(prev => {
-        const exists = prev.some(u => u.id === uid);
+      setThreads((prev) =>
+        prev.map((t) => (t.kind === 'dm' && t.id === uid ? { ...(t as DMThread), online } : t))
+      );
+
+      setActiveUsers((prev) => {
+        const exists = prev.some((u) => u.id === uid);
         const user = { id: uid, name: 'User', avatar: '🟢' };
-        return online ? (exists ? prev : [user, ...prev].slice(0, 12)) : prev.filter(u => u.id !== uid);
+        return online ? (exists ? prev : [user, ...prev].slice(0, 12)) : prev.filter((u) => u.id !== uid);
       });
     };
 
+    // ✅ IMPROVED: Typing handler for both DM and community
     const onTyping = (payload: any) => {
       const from = String(payload?.from || '');
-      if (!from) return;
-      setThreads(prev => prev.map(t =>
-        t.kind === 'dm' && t.id === from ? ({ ...(t as DMThread), typing: !!payload.typing }) : t
-      ));
+      const communityId = String(payload?.communityId || '');
+      const isTyping = !!payload.typing;
+
+      if (communityId && myCommunityIds.has(communityId)) {
+        // Community typing
+        setThreads((prev) =>
+          prev.map((t) =>
+            t.kind === 'community' && t.id === communityId ? { ...(t as CommunityThread), typing: isTyping } : t
+          )
+        );
+      } else if (from) {
+        // DM typing
+        setThreads((prev) =>
+          prev.map((t) => (t.kind === 'dm' && t.id === from ? { ...(t as DMThread), typing: isTyping } : t))
+        );
+      }
     };
 
     s.on?.('receive_message', onCommunityMsg);
@@ -451,39 +500,35 @@ export default function InboxScreen(): React.JSX.Element {
   /* ------------------- UX actions ------------------- */
 
   const handleArchive = (id: string, _kind: Thread['kind']) => {
-    const itemToArchive = threads.find(t => t.id === id);
+    const itemToArchive = threads.find((t) => t.id === id);
     if (itemToArchive) {
       setArchivedItem(itemToArchive);
-      setThreads(cur => cur.filter(t => t.id !== id));
+      setThreads((cur) => cur.filter((t) => t.id !== id));
       setTimeout(() => setArchivedItem(null), 4000);
     }
   };
 
   const handleUndoArchive = () => {
     if (archivedItem) {
-      setThreads(cur => resortByPinnedAndRecent([archivedItem!, ...cur]));
+      setThreads((cur) => resortByPinnedAndRecent([archivedItem!, ...cur]));
       setArchivedItem(null);
     }
   };
 
   const handlePinToggle = (id: string, kind: Thread['kind']) => {
-    setThreads(cur =>
-      resortByPinnedAndRecent(
-        cur.map(t => (t.id === id && t.kind === kind ? { ...t, pinned: !t.pinned } : t))
-      )
+    setThreads((cur) =>
+      resortByPinnedAndRecent(cur.map((t) => (t.id === id && t.kind === kind ? { ...t, pinned: !t.pinned } : t)))
     );
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const openDM = async (partnerId: string) => {
     await markThreadRead?.(partnerId);
-    setThreads(cur => cur.map(t => (t.kind === 'dm' && t.id === partnerId ? { ...t, unread: 0 } : t)));
-    router.push('/(tabs)/dms'); // placeholder until you add DM thread route
+    setThreads((cur) => cur.map((t) => (t.kind === 'dm' && t.id === partnerId ? { ...t, unread: 0 } : t)));
+    router.push('/(tabs)/dms');
   };
 
   const openCommunity = (communityId: string) => {
-    // TODO: route to your community chat screen
-    // Example if you have /community/[id] registered:
     router.push({ pathname: '/community/[id]', params: { id: communityId } });
   };
 
@@ -492,7 +537,6 @@ export default function InboxScreen(): React.JSX.Element {
     else openCommunity(id);
   };
 
-  // Pull to refresh
   const onRefresh = useCallback(async () => {
     const ac = new AbortController();
     try {
@@ -516,7 +560,7 @@ export default function InboxScreen(): React.JSX.Element {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Sections + Filters (now split by kind)
+  // Sections + Filters
   const sections = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
     let filtered = threads.filter((t) => t.name.toLowerCase().includes(q));
@@ -532,13 +576,23 @@ export default function InboxScreen(): React.JSX.Element {
     return out;
   }, [threads, debouncedQuery, activeFilter]);
 
-  /* ------------------- Header animation (unchanged) ------------------- */
+  /* ------------------- Header animation ------------------- */
 
-  const scrollHandler = useAnimatedScrollHandler((event) => { scrollY.value = event.contentOffset.y; });
-  const animatedHeaderStyle = useAnimatedStyle(() => ({ transform: [{ translateY: interpolate(scrollY.value, [0, 80], [0, -80], 'clamp') }] }));
-  const animatedHeaderTitleStyle = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [0, 20], [1, 0], 'clamp') }));
-  const animatedHeaderActiveRail = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [20, 50], [1, 0], 'clamp') }));
-  const animatedHeaderBorderStyle = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [80, 81], [0, 1], 'clamp') }));
+  const scrollHandler = useAnimatedScrollHandler((event) => {
+    scrollY.value = event.contentOffset.y;
+  });
+  const animatedHeaderStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: interpolate(scrollY.value, [0, 80], [0, -80], 'clamp') }],
+  }));
+  const animatedHeaderTitleStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [0, 20], [1, 0], 'clamp'),
+  }));
+  const animatedHeaderActiveRail = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [20, 50], [1, 0], 'clamp'),
+  }));
+  const animatedHeaderBorderStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(scrollY.value, [80, 81], [0, 1], 'clamp'),
+  }));
 
   /* ------------------- First-load skeleton ------------------- */
 
@@ -546,7 +600,9 @@ export default function InboxScreen(): React.JSX.Element {
     return (
       <View style={{ flex: 1, paddingTop: insets.top }} className="bg-white dark:bg-black">
         <Text className="text-3xl font-extrabold text-black dark:text-white px-4 mt-2 mb-4">Messages</Text>
-        {[...Array(8)].map((_, i) => (<DMRowSkeleton key={i} />))}
+        {[...Array(8)].map((_, i) => (
+          <DMRowSkeleton key={i} />
+        ))}
       </View>
     );
   }
@@ -557,12 +613,7 @@ export default function InboxScreen(): React.JSX.Element {
         sections={sections}
         keyExtractor={(item) => `${item.kind}:${item.id}`}
         renderItem={({ item }) => (
-          <ThreadRow
-            item={item}
-            onDelete={handleArchive}
-            onPinToggle={handlePinToggle}
-            onOpen={handleOpenThread}
-          />
+          <ThreadRow item={item} onDelete={handleArchive} onPinToggle={handlePinToggle} onOpen={handleOpenThread} />
         )}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
@@ -583,42 +634,59 @@ export default function InboxScreen(): React.JSX.Element {
         }
       />
 
-      {/* Frosted header (unchanged UI) */}
-      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }, animatedHeaderStyle]} className="px-4 pb-2">
+      {/* Frosted header */}
+      <Animated.View
+        style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }, animatedHeaderStyle]}
+        className="px-4 pb-2"
+      >
         <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
-        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }, animatedHeaderBorderStyle]} />
+        <Animated.View
+          style={[
+            {
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 1,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+            },
+            animatedHeaderBorderStyle,
+          ]}
+        />
         <Animated.View style={animatedHeaderTitleStyle}>
-         <View className="flex-row items-center justify-between mt-2 mb-5">
+          <View className="flex-row items-center justify-between mt-2 mb-5">
             <Text className="text-3xl font-extrabold text-black dark:text-white">Messages</Text>
-            <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-slate-200/80 dark:bg-zinc-800/80" onPress={() => router.push('/(tabs)/dms')}>
+            <Pressable
+              className="h-10 w-10 items-center justify-center rounded-full bg-slate-200/80 dark:bg-zinc-800/80"
+              onPress={() => router.push('/(tabs)/dms')}
+            >
               <IconSymbol name="plus" size={18} color={isDark ? '#FFF' : '#000'} />
             </Pressable>
           </View>
         </Animated.View>
 
-        {/* Online reel (kept) */}
+        {/* Online reel */}
         <Animated.View style={animatedHeaderActiveRail}>
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={activeUsers}
+            data={activeUsers.length ? activeUsers : [selfChip]}
             keyExtractor={(item: ActiveUser) => item.id}
             renderItem={({ item }: { item: ActiveUser }) => (
               <View className="items-center">
-  {/* smaller avatar */}
-  <View className="w-12 h-12 rounded-full bg-slate-200/80 dark:bg-zinc-800/80 items-center justify-center">
-    <Text className="text-2xl">{item.avatar}</Text>
-  </View>
-  <Text className="text-[10px] mt-1 text-slate-500 dark:text-zinc-400" numberOfLines={1}>
-    {item.name}
-  </Text>
-</View>
+                <View className="w-12 h-12 rounded-full bg-slate-200/80 dark:bg-zinc-800/80 items-center justify-center">
+                  <Text className="text-2xl">{item.avatar}</Text>
+                </View>
+                <Text className="text-[10px] mt-1 text-slate-500 dark:text-zinc-400" numberOfLines={1}>
+                  {item.name}
+                </Text>
+              </View>
             )}
             contentContainerStyle={{ gap: 10, paddingVertical: 6, paddingLeft: 4 }}
           />
         </Animated.View>
 
-        {/* Search + Filters (kept) */}
+        {/* Search + Filters */}
         <View className="flex-row items-center gap-2 rounded-xl bg-slate-200/80 dark:bg-zinc-800/80 px-3 mt-2">
           <IconSymbol name="magnifyingglass" size={20} color={isDark ? '#9ca3af' : '#64748b'} />
           <TextInput
@@ -637,10 +705,21 @@ export default function InboxScreen(): React.JSX.Element {
             keyExtractor={(item) => item}
             renderItem={({ item }) => (
               <Pressable
-                onPress={() => { setActiveFilter(item as (typeof FILTERS)[number]); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
-                className={`px-4 py-2 rounded-lg ${activeFilter === item ? 'bg-indigo-600' : 'bg-slate-200/50 dark:bg-zinc-800/50'}`}
+                onPress={() => {
+                  setActiveFilter(item as (typeof FILTERS)[number]);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                className={`px-4 py-2 rounded-lg ${
+                  activeFilter === item ? 'bg-indigo-600' : 'bg-slate-200/50 dark:bg-zinc-800/50'
+                }`}
               >
-                <Text className={`font-semibold ${activeFilter === item ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`}>{item}</Text>
+                <Text
+                  className={`font-semibold ${
+                    activeFilter === item ? 'text-white' : 'text-slate-500 dark:text-slate-400'
+                  }`}
+                >
+                  {item}
+                </Text>
               </Pressable>
             )}
             contentContainerStyle={{ gap: 8 }}
@@ -658,9 +737,15 @@ export default function InboxScreen(): React.JSX.Element {
             transition={{ type: 'spring' }}
             style={{ position: 'absolute', bottom: insets.bottom + 10, left: 20, right: 20 }}
           >
-            <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} className="flex-row items-center justify-between p-3 rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
+            <BlurView
+              intensity={80}
+              tint={isDark ? 'dark' : 'light'}
+              className="flex-row items-center justify-between p-3 rounded-xl overflow-hidden border border-black/10 dark:border-white/10"
+            >
               <Text className="text-black dark:text-white font-medium">Chat archived</Text>
-              <Pressable onPress={handleUndoArchive}><Text className="text-indigo-600 dark:text-indigo-400 font-bold">Undo</Text></Pressable>
+              <Pressable onPress={handleUndoArchive}>
+                <Text className="text-indigo-600 dark:text-indigo-400 font-bold">Undo</Text>
+              </Pressable>
             </BlurView>
           </MotiView>
         )}
@@ -670,35 +755,65 @@ export default function InboxScreen(): React.JSX.Element {
 }
 
 /* ───────────────── Helpers ───────────────── */
-function shortTime(dateLike?: string | number) {
+
+// ✅ IMPROVED: Better time formatting like Discord/WhatsApp/Instagram
+function formatRelativeTime(dateLike?: string | number): string {
   if (!dateLike) return 'now';
+
   try {
-    const d = new Date(dateLike);
-    const diff = Date.now() - d.getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1) return 'now';
-    if (m < 60) return `${m}m`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h`;
-    const days = Math.floor(h / 24);
-    if (days === 1) return 'yesterday';
-    return `${days}d`;
+    const msgDate = new Date(dateLike);
+    const now = new Date();
+    const diffMs = now.getTime() - msgDate.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    // Less than 1 minute
+    if (diffMins < 1) return 'now';
+
+    // Less than 1 hour - show minutes
+    if (diffMins < 60) return `${diffMins}m`;
+
+    // Less than 24 hours - show hours
+    if (diffHours < 24) return `${diffHours}h`;
+
+    // Yesterday
+    if (diffDays === 1) return 'Yesterday';
+
+    // Less than 7 days - show day name
+    if (diffDays < 7) {
+      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      return dayNames[msgDate.getDay()];
+    }
+
+    // Less than a year - show date without year
+    const isSameYear = msgDate.getFullYear() === now.getFullYear();
+    if (isSameYear) {
+      const month = msgDate.toLocaleDateString('en-US', { month: 'short' });
+      const day = msgDate.getDate();
+      return `${month} ${day}`;
+    }
+
+    // Over a year - show full date
+    return msgDate.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
   } catch {
     return 'now';
   }
 }
 
+// ✅ IMPROVED: Sort by actual timestamp instead of parsing strings
 function resortByPinnedAndRecent(list: Thread[]) {
-  const score = (t: string) => {
-    if (t === 'now') return 1e12;
-    if (t === 'yesterday') return 1e9;
-    const m = /(\d+)([mh])/.exec(t);
-    if (!m) return 0;
-    const n = parseInt(m[1], 10);
-    return m[2] === 'h' ? 60 - n : 1000 - n;
-  };
   return [...list].sort((a, b) => {
+    // Pinned items always come first
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-    return score(a.time) > score(b.time) ? -1 : 1;
+
+    // Sort by actual timestamp (most recent first)
+    const timeA = a.timestamp || 0;
+    const timeB = b.timestamp || 0;
+    return timeB - timeA;
   });
 }
