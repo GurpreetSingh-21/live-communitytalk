@@ -363,7 +363,7 @@ export default function RegisterScreen() {
 
             {/* Religion Select */}
             <View className="mt-4">
-              <Text className="font-semibold text-slate-700 mb-2 text-sm">Select Religion Community</Text>
+              <Text className="font-semibold text-slate-700 mb-2 text-sm">Select Your Community</Text>
               {loadingLists ? (
                 <View className="py-3 flex-row items-center gap-2">
                   <ActivityIndicator />

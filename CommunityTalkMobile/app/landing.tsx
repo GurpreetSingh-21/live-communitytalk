@@ -175,7 +175,7 @@ export default function Landing() {
           <ThemedText className="mb-4 text-2xl font-extrabold">Get started</ThemedText>
           {([
             ['Join your campus', 'Find and verify your CUNY/NY college.', '🎓'],
-            ['Find a faith group', 'Search by religion across all campuses.', '🛕'],
+            ['Find a faith group', 'Search by your Community across all campuses.', '🛕'],
             ['Create a new group', 'Start a club, study circle, or volunteer team.', '➕'],
           ] as const).map(([title, desc, emoji], i) => (
             <Pressable
