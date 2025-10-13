@@ -1,4 +1,4 @@
-//CommunityTalkMobile/app/register.tsx
+// CommunityTalkMobile/app/register.tsx
 import { useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -9,6 +9,7 @@ import {
   Platform,
   ScrollView,
   ActivityIndicator,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -16,6 +17,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/api/api";
 import React from "react";
 import { AuthContext } from "@/src/context/AuthContext";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useColorScheme } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 
 type CommunityLite = {
   _id: string;
@@ -27,6 +36,9 @@ type CommunityLite = {
 
 export default function RegisterScreen() {
   const { setToken, bootstrap } = (React.useContext(AuthContext) as any) ?? {};
+  const insets = useSafeAreaInsets();
+  const isDark = useColorScheme() === "dark";
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
@@ -54,7 +66,7 @@ export default function RegisterScreen() {
     pw.length === 0 ? null : pw.length < 6 ? "weak" : pw.length < 10 ? "medium" : "strong";
   const strengthColors = { weak: "#EF4444", medium: "#F59E0B", strong: "#10B981" } as const;
 
-  // Load public communities for college + religion
+  /* ---------------- Fetch lists (unchanged logic) ---------------- */
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -65,7 +77,6 @@ export default function RegisterScreen() {
           api.get(`/api/public/communities?type=religion&paginated=false`),
         ]);
 
-        // backend /api/public/communities returns either {items:[]} or [] depending on paginated flag
         const colItems: CommunityLite[] = Array.isArray(colRes.data)
           ? colRes.data
           : Array.isArray(colRes.data?.items)
@@ -80,8 +91,8 @@ export default function RegisterScreen() {
         if (!mounted) return;
         setColleges(colItems);
         setReligions(relItems);
-      } catch (e) {
-        // keep silent; UI will still let user retry submit to see errors
+      } catch {
+        // silent
       } finally {
         if (mounted) setLoadingLists(false);
       }
@@ -91,7 +102,7 @@ export default function RegisterScreen() {
     };
   }, []);
 
-  // simple client validation
+  /* ---------------- Validation (unchanged logic) ---------------- */
   const validate = () => {
     let ok = true;
     setErrName(null);
@@ -132,6 +143,7 @@ export default function RegisterScreen() {
     return ok;
   };
 
+  /* ---------------- Submit (unchanged logic) ---------------- */
   const handleRegister = async () => {
     if (submitting) return;
     if (!validate()) return;
@@ -147,24 +159,16 @@ export default function RegisterScreen() {
       };
 
       const { data } = await api.post("/register", body);
-      // success payload (from backend):
-      // { message, token, user: {...}, communities: [...] }
       if (!data?.token) {
         setServerError("Unexpected response from server.");
         return;
       }
 
-      // store token if your AuthContext exposes a setter
-      if (typeof setToken === "function") {
-        setToken(data.token);
-      }
-      if (typeof bootstrap === "function") {
-        await bootstrap();
-      }
+      if (typeof setToken === "function") setToken(data.token);
+      if (typeof bootstrap === "function") await bootstrap();
 
       router.replace("/(tabs)");
     } catch (err: any) {
-      // backend may return {error: {email: "...", collegeId: "...", religionId: "..."}}
       const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
       if (typeof e === "string") {
         setServerError(e);
@@ -183,7 +187,7 @@ export default function RegisterScreen() {
     }
   };
 
-  // small helper to render a pill for selection
+  /* ---------------- Modern UI Components ---------------- */
   const Pill = ({
     active,
     label,
@@ -192,261 +196,626 @@ export default function RegisterScreen() {
     active: boolean;
     label: string;
     onPress: () => void;
-  }) => (
-    <TouchableOpacity
-      onPress={onPress}
-      className={`px-3 py-2 rounded-full border ${active ? "bg-indigo-600 border-indigo-600" : "bg-white border-slate-300"}`}
-      style={{ marginRight: 8, marginBottom: 8 }}
-    >
-      <Text className={`text-xs font-semibold ${active ? "text-white" : "text-slate-700"}`}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  );
+  }) => {
+    const scale = useSharedValue(1);
+    const animStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+    }));
 
-  // filter suggestions (very light)
+    return (
+      <Pressable
+        onPressIn={() => {
+          scale.value = withSpring(0.95);
+        }}
+        onPressOut={() => {
+          scale.value = withSpring(1);
+          onPress();
+        }}
+        style={{ marginRight: 8, marginBottom: 10 }}
+      >
+        <Animated.View
+          style={[
+            animStyle,
+            {
+              paddingHorizontal: 16,
+              paddingVertical: 10,
+              borderRadius: 16,
+              backgroundColor: active
+                ? isDark
+                  ? "#6366F1"
+                  : "#6366F1"
+                : isDark
+                ? "#1F2937"
+                : "#F3F4F6",
+              borderWidth: active ? 0 : 1,
+              borderColor: isDark ? "#374151" : "#E5E7EB",
+              flexDirection: "row",
+              alignItems: "center",
+              shadowColor: active ? "#6366F1" : "#000",
+              shadowOpacity: active ? 0.3 : 0.05,
+              shadowRadius: active ? 8 : 2,
+              shadowOffset: { width: 0, height: 2 },
+              elevation: active ? 4 : 1,
+            },
+          ]}
+        >
+          {active && (
+            <Ionicons
+              name="checkmark-circle"
+              size={16}
+              color="#fff"
+              style={{ marginRight: 6 }}
+            />
+          )}
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: active ? "600" : "500",
+              color: active ? "#FFFFFF" : isDark ? "#D1D5DB" : "#374151",
+            }}
+          >
+            {label}
+          </Text>
+        </Animated.View>
+      </Pressable>
+    );
+  };
+
   const eduDetected = useMemo(() => email.toLowerCase().includes(".edu"), [email]);
+
+  // Design tokens
+  const bgColor = isDark ? "#0B0F19" : "#F8FAFC";
+  const cardBg = isDark ? "#111827" : "#FFFFFF";
+  const labelColor = isDark ? "#D1D5DB" : "#374155";
+  const inputBg = isDark ? "#1F2937" : "#F9FAFB";
+  const inputBorder = isDark ? "#374151" : "#E5E7EB";
+  const inputFocusBorder = isDark ? "#6366F1" : "#6366F1";
+  const placeholder = isDark ? "#6B7280" : "#9CA3AF";
+  const textColor = isDark ? "#F3F4F6" : "#111827";
+
+  /* ---------------- Premium Submit Button ---------------- */
+  const SubmitButton = ({
+    onPress,
+    loading,
+    disabled,
+  }: {
+    onPress: () => void;
+    loading: boolean;
+    disabled: boolean;
+  }) => {
+    const scale = useSharedValue(1);
+    const opacity = useSharedValue(1);
+
+    const animStyle = useAnimatedStyle(() => ({
+      transform: [{ scale: scale.value }],
+      opacity: opacity.value,
+    }));
+
+    return (
+      <Pressable
+        onPressIn={() => {
+          if (!disabled) {
+            scale.value = withSpring(0.97);
+            opacity.value = withTiming(0.9);
+          }
+        }}
+        onPressOut={() => {
+          if (!disabled) {
+            scale.value = withSpring(1);
+            opacity.value = withTiming(1);
+            onPress();
+          }
+        }}
+        disabled={disabled}
+      >
+        <Animated.View style={animStyle}>
+          <LinearGradient
+            colors={disabled ? ["#9CA3AF", "#6B7280"] : ["#6366F1", "#8B5CF6"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              height: 56,
+              borderRadius: 16,
+              justifyContent: "center",
+              alignItems: "center",
+              shadowColor: "#6366F1",
+              shadowOpacity: disabled ? 0 : 0.3,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 6 },
+              elevation: disabled ? 0 : 8,
+            }}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700" }}>
+                  Create Account
+                </Text>
+                <Ionicons name="arrow-forward" size={20} color="#fff" />
+              </View>
+            )}
+          </LinearGradient>
+        </Animated.View>
+      </Pressable>
+    );
+  };
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.select({ ios: "padding", android: undefined })}
-      className="flex-1 bg-slate-50"
+      style={{ flex: 1, backgroundColor: bgColor }}
     >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom + 32,
+          paddingHorizontal: 20,
+        }}
+      >
         {/* Back Button */}
-        <View className="px-5 pt-14 pb-4">
-          <TouchableOpacity onPress={() => router.back()} className="flex-row items-center gap-2">
-            <Ionicons name="arrow-back" size={24} color="#1E293B" />
-            <Text className="text-slate-700 font-semibold text-base">Back</Text>
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: 20,
+            paddingVertical: 8,
+          }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="chevron-back" size={24} color={textColor} />
+          <Text style={{ fontSize: 16, fontWeight: "600", color: textColor, marginLeft: 4 }}>
+            Back
+          </Text>
+        </TouchableOpacity>
 
-        <View className="flex-1 justify-center px-5">
-          {/* Hero Section */}
-          <View className="items-center mb-8">
-            <View className="mb-4 overflow-hidden rounded-3xl shadow-2xl">
-              <LinearGradient
-                colors={["#6366F1", "#8B5CF6", "#EC4899"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="h-20 w-20 items-center justify-center"
-              >
-                <Ionicons name="person-add" size={40} color="white" />
-              </LinearGradient>
-            </View>
-
-            <Text className="text-3xl font-extrabold text-slate-900 mb-2">
-              Join CommunityTalk
-            </Text>
-            <Text className="text-slate-600 text-center text-base">
-              Connect with campus & faith communities across NYC 🚀
-            </Text>
+        {/* Hero Section */}
+        <View style={{ alignItems: "center", marginBottom: 32 }}>
+          <View
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: 24,
+              overflow: "hidden",
+              marginBottom: 20,
+              shadowColor: "#6366F1",
+              shadowOpacity: 0.3,
+              shadowRadius: 20,
+              shadowOffset: { width: 0, height: 10 },
+              elevation: 10,
+            }}
+          >
+            <LinearGradient
+              colors={["#6366F1", "#8B5CF6", "#EC4899"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+            >
+              <Ionicons name="people" size={44} color="white" />
+            </LinearGradient>
           </View>
 
-          {/* Form Card */}
-          <View className="bg-white rounded-3xl p-6 shadow-xl">
-            {/* Name Input */}
-            <View className="mb-3">
-              <Text className="font-semibold text-slate-700 mb-2 text-sm">Full Name</Text>
-              <View className="flex-row items-center bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3">
-                <Ionicons name="person-outline" size={20} color="#64748B" />
-                <TextInput
-                  placeholder="Your full name"
-                  value={name}
-                  onChangeText={setName}
-                  className="flex-1 ml-3 text-slate-900 text-base"
-                  placeholderTextColor="#94A3B8"
-                  autoCapitalize="words"
-                />
-              </View>
-              {!!errName && <Text className="text-xs text-red-500 mt-1">{errName}</Text>}
+          <Text
+            style={{
+              fontSize: 32,
+              fontWeight: "800",
+              color: textColor,
+              marginBottom: 8,
+              letterSpacing: -0.5,
+            }}
+          >
+            Join CommunityTalk
+          </Text>
+          <Text
+            style={{
+              fontSize: 15,
+              color: isDark ? "#9CA3AF" : "#6B7280",
+              textAlign: "center",
+              lineHeight: 22,
+            }}
+          >
+            Connect with campus & faith communities{"\n"}across NYC 🚀
+          </Text>
+        </View>
+
+        {/* Form Card */}
+        <View
+          style={{
+            backgroundColor: cardBg,
+            borderRadius: 24,
+            padding: 24,
+            shadowColor: isDark ? "#000" : "#64748B",
+            shadowOpacity: isDark ? 0.4 : 0.08,
+            shadowRadius: 24,
+            shadowOffset: { width: 0, height: 8 },
+            elevation: 8,
+          }}
+        >
+          {/* Full Name */}
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
+              Full Name
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: inputBg,
+                borderRadius: 14,
+                borderWidth: 1.5,
+                borderColor: inputBorder,
+                paddingHorizontal: 16,
+                height: 52,
+              }}
+            >
+              <Ionicons name="person-outline" size={20} color={placeholder} />
+              <TextInput
+                placeholder="Your full name"
+                value={name}
+                onChangeText={setName}
+                placeholderTextColor={placeholder}
+                autoCapitalize="words"
+                style={{
+                  flex: 1,
+                  marginLeft: 12,
+                  fontSize: 15,
+                  color: textColor,
+                  fontWeight: "500",
+                }}
+              />
             </View>
-
-            {/* Email Input */}
-            <View className="mb-3">
-              <Text className="font-semibold text-slate-700 mb-2 text-sm">Email Address</Text>
-              <View className="flex-row items-center bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3">
-                <Ionicons name="mail-outline" size={20} color="#64748B" />
-                <TextInput
-                  placeholder="you@college.edu"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={email}
-                  onChangeText={setEmail}
-                  className="flex-1 ml-3 text-slate-900 text-base"
-                  placeholderTextColor="#94A3B8"
-                />
-              </View>
-              {eduDetected && (
-                <View className="flex-row items-center gap-2 mt-2">
-                  <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                  <Text className="text-emerald-600 text-xs font-medium">.edu email detected ✓</Text>
-                </View>
-              )}
-              {!!errEmail && <Text className="text-xs text-red-500 mt-1">{errEmail}</Text>}
-            </View>
-
-            {/* Password Input */}
-            <View className="mb-2">
-              <Text className="font-semibold text-slate-700 mb-2 text-sm">Password</Text>
-              <View className="flex-row items-center bg-slate-50 border-2 border-slate-200 rounded-2xl px-4 py-3">
-                <Ionicons name="lock-closed-outline" size={20} color="#64748B" />
-                <TextInput
-                  placeholder="Create a strong password"
-                  secureTextEntry={!showPw}
-                  value={pw}
-                  onChangeText={setPw}
-                  className="flex-1 ml-3 text-slate-900 text-base"
-                  placeholderTextColor="#94A3B8"
-                />
-                <TouchableOpacity onPress={() => setShowPw((v) => !v)}>
-                  <Ionicons
-                    name={showPw ? "eye-outline" : "eye-off-outline"}
-                    size={20}
-                    color="#64748B"
-                  />
-                </TouchableOpacity>
-              </View>
-
-              {/* Password Strength Indicator */}
-              {pwStrength && (
-                <View className="mt-3">
-                  <View className="flex-row gap-1.5 mb-2">
-                    <View
-                      className={`flex-1 h-1.5 rounded-full ${
-                        pwStrength === "weak" ? "bg-red-500" : "bg-slate-200"
-                      }`}
-                    />
-                    <View
-                      className={`flex-1 h-1.5 rounded-full ${
-                        pwStrength === "medium" || pwStrength === "strong"
-                          ? "bg-yellow-500"
-                          : "bg-slate-200"
-                      }`}
-                    />
-                    <View
-                      className={`flex-1 h-1.5 rounded-full ${
-                        pwStrength === "strong" ? "bg-emerald-500" : "bg-slate-200"
-                      }`}
-                    />
-                  </View>
-                  <Text className="text-xs font-medium" style={{ color: strengthColors[pwStrength] }}>
-                    Password strength: {pwStrength}
-                  </Text>
-                </View>
-              )}
-              {!!errPw && <Text className="text-xs text-red-500 mt-1">{errPw}</Text>}
-            </View>
-
-            {/* College Select */}
-            <View className="mt-4">
-              <Text className="font-semibold text-slate-700 mb-2 text-sm">Select College</Text>
-              {loadingLists ? (
-                <View className="py-3 flex-row items-center gap-2">
-                  <ActivityIndicator />
-                  <Text className="text-slate-500">Loading colleges…</Text>
-                </View>
-              ) : (
-                <View className="flex-row flex-wrap">
-                  {colleges.map((c) => (
-                    <Pill
-                      key={c._id}
-                      label={c.name}
-                      active={collegeId === c._id}
-                      onPress={() => setCollegeId(c._id)}
-                    />
-                  ))}
-                </View>
-              )}
-              {!!errCollege && <Text className="text-xs text-red-500 mt-1">{errCollege}</Text>}
-            </View>
-
-            {/* Religion Select */}
-            <View className="mt-4">
-              <Text className="font-semibold text-slate-700 mb-2 text-sm">Select Your Community</Text>
-              {loadingLists ? (
-                <View className="py-3 flex-row items-center gap-2">
-                  <ActivityIndicator />
-                  <Text className="text-slate-500">Loading communities…</Text>
-                </View>
-              ) : (
-                <View className="flex-row flex-wrap">
-                  {religions.map((r) => (
-                    <Pill
-                      key={r._id}
-                      label={r.name}
-                      active={religionId === r._id}
-                      onPress={() => setReligionId(r._id)}
-                    />
-                  ))}
-                </View>
-              )}
-              {!!errReligion && <Text className="text-xs text-red-500 mt-1">{errReligion}</Text>}
-            </View>
-
-            {/* Server error (top-level) */}
-            {!!serverError && (
-              <View className="mt-4 px-3 py-2 rounded-xl bg-red-50 border border-red-200">
-                <Text className="text-red-600 text-sm">{serverError}</Text>
+            {!!errName && (
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
+                  {errName}
+                </Text>
               </View>
             )}
+          </View>
 
-            {/* Register Button */}
-            <TouchableOpacity
-              onPress={handleRegister}
-              disabled={submitting}
-              className={`mt-6 rounded-2xl overflow-hidden shadow-xl ${
-                submitting ? "opacity-70" : ""
-              }`}
-            >
-              <LinearGradient
-                colors={["#6366F1", "#8B5CF6"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="py-4 items-center"
-              >
-                {submitting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text className="text-white font-bold text-base">Create Account</Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
-
-            {/* Terms */}
-            <Text className="text-center text-xs text-slate-500 mt-4 leading-5">
-              By creating an account, you agree to our{" "}
-              <Text className="text-indigo-600 font-semibold">Terms of Service</Text> and{" "}
-              <Text className="text-indigo-600 font-semibold">Privacy Policy</Text>
+          {/* Email */}
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
+              Email Address
             </Text>
-
-            {/* Divider */}
-            <View className="flex-row items-center justify-center my-6">
-              <View className="flex-1 h-px bg-slate-200" />
-              <Text className="mx-4 text-slate-500 text-sm">or</Text>
-              <View className="flex-1 h-px bg-slate-200" />
-            </View>
-
-            {/* Back to Login */}
-            <TouchableOpacity
-              onPress={() => router.replace("/")}
-              className="flex-row gap-2 items-center justify-center py-4 border-2 border-slate-300 rounded-2xl"
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: inputBg,
+                borderRadius: 14,
+                borderWidth: 1.5,
+                borderColor: inputBorder,
+                paddingHorizontal: 16,
+                height: 52,
+              }}
             >
-              <Ionicons name="log-in-outline" size={20} color="#64748B" />
-              <Text className="font-semibold text-slate-700">
-                Already have an account? Log in
-              </Text>
-            </TouchableOpacity>
+              <Ionicons name="mail-outline" size={20} color={placeholder} />
+              <TextInput
+                placeholder="you@college.edu"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
+                placeholderTextColor={placeholder}
+                style={{
+                  flex: 1,
+                  marginLeft: 12,
+                  fontSize: 15,
+                  color: textColor,
+                  fontWeight: "500",
+                }}
+              />
+            </View>
+            {eduDetected && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  marginTop: 8,
+                  backgroundColor: isDark ? "#064E3B" : "#D1FAE5",
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 10,
+                }}
+              >
+                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                <Text style={{ fontSize: 12, color: "#10B981", marginLeft: 6, fontWeight: "600" }}>
+                  .edu email verified ✓
+                </Text>
+              </View>
+            )}
+            {!!errEmail && (
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
+                  {errEmail}
+                </Text>
+              </View>
+            )}
           </View>
 
-          {/* Footer */}
-          <View className="mt-6 items-center">
-            <View className="flex-row items-center gap-2 px-4 py-2 rounded-full bg-white shadow-lg">
-              <Text className="text-2xl">✨</Text>
-              <Text className="text-slate-600 font-medium">Your communities await</Text>
+          {/* Password */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
+              Password
+            </Text>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: inputBg,
+                borderRadius: 14,
+                borderWidth: 1.5,
+                borderColor: inputBorder,
+                paddingHorizontal: 16,
+                height: 52,
+              }}
+            >
+              <Ionicons name="lock-closed-outline" size={20} color={placeholder} />
+              <TextInput
+                placeholder="Create a strong password"
+                secureTextEntry={!showPw}
+                value={pw}
+                onChangeText={setPw}
+                placeholderTextColor={placeholder}
+                style={{
+                  flex: 1,
+                  marginLeft: 12,
+                  fontSize: 15,
+                  color: textColor,
+                  fontWeight: "500",
+                }}
+              />
+              <TouchableOpacity onPress={() => setShowPw((v) => !v)} activeOpacity={0.7}>
+                <Ionicons
+                  name={showPw ? "eye-outline" : "eye-off-outline"}
+                  size={20}
+                  color={placeholder}
+                />
+              </TouchableOpacity>
             </View>
+
+            {pwStrength && (
+              <View style={{ marginTop: 12 }}>
+                <View style={{ flexDirection: "row", gap: 6, marginBottom: 8 }}>
+                  <View
+                    style={{
+                      flex: 1,
+                      height: 4,
+                      borderRadius: 2,
+                      backgroundColor:
+                        pwStrength === "weak"
+                          ? "#EF4444"
+                          : isDark
+                          ? "#374151"
+                          : "#E5E7EB",
+                    }}
+                  />
+                  <View
+                    style={{
+                      flex: 1,
+                      height: 4,
+                      borderRadius: 2,
+                      backgroundColor:
+                        pwStrength === "medium" || pwStrength === "strong"
+                          ? "#F59E0B"
+                          : isDark
+                          ? "#374151"
+                          : "#E5E7EB",
+                    }}
+                  />
+                  <View
+                    style={{
+                      flex: 1,
+                      height: 4,
+                      borderRadius: 2,
+                      backgroundColor:
+                        pwStrength === "strong"
+                          ? "#10B981"
+                          : isDark
+                          ? "#374151"
+                          : "#E5E7EB",
+                    }}
+                  />
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: strengthColors[pwStrength] }}>
+                  Password strength: {pwStrength}
+                </Text>
+              </View>
+            )}
+            {!!errPw && (
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
+                  {errPw}
+                </Text>
+              </View>
+            )}
           </View>
+
+          {/* College Selection */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
+              Select College
+            </Text>
+            {loadingLists ? (
+              <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 16 }}>
+                <ActivityIndicator size="small" color="#6366F1" />
+                <Text style={{ marginLeft: 10, color: placeholder, fontSize: 14 }}>
+                  Loading colleges...
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                {colleges.map((c) => (
+                  <Pill
+                    key={c._id}
+                    label={c.name}
+                    active={collegeId === c._id}
+                    onPress={() => setCollegeId(c._id)}
+                  />
+                ))}
+              </View>
+            )}
+            {!!errCollege && (
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
+                  {errCollege}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Religion Selection */}
+          <View style={{ marginBottom: 24 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
+              Select Your Community
+            </Text>
+            {loadingLists ? (
+              <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 16 }}>
+                <ActivityIndicator size="small" color="#6366F1" />
+                <Text style={{ marginLeft: 10, color: placeholder, fontSize: 14 }}>
+                  Loading communities...
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                {religions.map((r) => (
+                  <Pill
+                    key={r._id}
+                    label={r.name}
+                    active={religionId === r._id}
+                    onPress={() => setReligionId(r._id)}
+                  />
+                ))}
+              </View>
+            )}
+            {!!errReligion && (
+              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
+                <Ionicons name="alert-circle" size={14} color="#EF4444" />
+                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
+                  {errReligion}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Server Error */}
+          {!!serverError && (
+            <View
+              style={{
+                backgroundColor: isDark ? "#7F1D1D" : "#FEE2E2",
+                padding: 14,
+                borderRadius: 12,
+                marginBottom: 20,
+                borderWidth: 1,
+                borderColor: isDark ? "#991B1B" : "#FECACA",
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
+                <Ionicons name="alert-circle" size={18} color="#EF4444" style={{ marginTop: 1 }} />
+                <Text
+                  style={{
+                    flex: 1,
+                    fontSize: 13,
+                    color: isDark ? "#FCA5A5" : "#DC2626",
+                    marginLeft: 8,
+                    fontWeight: "500",
+                    lineHeight: 18,
+                  }}
+                >
+                  {serverError}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Submit Button */}
+          <SubmitButton onPress={handleRegister} loading={submitting} disabled={submitting} />
+
+          {/* Terms */}
+          <Text
+            style={{
+              textAlign: "center",
+              fontSize: 11,
+              color: isDark ? "#6B7280" : "#9CA3AF",
+              marginTop: 16,
+              lineHeight: 16,
+            }}
+          >
+            By creating an account, you agree to our{" "}
+            <Text style={{ color: "#6366F1", fontWeight: "600" }}>Terms of Service</Text> and{" "}
+            <Text style={{ color: "#6366F1", fontWeight: "600" }}>Privacy Policy</Text>
+          </Text>
         </View>
+
+        {/* Divider */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginVertical: 28,
+          }}
+        >
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: isDark ? "#374151" : "#E5E7EB",
+            }}
+          />
+          <Text
+            style={{
+              marginHorizontal: 16,
+              fontSize: 13,
+              color: isDark ? "#6B7280" : "#9CA3AF",
+              fontWeight: "500",
+            }}
+          >
+            or
+          </Text>
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: isDark ? "#374151" : "#E5E7EB",
+            }}
+          />
+        </View>
+
+        {/* Login Link */}
+        <TouchableOpacity
+          onPress={() => router.replace("/")}
+          activeOpacity={0.8}
+          style={{
+            backgroundColor: isDark ? "#1F2937" : "#F9FAFB",
+            borderRadius: 16,
+            borderWidth: 1.5,
+            borderColor: isDark ? "#374151" : "#E5E7EB",
+            paddingVertical: 16,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Ionicons name="log-in-outline" size={20} color={textColor} />
+          <Text
+            style={{
+              marginLeft: 8,
+              fontSize: 15,
+              fontWeight: "600",
+              color: textColor,
+            }}
+          >
+            Already have an account? Log in
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
