@@ -267,6 +267,29 @@ export default function CommunityScreen() {
   const isAtBottomRef = useRef(true); // assume bottom on first paint
   const AUTO_SCROLL_THRESHOLD = 120; // px
 
+  // --- Typing indicator state (community-wide) ---
+  type TypingEntry = { id: string; name: string; expiresAt: number };
+  const [typingMap, setTypingMap] = useState<Map<string, TypingEntry>>(new Map());
+
+  // Resolve a nice name for a userId using the loaded members list
+  const nameForId = useCallback(
+    (uid: string) => members.find(m => String(m.person) === String(uid))?.fullName || "Someone",
+    [members]
+  );
+
+  // Human label to show in the UI
+  const typingLabel = useMemo(() => {
+    const entries = Array.from(typingMap.values()).filter(e => e.expiresAt > Date.now());
+    if (!entries.length) return "";
+    const names = entries.map(e => e.name).slice(0, 2);
+    if (entries.length === 1) return `${names[0]} is typing…`;
+    if (entries.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    return `${names[0]} and ${entries.length - 1} others are typing…`;
+  }, [typingMap]);
+
+  // throttle & idle timer for local "I'm typing" pings
+  const typingPingRef = useRef<{ lastSent: number; timer?: any }>({ lastSent: 0 });
+
   const scrollToBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => {
       chatListRef.current?.scrollToEnd({ animated });
@@ -460,6 +483,59 @@ export default function CommunityScreen() {
       socket.emit?.("room:leave", { room: `community:${communityId}` });
     };
   }, [socket, communityId, isMember, socketConnected, scrollToBottom]);
+
+  // --- Typing realtime: keep a short-lived map of who is typing ---
+  useEffect(() => {
+    if (!socket || !communityId || !isMember) return;
+
+    const onTyping = (p: any) => {
+      if (String(p?.communityId) !== String(communityId)) return;
+
+      // Accept either { from } or { userId } from the backend
+      const from = String(p?.from || p?.userId || "");
+      if (!from || String(from) === String(user?._id)) return; // ignore self
+
+      const typing = !!p?.typing;
+
+      setTypingMap(prev => {
+        const next = new Map(prev);
+        if (typing) {
+          const label = (p?.name as string) || nameForId(from);
+          next.set(from, { id: from, name: label, expiresAt: Date.now() + 6000 });
+        } else {
+          next.delete(from);
+        }
+        return next;
+      });
+    };
+
+    socket.on?.("typing", onTyping);
+    // If your server uses a different event (e.g., "community:typing"), listen to it too:
+    socket.on?.("community:typing", onTyping);
+
+    // GC expired typing entries every 2s
+    const gc = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      setTypingMap(prev => {
+        const next = new Map(prev);
+        for (const [k, v] of next) {
+          if (v.expiresAt <= now) {
+            next.delete(k);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 2000);
+
+    return () => {
+      socket.off?.("typing", onTyping);
+      socket.off?.("community:typing", onTyping);
+      clearInterval(gc);
+      clearTimeout(typingPingRef.current.timer);
+    };
+  }, [socket, communityId, isMember, user?._id, nameForId]);
 
   /* Join / Leave */
   const join = async () => {
@@ -1100,6 +1176,24 @@ export default function CommunityScreen() {
                   )}
                 </View>
 
+                {typingLabel ? (
+                  <View style={{ paddingHorizontal: 16, marginTop: 6 }}>
+                    <View
+                      style={{
+                        alignSelf: "flex-start",
+                        backgroundColor: isDark ? "rgba(52, 199, 89, 0.15)" : "#E8F8EF",
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                      }}
+                    >
+                      <Text style={{ color: isDark ? "#34C759" : "#0F8C4C", fontSize: 13, fontWeight: "600" }}>
+                        {typingLabel}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null}
+
                 {/* Modern Composer */}
                 <View
                   style={{
@@ -1127,7 +1221,25 @@ export default function CommunityScreen() {
                   >
                     <TextInput
                       value={input}
-                      onChangeText={setInput}
+                      onChangeText={(t) => {
+                        setInput(t);
+
+                        if (socket && communityId) {
+                          const now = Date.now();
+
+                          // Throttle "typing: true" to at most once every 2s
+                          if (now - (typingPingRef.current.lastSent || 0) > 2000) {
+                            typingPingRef.current.lastSent = now;
+                            socket.emit?.("typing", { communityId, typing: true });
+                          }
+
+                          // Send "typing: false" after 5s of no changes
+                          clearTimeout(typingPingRef.current.timer);
+                          typingPingRef.current.timer = setTimeout(() => {
+                            socket.emit?.("typing", { communityId, typing: false });
+                          }, 5000);
+                        }
+                      }}
                       placeholder="Message"
                       placeholderTextColor={colors.textSecondary}
                       style={{
