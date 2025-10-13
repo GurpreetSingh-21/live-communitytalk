@@ -6,7 +6,6 @@ import React, {
   useCallback,
   type ReactNode,
 } from 'react';
-import type { ComponentProps } from 'react';
 import {
   FlatList,
   Pressable,
@@ -16,7 +15,6 @@ import {
   SectionList,
   type SectionListData,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -46,17 +44,18 @@ import { useSocket } from '@/src/context/SocketContext';
 
 /* ───────────────── Types ───────────────── */
 
-type MessageContent =
-  | { type: 'text'; content: string }
-  | { type: 'photo'; content: 'Photo' }
-  | { type: 'voice'; content: 'Voice Memo' };
+type MessageContent = {
+  type: 'text' | 'photo' | 'voice';
+  content: string;
+};
 
 type BaseThread = {
-  id: string;              // partnerId for DM, communityId for community
+  id: string; // partnerId for DM, communityId for community
   name: string;
   avatar: string;
   lastMsg: MessageContent;
-  time: string;
+  /** raw timestamp of the last activity (ms since epoch) */
+  lastAt: number;
   unread?: number;
   pinned?: boolean;
 };
@@ -70,7 +69,7 @@ type ActiveUser = { id: string; name: string; avatar: string };
 
 const FILTERS = ['All', 'Unread', 'Pinned', 'Work', 'Friends'] as const;
 
-/* ───────────────── UI Bits (kept from your original) ───────────────── */
+/* ───────────────── UI Bits ───────────────── */
 
 const ShimmeringView = ({ children, isDark }: { children: ReactNode; isDark: boolean }) => {
   const translateX = useSharedValue(-300);
@@ -139,16 +138,31 @@ const SmartPreview = ({ msg }: { msg: MessageContent }) => {
   );
 };
 
-/* ───────────────── Row (now generic Thread) ───────────────── */
+/* ───────────────── Time helpers ───────────────── */
+
+function timeAgoLabel(fromMs: number, nowMs: number): string {
+  const diff = Math.max(0, nowMs - fromMs);
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'now';
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  const d = Math.floor(h / 24);
+  if (d === 1) return 'yesterday';
+  return `${d}d`;
+}
+
+/* ───────────────── Row ───────────────── */
 
 type RowProps = {
   item: Thread;
   onDelete: (id: string, kind: Thread['kind']) => void;
   onPinToggle: (id: string, kind: Thread['kind']) => void;
   onOpen: (id: string, kind: Thread['kind']) => void;
+  now: number;
 };
 
-const ThreadRow = React.memo(({ item, onDelete, onPinToggle, onOpen }: RowProps) => {
+const ThreadRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: RowProps) => {
   const isDark = useColorScheme() === 'dark';
   const translateX = useSharedValue(0);
   const ACTION_WIDTH = 90;
@@ -207,7 +221,9 @@ const ThreadRow = React.memo(({ item, onDelete, onPinToggle, onOpen }: RowProps)
               <View className="flex-1 py-4 border-b border-slate-100 dark:border-zinc-800 h-full justify-center">
                 <View className="flex-row items-center justify-between">
                   <Text className="text-base font-bold text-black dark:text-white">{item.name}</Text>
-                  <Text className="text-xs text-slate-400 dark:text-zinc-500">{item.time}</Text>
+                  <Text className="text-xs text-slate-400 dark:text-zinc-500">
+                    {timeAgoLabel(item.lastAt, now)}
+                  </Text>
                 </View>
                 <View className="flex-row items-center justify-between mt-1">
                   <SmartPreview msg={item.lastMsg} />
@@ -232,13 +248,11 @@ export default function InboxScreen(): React.JSX.Element {
   const { socket, unreadThreads = {}, refreshUnread, markThreadRead } = useSocket();
 
   const { isAuthed, user, communities: myCommunities } = React.useContext(AuthContext) as any;
-  const myId = String(user?._id || "");
-  // Build a stable set of the user's community IDs (top-level hook, not inside effects)
-  const myCommunityIds = useMemo<Set<string>>(
-    () =>
-      new Set(
-        (myCommunities || []).map((c: any) => String(c?._id || c?.id || ""))
-      ),
+  const myId = String(user?._id || '');
+
+  // Stable set of my community IDs
+  const myCommunityIds = useMemo(
+    () => new Set((Array.isArray(myCommunities) ? myCommunities : []).map((c: any) => String(c?._id || c?.id || ''))),
     [myCommunities]
   );
 
@@ -252,7 +266,15 @@ export default function InboxScreen(): React.JSX.Element {
   const [archivedItem, setArchivedItem] = useState<Thread | null>(null);
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
   const scrollY = useSharedValue(0);
-  // Fallback chip for when no presence events have arrived yet
+
+  // "now" ticker to refresh time labels every 30s
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Fallback chip while presence warms up
   const selfChip = useMemo<ActiveUser>(() => {
     const name =
       (typeof user?.fullName === 'string' && user.fullName.split(' ')[0]) ||
@@ -263,7 +285,6 @@ export default function InboxScreen(): React.JSX.Element {
 
   /* ------------------- Fetchers ------------------- */
 
-  // 1) Existing DM thread list (kept as-is, will be empty until you build DMs)
   const fetchDMThreads = useCallback(async (signal?: AbortSignal) => {
     if (!isAuthed) return [] as DMThread[];
     try {
@@ -274,13 +295,14 @@ export default function InboxScreen(): React.JSX.Element {
         const type = last?.type && (last.type === 'photo' || last.type === 'voice') ? last.type : 'text';
         const content = type === 'text' ? String(last?.content ?? '') : (type === 'photo' ? 'Photo' : 'Voice Memo');
         const id = String(t.partnerId ?? t.id ?? '');
+        const lastAt = Number(new Date(t?.lastTimestamp ?? last?.createdAt ?? Date.now()).getTime());
         return {
           kind: 'dm',
           id,
           name: String(t.partnerName ?? t.fullName ?? 'Unknown'),
           avatar: t.avatarEmoji || t.avatar || '🗣️',
-          lastMsg: { type, content } as MessageContent,
-          time: shortTime(t?.lastTimestamp ?? last?.createdAt),
+          lastMsg: { type, content },
+          lastAt,
           unread: 0,
           online: !!t.online,
           typing: !!t.typing,
@@ -293,59 +315,46 @@ export default function InboxScreen(): React.JSX.Element {
     }
   }, [isAuthed]);
 
-  // 2) NEW: Community threads list
-  // 2) NEW: Community threads list
-  const fetchCommunityThreads = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!isAuthed) return [] as CommunityThread[];
+  const fetchCommunityThreads = useCallback(async (signal?: AbortSignal) => {
+    if (!isAuthed) return [] as CommunityThread[];
+    const mine = Array.isArray(myCommunities) ? myCommunities : [];
 
-      const mine = Array.isArray(myCommunities) ? myCommunities : [];
+    const results = await Promise.all(
+      mine.map(async (c: any) => {
+        const cId = String(c?._id || c?.id || '');
+        if (!cId) return null;
+        try {
+          const { data } = await api.get(`/api/messages/${cId}`, {
+            params: { limit: 1, order: 'desc' },
+            signal,
+          });
+          const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+          const last = list[0];
+          if (!last) return null;
 
-      const results = await Promise.all(
-        mine.map(async (c: any) => {
-          const cId = String(c?._id || c?.id || '');
-          if (!cId) return null;
+          const type = last?.type === 'photo' ? 'photo' : last?.type === 'voice' ? 'voice' : 'text';
+          const content = type === 'text' ? String(last?.content ?? '') : type === 'photo' ? 'Photo' : 'Voice Memo';
+          const lastAt = Number(new Date(last?.createdAt ?? last?.timestamp ?? Date.now()).getTime());
 
-          try {
-            // ✅ your working endpoint (shows in logs)
-            const { data } = await api.get(`/api/messages/${cId}`, {
-              params: { limit: 1, order: 'desc' },
-              signal,
-            });
+          const th: CommunityThread = {
+            kind: 'community',
+            id: cId,
+            name: String(c?.name || 'Community'),
+            avatar: '🏛️',
+            lastMsg: { type, content },
+            lastAt,
+            unread: 0,
+            pinned: !!c?.pinned,
+          };
+          return th;
+        } catch {
+          return null;
+        }
+      })
+    );
 
-            const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-            const last = list[0];
-            if (!last) return null; // ⬅️ skip communities with no messages
-
-            const type =
-              last?.type === 'photo' ? 'photo' :
-                last?.type === 'voice' ? 'voice' : 'text';
-
-            const content =
-              type === 'text' ? String(last?.content ?? '') :
-                type === 'photo' ? 'Photo' : 'Voice Memo';
-
-            const th: CommunityThread = {
-              kind: 'community',
-              id: cId,
-              name: String(c?.name || 'Community'),
-              avatar: '🏛️',
-              lastMsg: { type, content } as MessageContent, // ⬅️ SmartPreview will render type chips for non-text
-              time: shortTime(last?.createdAt),
-              unread: 0,
-              pinned: !!c?.pinned,
-            };
-            return th;
-          } catch {
-            return null;
-          }
-        })
-      );
-
-      return results.filter(Boolean) as CommunityThread[];
-    },
-    [isAuthed, myCommunities]
-  );
+    return results.filter(Boolean) as CommunityThread[];
+  }, [isAuthed, myCommunities]);
 
   // Initial load
   useEffect(() => {
@@ -363,7 +372,7 @@ export default function InboxScreen(): React.JSX.Element {
     return () => ac.abort();
   }, [fetchDMThreads, fetchCommunityThreads, refreshUnread]);
 
-  // Keep unread in sync for DMs (community unread can be added later)
+  // Keep unread in sync for DMs
   useEffect(() => {
     if (!threads.length) return;
     setThreads(prev =>
@@ -374,16 +383,15 @@ export default function InboxScreen(): React.JSX.Element {
     );
   }, [unreadThreads, threads.length]);
 
-  /* ------------------- Realtime ------------------- */
+  /* ------------------- Realtime listeners ------------------- */
 
   useEffect(() => {
     const s = socket;
     if (!s) return;
 
-    // community message arrived
     const onCommunityMsg = (payload: any) => {
       const cid = String(payload?.communityId || '');
-      if (!cid || !myCommunityIds.has(cid)) return; // ⬅️ only my memberships
+      if (!cid || !myCommunityIds.has(cid)) return;
 
       const newMsg: MessageContent =
         payload?.type === 'photo'
@@ -392,32 +400,31 @@ export default function InboxScreen(): React.JSX.Element {
             ? { type: 'voice', content: 'Voice Memo' }
             : { type: 'text', content: String(payload?.content ?? '') };
 
+      const lastAt = Number(new Date(payload?.createdAt ?? Date.now()).getTime());
+
       setThreads(prev => {
         const idx = prev.findIndex(t => t.kind === 'community' && t.id === cid);
         if (idx >= 0) {
           const copy = [...prev];
           const th = copy[idx] as CommunityThread;
-          copy[idx] = { ...th, lastMsg: newMsg, time: shortTime(payload?.createdAt) };
+          copy[idx] = { ...th, lastMsg: newMsg, lastAt };
           return resortByPinnedAndRecent(copy);
-        } else {
-          // If it wasn't visible yet (no history), add it now
-          const name = (myCommunities || []).find((c: any) => String(c?._id) === cid)?.name || 'Community';
-          const added: CommunityThread = {
-            kind: 'community',
-            id: cid,
-            name,
-            avatar: '🏛️',
-            lastMsg: newMsg,
-            time: shortTime(payload?.createdAt),
-            unread: 0,
-            pinned: false,
-          };
-          return resortByPinnedAndRecent([added, ...prev]);
         }
+        const name = (Array.isArray(myCommunities) ? myCommunities : []).find((c: any) => String(c?._id || c?.id) === cid)?.name || 'Community';
+        const added: CommunityThread = {
+          kind: 'community',
+          id: cid,
+          name,
+          avatar: '🏛️',
+          lastMsg: newMsg,
+          lastAt,
+          unread: 0,
+          pinned: false,
+        };
+        return resortByPinnedAndRecent([added, ...prev]);
       });
     };
 
-    // presence from server → convert to boolean
     const onPresence = (payload: any) => {
       const uid = String(payload?.userId || '');
       if (!uid) return;
@@ -429,7 +436,7 @@ export default function InboxScreen(): React.JSX.Element {
       setThreads(prev => prev.map(t =>
         t.kind === 'dm' && t.id === uid ? ({ ...(t as DMThread), online }) : t
       ));
-      // optional: active users reel (kept from your version)
+
       setActiveUsers(prev => {
         const exists = prev.some(u => u.id === uid);
         const user = { id: uid, name: 'User', avatar: '🟢' };
@@ -445,16 +452,94 @@ export default function InboxScreen(): React.JSX.Element {
       ));
     };
 
+    const onDirectMsg = (payload: any) => {
+      const from = String(payload?.from || payload?.senderId || '');
+      if (!from) return;
+
+      const content: MessageContent =
+        payload?.type === 'photo' ? { type: 'photo', content: 'Photo' } :
+        payload?.type === 'voice' ? { type: 'voice', content: 'Voice Memo' } :
+        { type: 'text', content: String(payload?.content ?? '') };
+
+      const lastAt = Number(new Date(payload?.createdAt ?? Date.now()).getTime());
+
+      setThreads(prev => {
+        const idx = prev.findIndex(t => t.kind === 'dm' && t.id === from);
+        if (idx >= 0) {
+          const copy = [...prev];
+          const th = copy[idx] as DMThread;
+          copy[idx] = { ...th, lastMsg: content, lastAt, unread: (th.unread || 0) + 1 };
+          return resortByPinnedAndRecent(copy);
+        }
+        const created: DMThread = {
+          kind: 'dm',
+          id: from,
+          name: String(payload?.fromName || 'Unknown'),
+          avatar: payload?.fromAvatar || '🗣️',
+          lastMsg: content,
+          lastAt,
+          unread: 1,
+          online: false,
+          pinned: false,
+        };
+        return resortByPinnedAndRecent([created, ...prev]);
+      });
+    };
+
     s.on?.('receive_message', onCommunityMsg);
     s.on?.('presence:update', onPresence);
     s.on?.('typing', onTyping);
+    s.on?.('dm:message', onDirectMsg);
 
     return () => {
       s.off?.('receive_message', onCommunityMsg);
       s.off?.('presence:update', onPresence);
       s.off?.('typing', onTyping);
+      s.off?.('dm:message', onDirectMsg);
     };
-  }, [socket, myCommunityIds, myCommunities]);
+  }, [socket, myCommunities, myCommunityIds]);
+
+  /* ------------------- Join rooms + bootstrap presence ------------------- */
+
+  useEffect(() => {
+    const s = socket;
+    if (!s) return;
+
+    const joinAll = () => {
+      const ids = Array.from(myCommunityIds);
+      if (!ids.length) return;
+
+      // Subscribe to all community rooms
+      s.emit?.('subscribe:communities', { ids });
+
+      // Mark yourself online
+      if (myId) s.emit?.('presence:online', { userId: myId });
+
+      // Ask for a presence snapshot so the rail fills immediately
+      s.emit?.('presence:list', {}, (snapshot?: Array<{ userId: string }>) => {
+        if (!Array.isArray(snapshot)) return;
+        setActiveUsers(prev => {
+          const base = new Map(prev.map(u => [u.id, u]));
+          snapshot.forEach(p => {
+            const id = String(p?.userId || '');
+            if (!id || id === myId) return;
+            if (!base.has(id)) base.set(id, { id, name: 'User', avatar: '🟢' });
+          });
+          return Array.from(base.values()).slice(0, 12);
+        });
+      });
+    };
+
+    // run now
+    joinAll();
+
+    // re-run on reconnect
+    const handleConnect = () => joinAll();
+    s.on?.('connect', handleConnect);
+    return () => {
+      s.off?.('connect', handleConnect);
+    };
+  }, [socket, myCommunityIds, myId]);
 
   /* ------------------- UX actions ------------------- */
 
@@ -486,12 +571,10 @@ export default function InboxScreen(): React.JSX.Element {
   const openDM = async (partnerId: string) => {
     await markThreadRead?.(partnerId);
     setThreads(cur => cur.map(t => (t.kind === 'dm' && t.id === partnerId ? { ...t, unread: 0 } : t)));
-    router.push('/(tabs)/dms'); // placeholder until you add DM thread route
+    router.push('/(tabs)/dms'); // placeholder
   };
 
   const openCommunity = (communityId: string) => {
-    // TODO: route to your community chat screen
-    // Example if you have /community/[id] registered:
     router.push({ pathname: '/community/[id]', params: { id: communityId } });
   };
 
@@ -524,7 +607,7 @@ export default function InboxScreen(): React.JSX.Element {
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
-  // Sections + Filters (now split by kind)
+  // Sections + Filters
   const sections = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
     let filtered = threads.filter((t) => t.name.toLowerCase().includes(q));
@@ -540,7 +623,7 @@ export default function InboxScreen(): React.JSX.Element {
     return out;
   }, [threads, debouncedQuery, activeFilter]);
 
-  /* ------------------- Header animation (unchanged) ------------------- */
+  /* ------------------- Header animation ------------------- */
 
   const scrollHandler = useAnimatedScrollHandler((event) => { scrollY.value = event.contentOffset.y; });
   const animatedHeaderStyle = useAnimatedStyle(() => ({ transform: [{ translateY: interpolate(scrollY.value, [0, 80], [0, -80], 'clamp') }] }));
@@ -570,6 +653,7 @@ export default function InboxScreen(): React.JSX.Element {
             onDelete={handleArchive}
             onPinToggle={handlePinToggle}
             onOpen={handleOpenThread}
+            now={now}
           />
         )}
         onScroll={scrollHandler}
@@ -591,7 +675,7 @@ export default function InboxScreen(): React.JSX.Element {
         }
       />
 
-      {/* Frosted header (unchanged UI) */}
+      {/* Frosted header */}
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }, animatedHeaderStyle]} className="px-4 pb-2">
         <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
         <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }, animatedHeaderBorderStyle]} />
@@ -604,24 +688,19 @@ export default function InboxScreen(): React.JSX.Element {
           </View>
         </Animated.View>
 
-        {/* Online reel (kept) */}
+        {/* Online reel */}
         <Animated.View style={animatedHeaderActiveRail}>
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            // was: data={activeUsers}
             data={activeUsers.length ? activeUsers : [selfChip]}
             keyExtractor={(item: ActiveUser) => item.id}
             renderItem={({ item }: { item: ActiveUser }) => (
               <View className="items-center">
-                {/* small avatar */}
                 <View className="w-12 h-12 rounded-full bg-slate-200/80 dark:bg-zinc-800/80 items-center justify-center">
                   <Text className="text-2xl">{item.avatar}</Text>
                 </View>
-                <Text
-                  className="text-[10px] mt-1 text-slate-500 dark:text-zinc-400"
-                  numberOfLines={1}
-                >
+                <Text className="text-[10px] mt-1 text-slate-500 dark:text-zinc-400" numberOfLines={1}>
                   {item.name}
                 </Text>
               </View>
@@ -630,7 +709,7 @@ export default function InboxScreen(): React.JSX.Element {
           />
         </Animated.View>
 
-        {/* Search + Filters (kept) */}
+        {/* Search + Filters */}
         <View className="flex-row items-center gap-2 rounded-xl bg-slate-200/80 dark:bg-zinc-800/80 px-3 mt-2">
           <IconSymbol name="magnifyingglass" size={20} color={isDark ? '#9ca3af' : '#64748b'} />
           <TextInput
@@ -681,36 +760,11 @@ export default function InboxScreen(): React.JSX.Element {
   );
 }
 
-/* ───────────────── Helpers ───────────────── */
-function shortTime(dateLike?: string | number) {
-  if (!dateLike) return 'now';
-  try {
-    const d = new Date(dateLike);
-    const diff = Date.now() - d.getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1) return 'now';
-    if (m < 60) return `${m}m`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h`;
-    const days = Math.floor(h / 24);
-    if (days === 1) return 'yesterday';
-    return `${days}d`;
-  } catch {
-    return 'now';
-  }
-}
-
+/* ───────────────── Sorting helper ───────────────── */
 function resortByPinnedAndRecent(list: Thread[]) {
-  const score = (t: string) => {
-    if (t === 'now') return 1e12;
-    if (t === 'yesterday') return 1e9;
-    const m = /(\d+)([mh])/.exec(t);
-    if (!m) return 0;
-    const n = parseInt(m[1], 10);
-    return m[2] === 'h' ? 60 - n : 1000 - n;
-  };
   return [...list].sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-    return score(a.time) > score(b.time) ? -1 : 1;
+    // newer first
+    return (b.lastAt || 0) - (a.lastAt || 0);
   });
 }

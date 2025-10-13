@@ -1,5 +1,4 @@
-//CommunityTalkMobile/app/community/[id].tsx
-
+// CommunityTalkMobile/app/community/[id].tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -17,6 +16,8 @@ import {
   ActionSheetIOS,
   LayoutAnimation,
   UIManager,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -62,7 +63,6 @@ const useTheme = () => {
   };
 };
 
-const RADIUS = 16;
 const SCREEN_W = Dimensions.get("window").width;
 
 /* ───────── Types ───────── */
@@ -129,7 +129,7 @@ const initials = (name?: string, fallback?: string) => {
 const hueFrom = (s: string) => {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-  return `hsl(${h} 70% ${45}%)`;
+  return `hsl(${h} 70% 45%)`;
 };
 
 /* ───────── Screen ───────── */
@@ -233,13 +233,10 @@ export default function CommunityScreen() {
     if (!socket || !isMember || !communityId) return;
 
     const onStatusUpdate = (payload: any) => {
-      // Update member status in real-time
       if (payload?.userId && payload?.status) {
         setMembers((prev) =>
           prev.map((m) =>
-            String(m.person) === String(payload.userId)
-              ? { ...m, status: payload.status }
-              : m
+            String(m.person) === String(payload.userId) ? { ...m, status: payload.status } : m
           )
         );
       }
@@ -261,6 +258,50 @@ export default function CommunityScreen() {
   const [chatHasMore, setChatHasMore] = useState(true);
   const fetchingMoreChatRef = useRef(false);
 
+  // --- Chat list refs & helpers for auto-scroll and stable pagination ---
+  const chatListRef = useRef<FlatList<ChatMessage>>(null);
+  const contentHeightRef = useRef(0);
+  const prevContentHeightRef = useRef(0);
+  const loadingOlderRef = useRef(false);
+  const initialLoadedRef = useRef(false);
+  const isAtBottomRef = useRef(true); // assume bottom on first paint
+  const AUTO_SCROLL_THRESHOLD = 120; // px
+
+  const scrollToBottom = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      chatListRef.current?.scrollToEnd({ animated });
+      isAtBottomRef.current = true;
+    });
+  }, []);
+
+  const handleChatScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    isAtBottomRef.current = distanceFromBottom < AUTO_SCROLL_THRESHOLD;
+  };
+
+  const handleChatContentSizeChange = (_w: number, h: number) => {
+    // When loading older messages, keep visual position stable
+    if (loadingOlderRef.current) {
+      const delta = h - prevContentHeightRef.current;
+      if (delta > 0) {
+        chatListRef.current?.scrollToOffset({
+          offset: delta,
+          animated: false,
+        });
+      }
+      loadingOlderRef.current = false;
+    } else if (!initialLoadedRef.current && !chatLoading) {
+      // First load after join: jump to bottom
+      initialLoadedRef.current = true;
+      scrollToBottom(false);
+    } else if (isAtBottomRef.current) {
+      // If user is near bottom and content grows (new msg), keep at bottom
+      scrollToBottom(true);
+    }
+    contentHeightRef.current = h;
+  };
+
   const fetchInitialChat = useCallback(async () => {
     if (!communityId || !isMember) return;
     setChatLoading(true);
@@ -270,6 +311,8 @@ export default function CommunityScreen() {
       const items: ChatMessage[] = Array.isArray(data) ? data : [];
       setMessages(items);
       setChatHasMore(items.length >= 50);
+      // mark we need to auto-scroll on first paint
+      initialLoadedRef.current = false;
     } catch (e: any) {
       setChatError(e?.response?.data?.error || "Failed to load messages");
     } finally {
@@ -277,6 +320,7 @@ export default function CommunityScreen() {
     }
   }, [communityId, isMember]);
 
+  // When membership flips to true, load chat and join socket room
   useEffect(() => {
     if (isMember) fetchInitialChat();
     else {
@@ -290,6 +334,9 @@ export default function CommunityScreen() {
     if (!communityId || fetchingMoreChatRef.current || !chatHasMore || !messages.length) return;
     try {
       fetchingMoreChatRef.current = true;
+      loadingOlderRef.current = true;
+      prevContentHeightRef.current = contentHeightRef.current;
+
       const oldest = messages[0];
       const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
       const { data } = await api.get(`/api/messages/${communityId}?limit=50&before=${before}`);
@@ -324,6 +371,8 @@ export default function CommunityScreen() {
     setMessages((prev) => [...prev, optimistic]);
     setInput("");
     setInputHeight(44);
+    // ensure we scroll on send
+    requestAnimationFrame(() => scrollToBottom(true));
 
     try {
       const { data } = await api.post(`/api/messages`, { content: text, communityId, clientMessageId });
@@ -352,11 +401,14 @@ export default function CommunityScreen() {
     } finally {
       setSending(false);
     }
-  }, [input, sending, communityId, user?._id, user?.fullName]);
+  }, [input, sending, communityId, user?._id, user?.fullName, scrollToBottom]);
 
-  /* Realtime */
+  /* Socket room join/leave + realtime handlers */
   useEffect(() => {
     if (!socket || !communityId || !isMember) return;
+
+    // Join room for this community
+    socket.emit?.("room:join", { room: `community:${communityId}` });
 
     const onNew = (payload: any) => {
       if (String(payload?.communityId) !== communityId) return;
@@ -374,11 +426,18 @@ export default function CommunityScreen() {
       } else {
         setMessages((prev) => [...prev, payload]);
       }
+
+      // Auto-scroll only if user is near bottom (or if it's our own message, which we already scrolled on send)
+      if (isAtBottomRef.current) {
+        requestAnimationFrame(() => scrollToBottom(true));
+      }
     };
+
     const onEdited = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
       setMessages((prev) => prev.map((m) => (String(m._id) === String(p._id) ? { ...m, ...p } : m)));
     };
+
     const onDeleted = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
       setMessages((prev) =>
@@ -393,12 +452,14 @@ export default function CommunityScreen() {
     socket.on?.("receive_message", onNew);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
+
     return () => {
       socket.off?.("receive_message", onNew);
       socket.off?.("message:updated", onEdited);
       socket.off?.("message:deleted", onDeleted);
+      socket.emit?.("room:leave", { room: `community:${communityId}` });
     };
-  }, [socket, communityId, isMember, socketConnected]);
+  }, [socket, communityId, isMember, socketConnected, scrollToBottom]);
 
   /* Join / Leave */
   const join = async () => {
@@ -406,6 +467,8 @@ export default function CommunityScreen() {
       setBusy(true);
       await api.post(`/api/communities/${communityId}/join`);
       if (Array.isArray(user?.communityIds)) user.communityIds.push(communityId);
+
+      // Immediately (re)load members and chat, then scroll to bottom on first paint
       await loadCommunity();
       await fetchMembers({ reset: true });
       await fetchInitialChat();
@@ -666,7 +729,6 @@ export default function CommunityScreen() {
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View>
             <Avatar name={item.fullName} email={item.email} />
-            {/* Online indicator dot */}
             {isOnline && (
               <View
                 style={{
@@ -978,9 +1040,13 @@ export default function CommunityScreen() {
                     </View>
                   ) : (
                     <FlatList
+                      ref={chatListRef}
                       data={messages}
                       keyExtractor={(m) => String(m._id)}
                       renderItem={renderMessage}
+                      onContentSizeChange={handleChatContentSizeChange}
+                      onScroll={handleChatScroll}
+                      scrollEventThrottle={16}
                       ListHeaderComponent={
                         chatHasMore ? (
                           <TouchableOpacity

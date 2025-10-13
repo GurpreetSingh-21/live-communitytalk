@@ -1,4 +1,4 @@
-//CommunityTalkMobile/app/thread/[id].tsx
+// CommunityTalkMobile/app/thread/[id].tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -11,7 +11,6 @@ import {
   Platform,
   LayoutAnimation,
   UIManager,
-  Animated,
 } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,13 +20,14 @@ import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
 
+/* ───────────────── Types ───────────────── */
 type ChatMessage = {
   _id: string;
   sender: string;
   senderId: string;
   content: string;
   timestamp: string | Date;
-  communityId: string;
+  communityId: string; // if threads have their own id on backend, this can be threadId instead
   status?: "sent" | "edited" | "deleted";
   isDeleted?: boolean;
   clientMessageId?: string;
@@ -37,9 +37,16 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
+/* ───────────────── Helpers ───────────────── */
 const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
+const byAscTime = (a: ChatMessage, b: ChatMessage) =>
+  new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+
 const isSameDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  a.getFullYear() === b.getFullYear() &&
+  a.getMonth() === b.getMonth() &&
+  a.getDate() === b.getDate();
+
 const dayLabel = (d: Date) => {
   const today = new Date();
   const y = new Date();
@@ -53,11 +60,16 @@ const dayLabel = (d: Date) => {
     year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
   }).format(d);
 };
+
 const showGap = (prev?: ChatMessage, cur?: ChatMessage) => {
   if (!prev || !cur) return true;
-  return Math.abs(asDate(cur.timestamp).getTime() - asDate(prev.timestamp).getTime()) > 15 * 60 * 1000;
+  return (
+    Math.abs(asDate(cur.timestamp).getTime() - asDate(prev.timestamp).getTime()) >
+    15 * 60 * 1000
+  );
 };
 
+/* ───────────────── Theme Hook (keeps your exact colors) ───────────────── */
 const useTheme = () => {
   const isDark = useColorScheme() === "dark";
   return {
@@ -81,11 +93,12 @@ const useTheme = () => {
   };
 };
 
+/* ───────────────── Screen ───────────────── */
 export default function ThreadScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const communityId = String(id || "");
+  const communityId = String(id || ""); // if this is actually a threadId in your API, rename consistently
   const { isDark, colors } = useTheme();
-  const { socket } = useSocket();
+  const { socket, socketConnected } = useSocket() as any;
   const { user } = React.useContext(AuthContext) as any;
 
   const [loading, setLoading] = useState(true);
@@ -97,9 +110,35 @@ export default function ThreadScreen() {
   const fetchingMoreRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
 
+  // track newest timestamp to fetch "newer" on reconnect/join
+  const newestTsRef = useRef<string | null>(null);
+
   const headerTitle = useMemo(() => "Thread", []);
 
-  /* initial */
+  const scrollToEnd = useCallback(() => {
+    requestAnimationFrame(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    });
+  }, []);
+
+  const upsertManySorted = useCallback((incoming: ChatMessage[]) => {
+    if (!incoming?.length) return;
+    setMessages((prev) => {
+      const map = new Map<string, ChatMessage>();
+      for (const m of prev) map.set(String(m._id || m.clientMessageId), m);
+      for (const m of incoming) {
+        const k = String(m._id || m.clientMessageId);
+        const prevM = map.get(k);
+        map.set(k, prevM ? { ...prevM, ...m } : m);
+      }
+      const next = Array.from(map.values()).sort(byAscTime);
+      const last = next[next.length - 1];
+      newestTsRef.current = last ? asDate(last.timestamp).toISOString() : newestTsRef.current;
+      return next;
+    });
+  }, []);
+
+  /* ─────────── Fetch initial ─────────── */
   const fetchInitial = useCallback(async () => {
     if (!communityId) return;
     setLoading(true);
@@ -107,19 +146,24 @@ export default function ThreadScreen() {
     try {
       const { data } = await api.get(`/api/messages/${communityId}?limit=50`);
       const items: ChatMessage[] = Array.isArray(data) ? data : [];
+      items.sort(byAscTime);
       setMessages(items);
       setHasMore(items.length >= 50);
+      const last = items[items.length - 1];
+      newestTsRef.current = last ? asDate(last.timestamp).toISOString() : null;
+      scrollToEnd();
     } catch (e: any) {
       setError(e?.response?.data?.error || "Failed to load messages");
     } finally {
       setLoading(false);
     }
-  }, [communityId]);
+  }, [communityId, scrollToEnd]);
+
   useEffect(() => {
     fetchInitial();
   }, [fetchInitial]);
 
-  /* older */
+  /* ─────────── Fetch older (preserve your "Load earlier messages") ─────────── */
   const fetchOlder = useCallback(async () => {
     if (!communityId || fetchingMoreRef.current || !hasMore || !messages.length) return;
     try {
@@ -128,6 +172,7 @@ export default function ThreadScreen() {
       const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
       const { data } = await api.get(`/api/messages/${communityId}?limit=50&before=${before}`);
       const older: ChatMessage[] = Array.isArray(data) ? data : [];
+      older.sort(byAscTime);
       setMessages((prev) => [...older, ...prev]);
       setHasMore(older.length >= 50);
     } finally {
@@ -135,7 +180,26 @@ export default function ThreadScreen() {
     }
   }, [communityId, hasMore, messages]);
 
-  /* send */
+  /* ─────────── Fetch newer (used on join/reconnect) ─────────── */
+  const fetchNewer = useCallback(async () => {
+    if (!communityId) return;
+    const since = newestTsRef.current;
+    if (!since) return;
+    try {
+      const after = encodeURIComponent(since);
+      const { data } = await api.get(`/api/messages/${communityId}?after=${after}&limit=100`);
+      const newer: ChatMessage[] = Array.isArray(data) ? data : [];
+      if (newer.length) {
+        upsertManySorted(newer);
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        scrollToEnd();
+      }
+    } catch {
+      // swallow — it's a best-effort catch-up
+    }
+  }, [communityId, upsertManySorted, scrollToEnd]);
+
+  /* ─────────── Send message (optimistic) ─────────── */
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || sending || !communityId) return;
@@ -156,15 +220,30 @@ export default function ThreadScreen() {
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages((prev) => [...prev, optimistic]);
+    newestTsRef.current = asDate(optimistic.timestamp).toISOString();
     setInput("");
+    scrollToEnd();
 
     try {
-      const { data } = await api.post(`/api/messages`, { content: text, communityId, clientMessageId });
+      const { data } = await api.post(`/api/messages`, {
+        content: text,
+        communityId,
+        clientMessageId,
+      });
       setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.clientMessageId === clientMessageId || m._id === clientMessageId);
+        const idx = prev.findIndex(
+          (m) => m.clientMessageId === clientMessageId || m._id === clientMessageId
+        );
         if (idx === -1) return prev;
         const next = [...prev];
-        next[idx] = { ...next[idx], ...data, _id: String(data._id), timestamp: data.timestamp || next[idx].timestamp };
+        next[idx] = {
+          ...next[idx],
+          ...data,
+          _id: String(data._id),
+          timestamp: data.timestamp || next[idx].timestamp,
+        };
+        const last = next[next.length - 1];
+        newestTsRef.current = last ? asDate(last.timestamp).toISOString() : newestTsRef.current;
         return next;
       });
     } catch (e: any) {
@@ -179,30 +258,46 @@ export default function ThreadScreen() {
     } finally {
       setSending(false);
     }
-  }, [input, sending, communityId, user?._id, user?.fullName]);
+  }, [input, sending, communityId, user?._id, user?.fullName, scrollToEnd]);
 
-  /* realtime */
+  /* ─────────── Socket: join & rejoin room ───────────
+     NOTE: If your backend has thread-specific rooms, switch the event name to e.g. "subscribe:threads". */
   useEffect(() => {
     if (!socket || !communityId) return;
+
+    const join = () => socket.emit?.("subscribe:communities", { ids: [communityId] });
+    const leave = () => socket.emit?.("unsubscribe:communities", { ids: [communityId] });
+
+    join();
+    const onConnect = () => {
+      join();
+      // after reconnect, catch up any missed messages
+      fetchNewer();
+    };
+    socket.on?.("connect", onConnect);
+
+    return () => {
+      socket.off?.("connect", onConnect);
+      leave();
+    };
+  }, [socket, socketConnected, communityId, fetchNewer]);
+
+  /* ─────────── Socket: realtime updates ─────────── */
+  useEffect(() => {
+    if (!socket || !communityId) return;
+
     const onNew = (payload: any) => {
       if (String(payload?.communityId) !== communityId) return;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      if (payload?.clientMessageId) {
-        setMessages((prev) => {
-          const i = prev.findIndex((m) => m.clientMessageId === payload.clientMessageId || m._id === payload.clientMessageId);
-          if (i === -1) return [...prev, payload];
-          const next = [...prev];
-          next[i] = { ...next[i], ...payload, _id: String(payload._id) };
-          return next;
-        });
-      } else {
-        setMessages((prev) => [...prev, payload]);
-      }
+      upsertManySorted([payload]);
+      scrollToEnd();
     };
+
     const onEdited = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
-      setMessages((prev) => prev.map((m) => (String(m._id) === String(p._id) ? { ...m, ...p } : m)));
+      upsertManySorted([p]);
     };
+
     const onDeleted = (p: any) => {
       if (String(p?.communityId) !== communityId) return;
       setMessages((prev) =>
@@ -213,17 +308,19 @@ export default function ThreadScreen() {
         )
       );
     };
+
     socket.on?.("receive_message", onNew);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
+
     return () => {
       socket.off?.("receive_message", onNew);
       socket.off?.("message:updated", onEdited);
       socket.off?.("message:deleted", onDeleted);
     };
-  }, [socket, communityId]);
+  }, [socket, communityId, upsertManySorted, scrollToEnd]);
 
-  /* render row with date dividers + modern bubbles */
+  /* ─────────── Row (keeps your exact modern UI) ─────────── */
   const renderItem = ({ item, index }: { item: ChatMessage; index: number }) => {
     const myIds = [String(user?._id || ""), "me"];
     const mine = myIds.includes(String(item.senderId || ""));
@@ -254,16 +351,28 @@ export default function ThreadScreen() {
                 shadowRadius: 2,
               }}
             >
-              <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}>{dayLabel(cur)}</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}>
+                {dayLabel(cur)}
+              </Text>
             </View>
           </View>
         )}
+
         <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
           {!mine && isFirstOfGroup && (
-            <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 4, marginLeft: 12, fontWeight: "500" }}>
+            <Text
+              style={{
+                color: colors.textSecondary,
+                fontSize: 12,
+                marginBottom: 4,
+                marginLeft: 12,
+                fontWeight: "500",
+              }}
+            >
               {item.sender}
             </Text>
           )}
+
           <View style={{ maxWidth: "75%" }}>
             {mine ? (
               <LinearGradient
@@ -287,7 +396,9 @@ export default function ThreadScreen() {
                     Message deleted
                   </Text>
                 ) : (
-                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
+                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>
+                    {item.content}
+                  </Text>
                 )}
               </LinearGradient>
             ) : (
@@ -310,7 +421,9 @@ export default function ThreadScreen() {
                     Message deleted
                   </Text>
                 ) : (
-                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
+                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>
+                    {item.content}
+                  </Text>
                 )}
               </View>
             )}
@@ -319,8 +432,10 @@ export default function ThreadScreen() {
       </View>
     );
   };
+
   const keyExtractor = (m: ChatMessage) => String(m._id);
 
+  /* ─────────── UI ─────────── */
   return (
     <KeyboardAvoidingView
       className="flex-1"
@@ -329,7 +444,7 @@ export default function ThreadScreen() {
     >
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Modern header with blur effect */}
+      {/* Header (same look) */}
       <View
         style={{
           paddingHorizontal: 20,
@@ -341,11 +456,9 @@ export default function ThreadScreen() {
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700", letterSpacing: -0.5 }}>
-              {headerTitle}
-            </Text>
-          </View>
+          <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700", letterSpacing: -0.5 }}>
+            {headerTitle}
+          </Text>
           <TouchableOpacity
             onPress={() => router.back()}
             style={{
@@ -366,6 +479,7 @@ export default function ThreadScreen() {
         </View>
       </View>
 
+      {/* Error banner */}
       {!!error && (
         <View
           style={{
@@ -383,6 +497,7 @@ export default function ThreadScreen() {
         </View>
       )}
 
+      {/* Messages */}
       <View className="flex-1" style={{ marginTop: 8 }}>
         {loading ? (
           <View className="flex-1 items-center justify-center">
@@ -441,13 +556,14 @@ export default function ThreadScreen() {
                 </View>
               )
             }
+            onContentSizeChange={() => scrollToEnd()}
             contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}
             showsVerticalScrollIndicator={false}
           />
         )}
       </View>
 
-      {/* Modern Composer with gradient send button */}
+      {/* Composer (same look) */}
       <View
         style={{
           paddingHorizontal: 16,
