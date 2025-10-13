@@ -383,6 +383,17 @@ export default function InboxScreen(): React.JSX.Element {
     );
   }, [unreadThreads, threads.length]);
 
+
+  /* ------------------- Helpers: resolve names for presence ------------------- */
+  const nameForId = useCallback(
+    (uid: string) => {
+      // Try to find a DM thread for that user to get a readable name
+      const dm = threads.find(t => t.kind === 'dm' && t.id === uid) as DMThread | undefined;
+      return dm?.name || 'User';
+    },
+    [threads]
+  );
+
   /* ------------------- Realtime listeners ------------------- */
 
   useEffect(() => {
@@ -427,20 +438,27 @@ export default function InboxScreen(): React.JSX.Element {
 
     const onPresence = (payload: any) => {
       const uid = String(payload?.userId || '');
-      if (!uid) return;
+      if (!uid || uid === myId) return;
+
       const online =
         typeof payload?.online === 'boolean'
           ? payload.online
           : String(payload?.status || '').toLowerCase() === 'online';
 
-      setThreads(prev => prev.map(t =>
-        t.kind === 'dm' && t.id === uid ? ({ ...(t as DMThread), online }) : t
-      ));
+      setThreads(prev =>
+        prev.map(t =>
+          t.kind === 'dm' && t.id === uid ? ({ ...(t as DMThread), online }) : t
+        )
+      );
 
       setActiveUsers(prev => {
-        const exists = prev.some(u => u.id === uid);
-        const user = { id: uid, name: 'User', avatar: '🟢' };
-        return online ? (exists ? prev : [user, ...prev].slice(0, 12)) : prev.filter(u => u.id !== uid);
+        const map = new Map(prev.map(u => [u.id, u]));
+        if (online) {
+          map.set(uid, { id: uid, name: nameForId(uid), avatar: '🟢' });
+        } else {
+          map.delete(uid);
+        }
+        return Array.from(map.values()).slice(0, 12);
       });
     };
 
@@ -458,8 +476,8 @@ export default function InboxScreen(): React.JSX.Element {
 
       const content: MessageContent =
         payload?.type === 'photo' ? { type: 'photo', content: 'Photo' } :
-        payload?.type === 'voice' ? { type: 'voice', content: 'Voice Memo' } :
-        { type: 'text', content: String(payload?.content ?? '') };
+          payload?.type === 'voice' ? { type: 'voice', content: 'Voice Memo' } :
+            { type: 'text', content: String(payload?.content ?? '') };
 
       const lastAt = Number(new Date(payload?.createdAt ?? Date.now()).getTime());
 
@@ -518,14 +536,14 @@ export default function InboxScreen(): React.JSX.Element {
       // Ask for a presence snapshot so the rail fills immediately
       s.emit?.('presence:list', {}, (snapshot?: Array<{ userId: string }>) => {
         if (!Array.isArray(snapshot)) return;
-        setActiveUsers(prev => {
-          const base = new Map(prev.map(u => [u.id, u]));
+        setActiveUsers(() => {
+          const map = new Map<string, ActiveUser>();
           snapshot.forEach(p => {
             const id = String(p?.userId || '');
-            if (!id || id === myId) return;
-            if (!base.has(id)) base.set(id, { id, name: 'User', avatar: '🟢' });
+            if (!id || id === myId) return; // exclude self
+            map.set(id, { id, name: nameForId(id), avatar: '🟢' });
           });
-          return Array.from(base.values()).slice(0, 12);
+          return Array.from(map.values()).slice(0, 12);
         });
       });
     };
@@ -689,25 +707,27 @@ export default function InboxScreen(): React.JSX.Element {
         </Animated.View>
 
         {/* Online reel */}
-        <Animated.View style={animatedHeaderActiveRail}>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={activeUsers.length ? activeUsers : [selfChip]}
-            keyExtractor={(item: ActiveUser) => item.id}
-            renderItem={({ item }: { item: ActiveUser }) => (
-              <View className="items-center">
-                <View className="w-12 h-12 rounded-full bg-slate-200/80 dark:bg-zinc-800/80 items-center justify-center">
-                  <Text className="text-2xl">{item.avatar}</Text>
+        {activeUsers.length > 0 && (
+          <Animated.View style={animatedHeaderActiveRail}>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={activeUsers}
+              keyExtractor={(item: ActiveUser) => item.id}
+              renderItem={({ item }: { item: ActiveUser }) => (
+                <View className="items-center">
+                  <View className="w-12 h-12 rounded-full bg-slate-200/80 dark:bg-zinc-800/80 items-center justify-center">
+                    <Text className="text-2xl">{item.avatar}</Text>
+                  </View>
+                  <Text className="text-[10px] mt-1 text-slate-500 dark:text-zinc-400" numberOfLines={1}>
+                    {item.name}
+                  </Text>
                 </View>
-                <Text className="text-[10px] mt-1 text-slate-500 dark:text-zinc-400" numberOfLines={1}>
-                  {item.name}
-                </Text>
-              </View>
-            )}
-            contentContainerStyle={{ gap: 10, paddingVertical: 6, paddingLeft: 4 }}
-          />
-        </Animated.View>
+              )}
+              contentContainerStyle={{ gap: 10, paddingVertical: 6, paddingLeft: 4 }}
+            />
+          </Animated.View>
+        )}
 
         {/* Search + Filters */}
         <View className="flex-row items-center gap-2 rounded-xl bg-slate-200/80 dark:bg-zinc-800/80 px-3 mt-2">
