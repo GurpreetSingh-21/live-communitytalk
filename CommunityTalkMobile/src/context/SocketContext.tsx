@@ -1,4 +1,3 @@
-// CommunityTalkMobile/src/context/SocketContext.tsx
 import React, { createContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { connectSocket, disconnectSocket, getSocket } from "../api/socket";
@@ -31,17 +30,18 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
 
   const [ready, setReady] = useState(false);
   const [unreadThreads, setUnreadThreads] = useState<Record<string, number>>({});
-
   const userIdRef = useRef<string | null>(null);
-  userIdRef.current = user?._id ? String(user._id) : null;
-
   const appState = useRef<AppStateStatus>(AppState.currentState);
 
+  userIdRef.current = user?._id ? String(user._id) : null;
+
+  /* ----------------------- Derived count ----------------------- */
   const unreadDMs = useMemo(
     () => Object.values(unreadThreads).reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0),
     [unreadThreads]
   );
 
+  /* ----------------------- API Helpers ----------------------- */
   const refreshUnread = React.useCallback(async () => {
     if (!isAuthed) {
       setUnreadThreads({});
@@ -57,8 +57,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
         if (pid) next[pid] = cnt;
       }
       setUnreadThreads(next);
-    } catch (error: any) {
-      // On 401 or network errors, just clear local state and do NOT rethrow
+    } catch {
       setUnreadThreads({});
     }
   }, [isAuthed]);
@@ -81,107 +80,98 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     [isAuthed]
   );
 
+  /* ----------------------- Socket Lifecycle ----------------------- */
   useEffect(() => {
     let mounted = true;
     let s: SocketRef = null;
-    let cleanup: (() => void) | undefined;
 
     const attach = async () => {
-      try {
-        if (!isAuthed) {
-          setReady(false);
-          setUnreadThreads({});
-          disconnectSocket();
-          return;
-        }
-
-        // 1) connect socket (token must already be in storage)
-        await connectSocket();
-        if (!mounted) return;
-
-        s = getSocket();
-
-        // 2) join the events room based on user scope
-        const college = user?.collegeSlug ?? user?.collegeId ?? null;
-        const faith = user?.religionKey ?? user?.faithId ?? null;
-        const eventsRoom =
-          typeof college === "string" && typeof faith === "string"
-            ? `college:${college}:faith:${faith}`
-            : null;
-
-        if (eventsRoom) {
-          // centralize the join here so any screen benefits from realtime events
-          s?.emit?.("events:join", { room: eventsRoom });
-        }
-
-        // 3) hydrate unread counts and hook basic socket events
-        await refreshUnread();
-
-        const onRoomsInit = () => {
-          // Re-hydrate unread on room init
-          refreshUnread();
-          // Re-join events room on server-driven rejoin scenarios
-          if (eventsRoom) s?.emit?.("events:join", { room: eventsRoom });
-        };
-
-        const onReceiveDM = (payload: any) => {
-          const myId = userIdRef.current;
-          const to = String(payload?.to || "");
-          const from = String(payload?.from || "");
-          if (myId && to && from && myId === to) {
-            setUnreadThreads((prev) => ({
-              ...prev,
-              [from]: (prev[from] || 0) + 1,
-            }));
-          }
-        };
-
-        s?.on?.("rooms:init", onRoomsInit);
-        s?.on?.("receive_direct_message", onReceiveDM);
-
-        // (Optional) you can listen to event notifications here if you want global toasts:
-        // s?.on?.("events:created", () => {});
-        // s?.on?.("events:updated", () => {});
-        // s?.on?.("events:deleted", () => {});
-        // s?.on?.("events:rsvpCount", () => {});
-
-        setReady(true);
-
-        cleanup = () => {
-          if (eventsRoom) s?.emit?.("events:leave", { room: eventsRoom });
-          s?.off?.("rooms:init", onRoomsInit);
-          s?.off?.("receive_direct_message", onReceiveDM);
-        };
-      } catch (error) {
-        console.error("[Socket] Connection failed:", error);
-        if (mounted) {
-          setReady(false);
-          disconnectSocket();
-        }
+      if (!isAuthed) {
+        setReady(false);
+        setUnreadThreads({});
+        disconnectSocket();
+        return;
       }
+
+      await connectSocket();
+      if (!mounted) return;
+      s = getSocket();
+      if (!s) return;
+
+      const college = user?.collegeSlug ?? user?.collegeId ?? null;
+      const faith = user?.religionKey ?? user?.faithId ?? null;
+      const eventsRoom =
+        typeof college === "string" && typeof faith === "string"
+          ? `college:${college}:faith:${faith}`
+          : null;
+
+      const joinRooms = () => {
+        if (eventsRoom) s.emit?.("events:join", { room: eventsRoom });
+        console.log("🏫 Joined room:", eventsRoom);
+      };
+
+      s.on?.("connect", () => {
+        console.log("🔌 Socket connected:", s?.id);
+        joinRooms();
+        refreshUnread();
+      });
+
+      s.on?.("disconnect", () => console.log("⚠️ Socket disconnected"));
+
+      /* -------------------- Event Handlers -------------------- */
+      const onReceiveDM = (payload: any) => {
+        console.log("📩 [SocketContext] DM:", payload);
+        const myId = userIdRef.current;
+        const to = String(payload?.to || "");
+        const from = String(payload?.from || "");
+        if (myId && to && from && myId === to) {
+          setUnreadThreads((prev) => ({
+            ...prev,
+            [from]: (prev[from] || 0) + 1,
+          }));
+        }
+      };
+
+      const onCommunityMessage = (payload: any) => {
+        console.log("💬 [SocketContext] receive_message:", payload);
+      };
+
+      const onCommunityNew = (data: any) => {
+        console.log("🆕 [SocketContext] message:new:", data);
+      };
+
+      /* Register Events */
+      s.on?.("receive_direct_message", onReceiveDM);
+      s.on?.("dm:message", onReceiveDM);
+      s.on?.("receive_message", onCommunityMessage);
+      s.on?.("message:new", onCommunityNew);
+
+      await refreshUnread();
+      joinRooms();
+      setReady(true);
+
+      return () => {
+        s.off?.("receive_direct_message", onReceiveDM);
+        s.off?.("dm:message", onReceiveDM);
+        s.off?.("receive_message", onCommunityMessage);
+        s.off?.("message:new", onCommunityNew);
+      };
     };
 
     attach();
 
     return () => {
       mounted = false;
-      cleanup?.();
-      s?.off?.("rooms:init");
-      s?.off?.("receive_direct_message");
-      s?.off?.("receive_message");
-      s?.off?.("message:ack");
-      s?.off?.("message:updated");
-      s?.off?.("message:deleted");
-      s?.off?.("dm_read");
-      s?.off?.("direct_message:edited");
-      s?.off?.("direct_message:deleted");
+      s?.removeAllListeners?.();
       disconnectSocket();
     };
   }, [isAuthed, refreshUnread, user?.collegeSlug, user?.religionKey, user?.collegeId, user?.faithId]);
 
+  /* ----------------------- AppState Resume ----------------------- */
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
       if (appState.current.match(/inactive|background/) && next === "active") {
+        console.log("📱 App resumed, refreshing unread...");
         refreshUnread();
       }
       appState.current = next;
