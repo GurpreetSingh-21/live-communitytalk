@@ -704,7 +704,7 @@ export default function HomeScreen() {
 
                 {communities.length > 2 && (
                   <Pressable
-                    onPress={() => router.push("/(tabs)/explore")}
+                    onPress={() => router.push("/(tabs)/communities")}
                     style={{
                       marginHorizontal: 20,
                       marginTop: 24,
