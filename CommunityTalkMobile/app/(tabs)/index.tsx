@@ -253,7 +253,7 @@ const CommunityCard = ({
                 {community.type || "community"}
               </Text>
             </View>
-            {tagCount > 0 && (
+            {Array.isArray(community.tags) && community.tags.length > 0 && (
               <View
                 style={{
                   backgroundColor: isDark
@@ -272,7 +272,8 @@ const CommunityCard = ({
                     color: colors.textSecondary,
                   }}
                 >
-                  {tagCount} {tagCount === 1 ? "tag" : "tags"}
+                  {community.tags.length}{" "}
+                  {community.tags.length === 1 ? "tag" : "tags"}
                 </Text>
               </View>
             )}
@@ -328,8 +329,8 @@ const SectionHeader = ({
 
 export default function HomeScreen() {
   const { colors, isDark } = useTheme();
-  const { unreadDMs = 0 } = useSocket() ?? {};
-  const auth = React.useContext(AuthContext);
+  const { unreadDMs = 0, socket } = useSocket() ?? {}; // ⬅️ also take socket
+  const auth = React.useContext(AuthContext) as any;
   const isAuthed = !!auth?.user;
 
   const [loading, setLoading] = React.useState(true);
@@ -337,22 +338,32 @@ export default function HomeScreen() {
   const [error, setError] = React.useState<string | null>(null);
   const [communities, setCommunities] = React.useState<Community[]>([]);
 
+  // ⬇️ NEW: mirror AuthContext.communities so Home updates instantly after a bootstrap elsewhere
+  React.useEffect(() => {
+    if (isAuthed && Array.isArray(auth?.communities)) {
+      setCommunities(auth.communities as Community[]);
+      setLoading(false);
+    }
+  }, [isAuthed, auth?.communities]);
+
   const fetchCommunities = React.useCallback(async () => {
     try {
       setError(null);
       setLoading(true);
 
       if (isAuthed) {
-        // ✅ Correct API path for bootstrap
-        const { data } = await api.get("/api/bootstrap");
-        const list = Array.isArray(data?.communities) ? data.communities : [];
-        setCommunities(list);
+        // Ask server for fresh bootstrap; AuthContext should update and the effect above mirrors it.
+        if (typeof auth?.refreshBootstrap === "function") {
+          await auth.refreshBootstrap();
+        } else {
+          const { data } = await api.get("/api/bootstrap");
+          const list = Array.isArray(data?.communities) ? data.communities : [];
+          setCommunities(list);
+        }
       } else {
-        // ✅ Public catalog (unauthed)
         const { data } = await api.get("/api/public/communities", {
           params: { paginated: false },
         });
-        // Endpoint returns {items: [...]}; keep a fallback to array for safety.
         const list = Array.isArray(data)
           ? data
           : Array.isArray(data?.items)
@@ -370,11 +381,31 @@ export default function HomeScreen() {
     } finally {
       setLoading(false);
     }
-  }, [isAuthed]);
+  }, [isAuthed, auth?.refreshBootstrap]);
 
   React.useEffect(() => {
     fetchCommunities();
   }, [fetchCommunities]);
+
+  // ⬇️ NEW: realtime—when server emits membership changes, refresh bootstrap so Home reflects them
+  React.useEffect(() => {
+    if (!socket) return;
+    const refresh = async () => {
+      try {
+        if (isAuthed && typeof auth?.refreshBootstrap === "function") {
+          await auth.refreshBootstrap();
+        } else {
+          await fetchCommunities();
+        }
+      } catch {}
+    };
+    socket.on?.("membership:joined", refresh);
+    socket.on?.("membership:left", refresh);
+    return () => {
+      socket.off?.("membership:joined", refresh);
+      socket.off?.("membership:left", refresh);
+    };
+  }, [socket, isAuthed, auth?.refreshBootstrap, fetchCommunities]);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);

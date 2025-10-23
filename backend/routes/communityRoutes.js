@@ -1,26 +1,107 @@
 // backend/routes/communityRoutes.js
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 
 const authenticate = require("../middleware/authenticate");
 const Community = require("../models/Community");
 const Member = require("../models/Member");
 const Person = require("../person");
-// Optional: if/when you implement real unread counts
-// const Message = require("../models/Message");
 
-// All routes require a valid JWT (belt & suspenders; server also mounts with authenticate)
+// All routes require a valid JWT (server also mounts with authenticate)
 router.use(authenticate);
 
-/** Helpers */
+/* ───────────────── helpers ───────────────── */
+
 function isAdmin(req) {
-  const role = req.user?.role || req.user?.isAdmin ? "admin" : req.user?.role;
-  return String(role).toLowerCase() === "admin";
+  return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
 }
 
 /**
+ * Upsert a membership in a schema-safe way (handles legacy unique index collisions).
+ * Mirrors the approach used in loginNregRoutes.js.
+ */
+async function upsertMembership({ session, person, community }) {
+  const baseSet = {
+    person: person._id,
+    community: community._id,
+    name: person.fullName || person.email,
+    fullName: person.fullName || person.email,
+    email: person.email,
+    avatar: person.avatar || "/default-avatar.png",
+    status: "active",
+    role: "member",
+  };
+
+  try {
+    // Normal path: upsert on canonical fields only
+    const m = await Member.findOneAndUpdate(
+      { person: person._id, community: community._id },
+      {
+        $set: baseSet,
+        $setOnInsert: {
+          // write legacy keys once so old unique index can't trip later
+          personId: person._id,
+          communityId: community._id,
+        },
+      },
+      {
+        new: true,
+        upsert: true,
+        session,
+        setDefaultsOnInsert: true,
+        strict: false,
+      }
+    )
+      .select("_id person personId community communityId fullName email avatar status role")
+      .lean();
+
+    // Reflect on Person
+    await Person.updateOne(
+      { _id: person._id },
+      { $addToSet: { communityIds: community._id } },
+      { session }
+    );
+
+    return m;
+  } catch (err) {
+    // If legacy unique idx (personId_1_communityId_1) collides, upgrade that doc
+    if (err?.code === 11000) {
+      const legacy = await Member.findOne(
+        { personId: person._id, communityId: community._id }
+      )
+        .setOptions({ strictQuery: false, session })
+        .lean();
+
+      if (legacy?._id) {
+        await Member.updateOne(
+          { _id: legacy._id },
+          { $set: baseSet },
+          { session, strict: false }
+        );
+
+        const upgraded = await Member.findById(legacy._id)
+          .select("_id person personId community communityId fullName email avatar status role")
+          .lean();
+
+        await Person.updateOne(
+          { _id: person._id },
+          { $addToSet: { communityIds: community._id } },
+          { session }
+        );
+
+        return upgraded;
+      }
+    }
+    throw err;
+  }
+}
+
+/* ───────────────── routes ───────────────── */
+
+/**
  * POST /api/communities
- * Admin-only: create a new community and (optionally) add creator as member.
+ * Admin-only: create a new community and (optionally) add creator as owner member.
  * Body: { name, description? }
  */
 router.post("/", async (req, res) => {
@@ -56,8 +137,8 @@ router.post("/", async (req, res) => {
       createdBy: personId,
     });
 
-    // Make the admin a member as well (optional but handy)
-    const member = await Member.create({
+    // Make the admin an owner member as well
+    await Member.create({
       person: personId,
       community: community._id,
       status: "online",
@@ -74,7 +155,6 @@ router.post("/", async (req, res) => {
       createdBy: community.createdBy,
       createdAt: community.createdAt,
       updatedAt: community.updatedAt,
-      creatorMemberId: member._id,
     });
   } catch (error) {
     console.error("POST /api/communities error:", error);
@@ -153,20 +233,10 @@ router.get("/:id", async (req, res) => {
 
 /**
  * GET /api/communities/:id/unread
- * Provide unread count for this user in a given community.
- * For now returns { count: 0 } to satisfy the app calls and avoid 404s.
- * Replace with real logic when you track read receipts.
+ * Stub unread count to satisfy app calls (replace with real logic later).
  */
-router.get("/:id/unread", async (req, res) => {
+router.get("/:id/unread", async (_req, res) => {
   try {
-    // Example real logic (pseudo):
-    // const userId = req.user.id;
-    // const count = await Message.countDocuments({
-    //   communityId: req.params.id,
-    //   "readBy.user": { $ne: userId },
-    // });
-    // return res.json({ count });
-
     return res.json({ count: 0 });
   } catch (error) {
     console.error("GET /api/communities/:id/unread error:", error);
@@ -217,8 +287,7 @@ router.patch("/:id", async (req, res) => {
 
 /**
  * DELETE /api/communities/:id
- * Admin-only delete.
- * Also removes Member rows for that community.
+ * Admin-only delete. Also removes Member rows for that community.
  */
 router.delete("/:id", async (req, res) => {
   try {
@@ -234,7 +303,7 @@ router.delete("/:id", async (req, res) => {
     await Promise.all([
       Community.findByIdAndDelete(id),
       Member.deleteMany({ community: id }),
-      // Optional: cascade messages, if desired:
+      // Optional: cascade messages if you add that model
       // Message.deleteMany({ community: id }),
     ]);
 
@@ -247,50 +316,63 @@ router.delete("/:id", async (req, res) => {
 
 /**
  * POST /api/communities/:id/join
- * Join a community (idempotent)
+ * Join a community (idempotent, safe with legacy indexes).
  */
 router.post("/:id/join", async (req, res) => {
+  const session = await mongoose.startSession();
   try {
     const personId = req.user?.id;
     const { id } = req.params;
 
-    const community = await Community.findById(id).lean();
+    if (!personId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [community, me] = await Promise.all([
+      Community.findById(id).lean(),
+      Person.findById(personId).select("_id fullName email avatar").lean(),
+    ]);
+
     if (!community) return res.status(404).json({ error: "Community not found" });
-
-    const exists = await Member.findOne({ person: personId, community: id }).lean();
-    if (exists) {
-      return res.status(200).json({ message: "Already a member" });
-    }
-
-    const me = await Person.findById(personId)
-      .select("_id fullName email avatar")
-      .lean();
     if (!me) return res.status(401).json({ error: "User not found" });
 
-    const created = await Member.create({
-      person: personId,
-      community: id,
-      status: "online",
-      fullName: me.fullName || me.email || "User",
-      email: me.email,
-      avatar: me.avatar || "/default-avatar.png",
+    // Already a member? return OK
+    const exists = await Member.findOne({ person: personId, community: id }).lean();
+    if (exists) return res.status(200).json({ message: "Already a member" });
+
+    let membership;
+
+    await session.withTransaction(async () => {
+      membership = await upsertMembership({ session, person: me, community });
     });
 
-    return res.status(201).json(created);
+    // Realtime: notify this user’s clients (if socket layer present)
+    try {
+      req.io?.to(String(req.user.id)).emit("membership:joined", {
+        userId: String(req.user.id),
+        communityId: String(community._id),
+      });
+      // Presence helper if you want:
+      req.presence?.joinCommunity?.(String(req.user.id), String(community._id));
+    } catch {}
+
+    return res.status(201).json(membership || { message: "Joined" });
   } catch (error) {
     console.error("POST /api/communities/:id/join error:", error);
     return res.status(500).json({ error: "Server Error" });
+  } finally {
+    session.endSession();
   }
 });
 
 /**
  * POST /api/communities/:id/leave
- * Leave a community.
+ * Leave a community (idempotent-ish).
  */
 router.post("/:id/leave", async (req, res) => {
   try {
     const personId = req.user?.id;
     const { id } = req.params;
+
+    if (!personId) return res.status(401).json({ error: "Unauthorized" });
 
     const community = await Community.findById(id).lean();
     if (!community) return res.status(404).json({ error: "Community not found" });
@@ -301,6 +383,20 @@ router.post("/:id/leave", async (req, res) => {
     }
 
     await membership.deleteOne();
+
+    // Realtime: notify clients
+    try {
+      req.io?.to(String(req.user.id)).emit("membership:left", {
+        userId: String(req.user.id),
+        communityId: String(community._id),
+      });
+      req.presence?.leaveCommunity?.(String(req.user.id), String(community._id));
+    } catch {}
+
+    // Optional: also $pull from Person.communityIds to keep tidy
+    try {
+      await Person.updateOne({ _id: personId }, { $pull: { communityIds: community._id } });
+    } catch {}
 
     return res.status(200).json({ message: "Left community" });
   } catch (error) {

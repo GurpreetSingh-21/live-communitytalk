@@ -32,7 +32,7 @@ import { setAccessToken } from "@/src/utils/storage";
 
 LogBox.ignoreLogs(["[Reanimated]"]);
 
-type ModalContext = "communities" | "dms" | "default";
+type ModalContext = "communities" | "default";
 
 /* ────────────────────────── UI Bits ────────────────────────── */
 
@@ -169,9 +169,6 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
       const { data } = await api.post("/api/login", { email, password });
       if (!data?.token) throw new Error("Missing token in response");
       await setAccessToken(data.token);
-      // In case your AuthProvider exposes a rebootstrap/refresh
-      // we try to call it (optionally) and then close the modal.
-      // The profile tab should reflect the signed-in state afterwards.
       onDone();
     } catch (e: any) {
       const msg =
@@ -323,8 +320,7 @@ export default function ModalScreen() {
     return (
       <LoginGateway
         onDone={() => {
-          // Try to refresh/boot, then close the modal
-          Promise.resolve(auth?.refresh?.() || auth?.bootstrap?.()).finally(() => {
+          Promise.resolve(auth?.refreshBootstrap?.() || auth?.bootstrap?.()).finally(() => {
             router.back();
           });
         }}
@@ -332,7 +328,6 @@ export default function ModalScreen() {
     );
   }
 
-  // Signed-in action sheet (no "New Community")
   const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
 
   return (
@@ -370,51 +365,28 @@ export default function ModalScreen() {
           What would you like to do?
         </Text>
 
-        {/* Context-specific options, WITHOUT “New Community” */}
-        {context === "dms" ? (
-          <>
-            <ActionCard
-              icon="💬"
-              title="New Message"
-              description="Start a direct conversation"
-              onPress={() => {
-                Alert.alert("Coming Soon", "Direct messages are coming soon!");
-              }}
-              gradient={["#8B5CF6", "#D946EF"] as const}
-            />
-            <ActionCard
-              icon="👥"
-              title="New Group"
-              description="Create a group conversation"
-              onPress={() => {
-                Alert.alert("Coming Soon", "Group chats are coming soon!");
-              }}
-              gradient={["#F59E0B", "#EF4444"] as const}
-            />
-          </>
-        ) : (
-          <>
-            <ActionCard
-              icon="🔍"
-              title="Explore"
-              description="Discover communities and connect"
-              onPress={() => {
-                router.back();
-                router.push("/(tabs)/explore");
-              }}
-              gradient={["#14B8A6", "#06B6D4"] as const}
-            />
-            <ActionCard
-              icon="💬"
-              title="New Message"
-              description="Start a direct conversation"
-              onPress={() => {
-                Alert.alert("Coming Soon", "Direct messages are coming soon!");
-              }}
-              gradient={["#8B5CF6", "#D946EF"] as const}
-            />
-          </>
-        )}
+        {/* NO direct messages here. */}
+        <ActionCard
+          icon="🌍"
+          title="Global Communities"
+          description="Join public groups you’re not in yet"
+          onPress={() => {
+            router.back();
+            router.push("/global/communities");
+          }}
+          gradient={["#4F46E5", "#8B5CF6"] as const}
+        />
+
+        <ActionCard
+          icon="🔍"
+          title="Explore"
+          description="Discover communities and connect"
+          onPress={() => {
+            router.back();
+            router.push("/(tabs)/explore");
+          }}
+          gradient={["#14B8A6", "#06B6D4"] as const}
+        />
       </ScrollView>
     </View>
   );
