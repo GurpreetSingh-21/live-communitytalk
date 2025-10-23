@@ -1,9 +1,9 @@
-// CommunityTalkMobile/app/(tabs)/communities.tsx
 import React, {
   useMemo,
   useState,
   useEffect,
   useCallback,
+  useRef,
 } from 'react';
 import {
   FlatList,
@@ -12,7 +12,6 @@ import {
   View,
   Text,
   RefreshControl,
-  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -94,26 +93,48 @@ const CommunityRowSkeleton = () => {
   );
 };
 
-const UnreadBadge = ({ count }: { count: number }) => (
+const UnreadBadge = ({ count, pulseKey }: { count: number; pulseKey?: number }) => (
   <MotiView
-    from={{ scale: 0.5 }}
-    animate={{ scale: 1 }}
-    transition={{ type: 'spring' }}
-    className="bg-indigo-600 rounded-full h-6 w-6 items-center justify-center border-2 border-white dark:border-black"
+    key={pulseKey} // re-run tiny pop when unread changes
+    from={{ scale: 0.8, opacity: 0.8 }}
+    animate={{ scale: 1, opacity: 1 }}
+    transition={{ type: 'spring', damping: 12, mass: 0.6 }}
+    className="bg-indigo-600 rounded-full h-6 px-2 min-w-[24px] items-center justify-center border-2 border-white dark:border-black"
   >
     <Text className="text-white text-xs font-bold">{count}</Text>
   </MotiView>
 );
 
-const SmartPreview = ({ msg }: { msg: MessageContent }) => {
+const SmartPreview = ({ msg, isUnread }: { msg: MessageContent; isUnread: boolean }) => {
   const isDark = useColorScheme() === 'dark';
+  const baseColor = isUnread ? (isDark ? '#fafafa' : '#111827') : (isDark ? '#9ca3af' : '#475569');
+  const baseWeight: any = isUnread ? '700' : '400';
+
   if (msg.type === 'text') {
-    return <Text className="text-slate-600 dark:text-zinc-400" numberOfLines={1}>{msg.content}</Text>;
+    return (
+      <Text
+        className="truncate"
+        numberOfLines={1}
+        style={{ color: baseColor, fontWeight: baseWeight as any }}
+      >
+        {msg.content}
+      </Text>
+    );
   }
   return (
-    <View className="flex-row items-center gap-1.5 bg-slate-200 dark:bg-zinc-800 self-start px-2 py-1 rounded-lg">
-      <Ionicons name={(msg.type === 'photo' ? 'camera-outline' : 'mic-outline') as any} size={14} color={isDark ? '#FFF' : '#000'} style={{ opacity: 0.6 }} />
-      <Text className="text-xs font-medium text-slate-600 dark:text-zinc-300">{msg.content}</Text>
+    <View className="flex-row items-center gap-1.5 self-start px-2 py-1 rounded-lg" style={{ backgroundColor: isDark ? '#27272a' : '#e5e7eb' }}>
+      <Ionicons
+        name={(msg.type === 'photo' ? 'camera-outline' : 'mic-outline') as any}
+        size={14}
+        color={isDark ? '#e5e7eb' : '#374151'}
+        style={{ opacity: 0.8 }}
+      />
+      <Text
+        className="text-xs font-medium"
+        style={{ color: baseColor, fontWeight: baseWeight as any }}
+      >
+        {msg.content}
+      </Text>
     </View>
   );
 };
@@ -147,6 +168,23 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
   const translateX = useSharedValue(0);
   const ACTION_WIDTH = 90;
 
+  // Track previous unread to animate when it increases
+  const prevUnreadRef = useRef<number>(item.unread ?? 0);
+  const justIncreased = (item.unread ?? 0) > prevUnreadRef.current;
+  useEffect(() => { prevUnreadRef.current = item.unread ?? 0; }, [item.unread]);
+
+  // Soft pulse background when a new unread arrives
+  const pulse = useSharedValue(0);
+  useEffect(() => {
+    if (justIncreased) {
+      pulse.value = 1;
+      pulse.value = withTiming(0, { duration: 800, easing: Easing.out(Easing.quad) });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  }, [justIncreased]);
+
+  const isUnread = (item.unread ?? 0) > 0;
+
   const pan = Gesture.Pan()
     .activeOffsetX([-20, 20])
     .onUpdate((e) => { if (e.translationX < 0) translateX.value = e.translationX; })
@@ -157,6 +195,15 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
     });
 
   const animatedRowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
+
+  // Read highlight styles
+  const bgTint = isDark ? 'rgba(99,102,241,0.14)' : 'rgba(99,102,241,0.10)';
+  const accentBar = isDark ? '#818cf8' : '#6366f1';
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: pulse.value,
+  }));
+
   const animatedActionStyle = (inputRange: number[], outputRange: number[]) =>
     useAnimatedStyle(() => ({ transform: [{ scale: interpolate(translateX.value, inputRange, outputRange, 'clamp') }] }));
 
@@ -167,6 +214,7 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
     <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'timing', duration: 300 }}>
       <GestureDetector gesture={pan}>
         <View>
+          {/* Right swipe actions */}
           <View className="absolute right-0 top-0 bottom-0 flex-row">
             <Pressable onPress={handlePin} className="w-[90px] h-full bg-indigo-600 items-center justify-center">
               <Animated.View style={animatedActionStyle([-180, -90], [1, 0.5])}>
@@ -180,8 +228,25 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
             </Pressable>
           </View>
 
+          {/* Row */}
           <Animated.View style={animatedRowStyle}>
-            <Pressable className="flex-row items-center gap-4 px-4 bg-white dark:bg-black h-[93px]" onPress={() => onOpen(item.id)}>
+            <Pressable
+              className="flex-row items-center gap-4 px-4 h-[93px]"
+              onPress={() => onOpen(item.id)}
+              style={{
+                backgroundColor: isUnread ? (isDark ? '#0b0b0b' : '#ffffff') : (isDark ? '#000' : '#ffffff'),
+              }}
+            >
+              {/* left unread accent */}
+              {isUnread && <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: accentBar, borderTopRightRadius: 3, borderBottomRightRadius: 3 }} />}
+
+              {/* subtle pulse overlay when new unread lands */}
+              <Animated.View
+                style={[{ position: 'absolute', left: 3, right: 0, top: 0, bottom: 0, backgroundColor: bgTint, borderRadius: 0 }, pulseStyle]}
+                pointerEvents="none"
+              />
+
+              {/* avatar */}
               <View>
                 <View className="w-14 h-14 rounded-full items-center justify-center overflow-hidden">
                   <LinearGradient colors={['#4f46e5', '#a855f7']} className="absolute inset-0" />
@@ -191,10 +256,18 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                 </View>
               </View>
 
+              {/* content */}
               <View className="flex-1 py-4 border-b border-slate-100 dark:border-zinc-800 h-full justify-center">
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1">
-                    <Text className="text-base font-bold text-black dark:text-white" numberOfLines={1}>
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        color: isDark ? '#fff' : '#000',
+                        fontSize: 16,
+                        fontWeight: isUnread ? '800' : '700',
+                      }}
+                    >
                       {item.name}
                     </Text>
                     {!!item.memberCount && (
@@ -203,13 +276,17 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                       </Text>
                     )}
                   </View>
-                  <Text className="text-xs text-slate-400 dark:text-zinc-500 ml-2">
+                  <Text
+                    className="text-xs ml-2"
+                    style={{ color: isUnread ? (isDark ? '#e5e7eb' : '#111827') : (isDark ? '#9ca3af' : '#94a3b8'), fontWeight: isUnread ? '700' as any : '500' as any }}
+                  >
                     {timeAgoLabel(item.lastAt, now)}
                   </Text>
                 </View>
+
                 <View className="flex-row items-center justify-between mt-1">
-                  <SmartPreview msg={item.lastMsg} />
-                  {!!item.unread && <UnreadBadge count={item.unread} />}
+                  <SmartPreview msg={item.lastMsg} isUnread={isUnread} />
+                  {!!item.unread && <UnreadBadge count={item.unread} pulseKey={item.unread} />}
                 </View>
               </View>
             </Pressable>
@@ -228,7 +305,7 @@ export default function CommunitiesScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === 'dark';
   const { socket, unreadThreads = {}, refreshUnread } = useSocket();
-  const { isAuthed, user, communities: myCommunities } = React.useContext(AuthContext) as any;
+  const { isAuthed, communities: myCommunities } = React.useContext(AuthContext) as any;
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -305,7 +382,7 @@ export default function CommunitiesScreen(): React.JSX.Element {
     return () => ac.abort();
   }, [fetchCommunityThreads, refreshUnread]);
 
-  // Keep unread in sync
+  // Keep unread in sync and drive highlight styles
   useEffect(() => {
     if (!threads.length) return;
     setThreads(prev =>
@@ -492,9 +569,6 @@ export default function CommunitiesScreen(): React.JSX.Element {
         <Animated.View style={animatedHeaderTitleStyle}>
           <View className="flex-row items-center justify-between mt-2 mb-5">
             <Text className="text-3xl font-extrabold text-black dark:text-white">Communities</Text>
-            <Pressable className="h-10 w-10 items-center justify-center rounded-full bg-slate-200/80 dark:bg-zinc-800/80" onPress={() => router.push('/(tabs)/explore')}>
-              <IconSymbol name="magnifyingglass" size={18} color={isDark ? '#FFF' : '#000'} />
-            </Pressable>
           </View>
         </Animated.View>
 

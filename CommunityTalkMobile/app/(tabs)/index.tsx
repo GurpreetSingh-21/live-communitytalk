@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   useColorScheme,
+  Animated,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
@@ -729,7 +730,50 @@ export default function HomeScreen() {
                     </Text>
                   </Pressable>
                 )}
+              
+
+        {/* Additional welcoming and connecting text sections */}
+        <View style={{ marginTop: 32, paddingHorizontal: 20 }}>
+          <Text 
+            style={{ 
+              fontSize: 15, 
+              color: colors.textSecondary,
+              textAlign: 'center',
+              lineHeight: 22,
+              paddingHorizontal: 10,
+              marginBottom: 16
+            }}
+          >
+            Join communities to start conversations, share experiences, and connect with others who share your interests.
+          </Text>
+          
+          <Text 
+            style={{ 
+              fontSize: 15, 
+              color: colors.textSecondary,
+              textAlign: 'center',
+              lineHeight: 22,
+              paddingHorizontal: 10,
+              marginBottom: 16 
+            }}
+          >
+            Whether you're looking for spiritual guidance, academic support, or just friendly conversation, there's a place for you here.
+          </Text>
+
+          <Text 
+            style={{ 
+              fontSize: 15, 
+              color: colors.textSecondary,
+              textAlign: 'center',
+              lineHeight: 22,
+              paddingHorizontal: 10 
+            }}
+          >
+            Together, we can build meaningful connections and create a supportive community. Start exploring today! 🌟
+          </Text>
+        </View>
               </>
+             
             )}
           </View>
 
