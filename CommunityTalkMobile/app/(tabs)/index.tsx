@@ -459,83 +459,81 @@ const BentoInfoCard = ({ icon, title, description, color, size = "medium", delay
     }).start();
   }, []);
 
-  const heights = { small: 110, medium: 140 };
+  const heights = { small: 120, medium: 150 };
 
   return (
     <Animated.View
       style={{
-        flex: size === "medium" ? 0.48 : 0.32,
+        flex: 1,
         height: heights[size as keyof typeof heights],
         transform: [{ scale: scaleAnim }],
       }}
     >
-      <FloatingElement delay={delay} intensity={8}>
+      <View
+        style={{
+          flex: 1,
+          borderRadius: 20,
+          padding: 16,
+          backgroundColor: isDark ? "#1A1A1A" : "#FFF",
+          borderWidth: 1,
+          borderColor: isDark ? "#2A2A2A" : "#E8E8E8",
+          overflow: "hidden",
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: isDark ? 0.3 : 0.06,
+          shadowRadius: 8,
+        }}
+      >
         <View
           style={{
-            flex: 1,
-            borderRadius: 20,
-            padding: 16,
-            backgroundColor: isDark ? "#1A1A1A" : "#FFF",
-            borderWidth: 1,
-            borderColor: isDark ? "#2A2A2A" : "#E8E8E8",
-            overflow: "hidden",
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: isDark ? 0.3 : 0.06,
-            shadowRadius: 8,
+            position: "absolute",
+            top: -30,
+            right: -30,
+            width: 100,
+            height: 100,
+            borderRadius: 50,
+            backgroundColor: color,
+            opacity: 0.08,
+          }}
+        />
+
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 12,
+            backgroundColor: color + "20",
+            alignItems: "center",
+            justifyContent: "center",
+            marginBottom: 10,
           }}
         >
-          <View
-            style={{
-              position: "absolute",
-              top: -30,
-              right: -30,
-              width: 100,
-              height: 100,
-              borderRadius: 50,
-              backgroundColor: color,
-              opacity: 0.08,
-            }}
-          />
-
-          <View
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 12,
-              backgroundColor: color + "20",
-              alignItems: "center",
-              justifyContent: "center",
-              marginBottom: 10,
-            }}
-          >
-            <Ionicons name={icon} size={20} color={color} />
-          </View>
-
-          <Text
-            style={{
-              fontSize: 16,
-              fontWeight: "800",
-              color: colors.text,
-              marginBottom: 4,
-              letterSpacing: -0.3,
-            }}
-          >
-            {title}
-          </Text>
-          <Text
-            style={{
-              fontSize: 12,
-              color: colors.textSecondary,
-              lineHeight: 16,
-              fontWeight: "600",
-            }}
-            numberOfLines={2}
-          >
-            {description}
-          </Text>
+          <Ionicons name={icon} size={20} color={color} />
         </View>
-      </FloatingElement>
+
+        <Text
+          style={{
+            fontSize: 16,
+            fontWeight: "800",
+            color: colors.text,
+            marginBottom: 6,
+            letterSpacing: -0.3,
+          }}
+        >
+          {title}
+        </Text>
+        <Text
+          style={{
+            fontSize: 12,
+            color: colors.textSecondary,
+            lineHeight: 17,
+            fontWeight: "600",
+          }}
+          numberOfLines={2}
+        >
+          {description}
+        </Text>
+      </View>
     </Animated.View>
   );
 };
@@ -838,7 +836,7 @@ export default function HomeScreen() {
 
           {/* Bento Grid */}
           <View style={{ paddingHorizontal: 20, marginBottom: 48 }}>
-            <View style={{ flexDirection: "row", gap: 12, marginBottom: 12 }}>
+            <View style={{ flexDirection: "row", gap: 14, marginBottom: 14 }}>
               <BentoInfoCard
                 icon="flash"
                 title="Real-time"
@@ -857,13 +855,13 @@ export default function HomeScreen() {
               />
             </View>
 
-            <View style={{ flexDirection: "row", gap: 12 }}>
+            <View style={{ flexDirection: "row", gap: 14 }}>
               <BentoInfoCard
                 icon="heart"
                 title="Supportive"
                 description="Find guidance"
                 color={colors.pink}
-                size="small"
+                size="medium"
                 delay={300}
               />
               <BentoInfoCard
@@ -871,16 +869,8 @@ export default function HomeScreen() {
                 title="Community"
                 description="Build bonds"
                 color={colors.primary}
-                size="small"
+                size="medium"
                 delay={400}
-              />
-              <BentoInfoCard
-                icon="trending-up"
-                title="Growing"
-                description="Join the wave"
-                color={colors.cyan}
-                size="small"
-                delay={500}
               />
             </View>
           </View>
