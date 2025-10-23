@@ -18,7 +18,7 @@ const Fab = ({ isDark }: { isDark: boolean }) => {
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { scale: scale.value },
-      { translateY: -14 }, // lift a little into the bar (still centered)
+      { translateY: -14 },
     ],
   }));
   const animatedIconStyle = useAnimatedStyle(() => ({
@@ -36,8 +36,12 @@ const Fab = ({ isDark }: { isDark: boolean }) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
+  // Define gradient colors based on theme
+  const gradientColors: readonly [string, string] = isDark 
+    ? ['#0F0F10', '#1A1B1E'] 
+    : ['#0E0E10', '#1A1B1E'];
+
   return (
-    // Important: flex-1 wrapper so the center tab gets equal space → perfect centering
     <View className="flex-1 items-center justify-center">
       <Pressable onPressIn={onPressIn} onPressOut={onPressOut} accessibilityRole="button" accessibilityLabel="New Post">
         <Animated.View
@@ -52,7 +56,6 @@ const Fab = ({ isDark }: { isDark: boolean }) => {
             },
           ]}
         >
-          {/* soft outer ring to separate from the blur */}
           <View
             pointerEvents="none"
             style={{
@@ -64,15 +67,13 @@ const Fab = ({ isDark }: { isDark: boolean }) => {
             }}
           />
 
-          {/* solid fill (use style, not className) */}
           <LinearGradient
-            colors={isDark ? ['#0F0F10', '#1A1B1E'] : ['#0E0E10', '#1A1B1E']}
+            colors={gradientColors}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[StyleSheet.absoluteFill, { borderRadius: 999 }]}
           />
 
-          {/* subtle inner ring for depth */}
           <View
             pointerEvents="none"
             style={{
@@ -156,13 +157,10 @@ export default function TabLayout() {
   const { bottom } = useSafeAreaInsets();
   const segments = useSegments();
 
-  // safe if provider isn't ready
-  let unreadDMs = 0;
-  try {
-    unreadDMs = (useSocket()?.unreadDMs ?? 0) as number;
-  } catch {
-    unreadDMs = 0;
-  }
+  // Safely get unread counts from socket context
+  const socketContext = useSocket();
+  const unreadDMs = Number(socketContext?.unreadDMs ?? 0) || 0;
+  const unreadCommunities = Number(socketContext?.unreadCommunities ?? 0) || 0;
 
   const activeColor = isDark ? '#FFFFFF' : '#000000';
   const inactiveColor = isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.4)';
@@ -175,7 +173,7 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
-        tabBarItemStyle: { flex: 1 }, // ensure equal width items (centers the + perfectly)
+        tabBarItemStyle: { flex: 1 },
         tabBarStyle: {
           position: 'absolute',
           bottom: 0,
@@ -214,16 +212,17 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="explore"
+        name="communities"
         options={{
           tabBarButton: () => (
             <CustomTabButton
-              label="Explore Tab"
-              name="sparkles"
-              activeName="sparkles"
-              color={last === 'explore' ? activeColor : inactiveColor}
-              focused={last === 'explore'}
-              route="/(tabs)/explore"
+              label="Communities Tab"
+              name="building.2"
+              activeName="building.2.fill"
+              color={last === 'communities' ? activeColor : inactiveColor}
+              focused={last === 'communities'}
+              route="/(tabs)/communities"
+              badgeCount={unreadCommunities}
             />
           ),
         }}
@@ -232,7 +231,6 @@ export default function TabLayout() {
       <Tabs.Screen
         name="add-modal"
         options={{
-          // use our centered FAB
           tabBarButton: () => <Fab isDark={isDark} />,
         }}
       />
@@ -248,7 +246,7 @@ export default function TabLayout() {
               color={last === 'dms' ? activeColor : inactiveColor}
               focused={last === 'dms'}
               route="/(tabs)/dms"
-              badgeCount={Number.isFinite(unreadDMs) ? unreadDMs : 0}
+              badgeCount={unreadDMs}
             />
           ),
         }}
@@ -267,6 +265,14 @@ export default function TabLayout() {
               route="/(tabs)/profile"
             />
           ),
+        }}
+      />
+
+      {/* Keep explore but hide from tab bar */}
+      <Tabs.Screen
+        name="explore"
+        options={{
+          href: null, // Hide from tab bar
         }}
       />
     </Tabs>

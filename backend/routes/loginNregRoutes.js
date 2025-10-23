@@ -380,7 +380,7 @@ router.get("/bootstrap", authenticate, async (req, res) => {
 });
 
 // backend/routes/loginNregRoutes.js (or a new file mounted at /api)
-router.get("/api/my/communities", authenticate, async (req, res) => {
+router.get("/my/communities", authenticate, async (req, res) => {
   const user = await Person.findById(req.user.id).select("communityIds").lean();
   const items = await Community.find({ _id: { $in: user?.communityIds || [] } })
     .select("_id name type key tags isPrivate createdAt")

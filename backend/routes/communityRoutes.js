@@ -6,17 +6,29 @@ const authenticate = require("../middleware/authenticate");
 const Community = require("../models/Community");
 const Member = require("../models/Member");
 const Person = require("../person");
+// Optional: if/when you implement real unread counts
+// const Message = require("../models/Message");
 
-// All routes require a valid JWT
+// All routes require a valid JWT (belt & suspenders; server also mounts with authenticate)
 router.use(authenticate);
+
+/** Helpers */
+function isAdmin(req) {
+  const role = req.user?.role || req.user?.isAdmin ? "admin" : req.user?.role;
+  return String(role).toLowerCase() === "admin";
+}
 
 /**
  * POST /api/communities
- * Create a new community and make the creator a member.
+ * Admin-only: create a new community and (optionally) add creator as member.
  * Body: { name, description? }
  */
 router.post("/", async (req, res) => {
   try {
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: "Only admins can create communities" });
+    }
+
     const personId = req.user?.id;
     if (!personId) return res.status(401).json({ error: "Unauthorized" });
 
@@ -44,7 +56,7 @@ router.post("/", async (req, res) => {
       createdBy: personId,
     });
 
-    // Create creator's membership (status = online for convenience)
+    // Make the admin a member as well (optional but handy)
     const member = await Member.create({
       person: personId,
       community: community._id,
@@ -52,6 +64,7 @@ router.post("/", async (req, res) => {
       fullName: creator.fullName || creator.email || "User",
       email: creator.email,
       avatar: creator.avatar || "/default-avatar.png",
+      role: "owner",
     });
 
     return res.status(201).json({
@@ -139,22 +152,43 @@ router.get("/:id", async (req, res) => {
 });
 
 /**
+ * GET /api/communities/:id/unread
+ * Provide unread count for this user in a given community.
+ * For now returns { count: 0 } to satisfy the app calls and avoid 404s.
+ * Replace with real logic when you track read receipts.
+ */
+router.get("/:id/unread", async (req, res) => {
+  try {
+    // Example real logic (pseudo):
+    // const userId = req.user.id;
+    // const count = await Message.countDocuments({
+    //   communityId: req.params.id,
+    //   "readBy.user": { $ne: userId },
+    // });
+    // return res.json({ count });
+
+    return res.json({ count: 0 });
+  } catch (error) {
+    console.error("GET /api/communities/:id/unread error:", error);
+    return res.status(500).json({ error: "Server Error" });
+  }
+});
+
+/**
  * PATCH /api/communities/:id
- * Update community (owner only = createdBy)
+ * Admin-only update.
  * Body: { name?, description? }
  */
 router.patch("/:id", async (req, res) => {
   try {
-    const personId = req.user?.id;
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: "Only admins can update communities" });
+    }
+
     const { id } = req.params;
 
     const community = await Community.findById(id);
     if (!community) return res.status(404).json({ error: "Community not found" });
-
-    // Authorization: only the creator (owner) can update
-    if (String(community.createdBy) !== String(personId)) {
-      return res.status(403).json({ error: "Only the owner can update this community" });
-    }
 
     const updates = {};
     if (typeof req.body.name === "string" && req.body.name.trim()) {
@@ -183,26 +217,24 @@ router.patch("/:id", async (req, res) => {
 
 /**
  * DELETE /api/communities/:id
- * Delete a community (owner only).
+ * Admin-only delete.
  * Also removes Member rows for that community.
  */
 router.delete("/:id", async (req, res) => {
   try {
-    const personId = req.user?.id;
+    if (!isAdmin(req)) {
+      return res.status(403).json({ error: "Only admins can delete communities" });
+    }
+
     const { id } = req.params;
 
     const community = await Community.findById(id);
     if (!community) return res.status(404).json({ error: "Community not found" });
 
-    // Authorization: only the creator (owner) can delete
-    if (String(community.createdBy) !== String(personId)) {
-      return res.status(403).json({ error: "Only the owner can delete this community" });
-    }
-
     await Promise.all([
       Community.findByIdAndDelete(id),
       Member.deleteMany({ community: id }),
-      // Optionally cascade messages:
+      // Optional: cascade messages, if desired:
       // Message.deleteMany({ community: id }),
     ]);
 
@@ -253,7 +285,7 @@ router.post("/:id/join", async (req, res) => {
 
 /**
  * POST /api/communities/:id/leave
- * Leave a community (owner cannot leave; they must delete/transfer).
+ * Leave a community.
  */
 router.post("/:id/leave", async (req, res) => {
   try {
@@ -262,13 +294,6 @@ router.post("/:id/leave", async (req, res) => {
 
     const community = await Community.findById(id).lean();
     if (!community) return res.status(404).json({ error: "Community not found" });
-
-    // Owner cannot leave (must delete or transfer ownership — transfer not implemented)
-    if (String(community.createdBy) === String(personId)) {
-      return res
-        .status(400)
-        .json({ error: "Owner cannot leave. Delete the community instead." });
-    }
 
     const membership = await Member.findOne({ person: personId, community: id });
     if (!membership) {

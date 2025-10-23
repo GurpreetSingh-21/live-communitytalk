@@ -185,7 +185,7 @@ io.on("connection", (socket) => {
 });
 
 // ───────────────────────── Routes ─────────────────────────
-app.use("/", personRoutes);
+app.use("/api", personRoutes);
 app.use("/api/communities", authenticate, communityRoutes);
 app.use("/api/members", authenticate, memberRoutes);
 app.use("/api/messages", authenticate, messageRoutes);

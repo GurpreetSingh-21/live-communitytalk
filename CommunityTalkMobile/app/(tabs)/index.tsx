@@ -1,3 +1,4 @@
+// CommunityTalkMobile/app/(tabs)/index.tsx
 import React from "react";
 import {
   FlatList,
@@ -49,11 +50,19 @@ const useTheme = () => {
   };
 };
 
-const CommunityCard = ({ community }: { community: Community; index: number }) => {
+const CommunityCard = ({
+  community,
+}: {
+  community: Community;
+  index: number;
+}) => {
   const { colors, isDark } = useTheme();
 
-  // Generate unique gradient for each community
-  const hash = Array.from(community.name || "").reduce((a, c) => a + c.charCodeAt(0), 0);
+  // Unique gradient based on name
+  const hash = Array.from(community.name || "").reduce(
+    (a, c) => a + c.charCodeAt(0),
+    0
+  );
   const gradients = [
     ["#FF6B6B", "#FF8E53"],
     ["#4E54C8", "#8F94FB"],
@@ -128,7 +137,13 @@ const CommunityCard = ({ community }: { community: Community; index: number }) =
 
       <View style={{ flex: 1, padding: 20, justifyContent: "space-between" }}>
         {/* Top Section */}
-        <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+          }}
+        >
           <View
             style={{
               width: 64,
@@ -143,7 +158,9 @@ const CommunityCard = ({ community }: { community: Community; index: number }) =
               shadowRadius: 8,
             }}
           >
-            <Text style={{ fontSize: 24, fontWeight: "900", color: gradStart }}>{initials}</Text>
+            <Text style={{ fontSize: 24, fontWeight: "900", color: gradStart }}>
+              {initials}
+            </Text>
           </View>
 
           {community.isPrivate ? (
@@ -157,8 +174,15 @@ const CommunityCard = ({ community }: { community: Community; index: number }) =
                 alignItems: "center",
               }}
             >
-              <Ionicons name="lock-closed" size={12} color="#FFF" style={{ marginRight: 5 }} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF" }}>Private</Text>
+              <Ionicons
+                name="lock-closed"
+                size={12}
+                color="#FFF"
+                style={{ marginRight: 5 }}
+              />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF" }}>
+                Private
+              </Text>
             </View>
           ) : (
             <View
@@ -171,14 +195,27 @@ const CommunityCard = ({ community }: { community: Community; index: number }) =
                 alignItems: "center",
               }}
             >
-              <Ionicons name="globe" size={12} color="#FFF" style={{ marginRight: 5 }} />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF" }}>Public</Text>
+              <Ionicons
+                name="globe"
+                size={12}
+                color="#FFF"
+                style={{ marginRight: 5 }}
+              />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFF" }}>
+                Public
+              </Text>
             </View>
           )}
         </View>
 
         {/* Bottom Section */}
-        <View style={{ backgroundColor: colors.surfaceElevated, borderRadius: 16, padding: 12 }}>
+        <View
+          style={{
+            backgroundColor: colors.surfaceElevated,
+            borderRadius: 16,
+            padding: 12,
+          }}
+        >
           <Text
             style={{
               fontSize: 19,
@@ -191,10 +228,14 @@ const CommunityCard = ({ community }: { community: Community; index: number }) =
           >
             {community.name}
           </Text>
-          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+          <View
+            style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}
+          >
             <View
               style={{
-                backgroundColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.06)",
+                backgroundColor: isDark
+                  ? "rgba(255,255,255,0.12)"
+                  : "rgba(0,0,0,0.06)",
                 paddingHorizontal: 10,
                 paddingVertical: 4,
                 borderRadius: 8,
@@ -202,21 +243,35 @@ const CommunityCard = ({ community }: { community: Community; index: number }) =
                 marginBottom: 4,
               }}
             >
-              <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontWeight: "600",
+                  color: colors.textSecondary,
+                }}
+              >
                 {community.type || "community"}
               </Text>
             </View>
             {tagCount > 0 && (
               <View
                 style={{
-                  backgroundColor: isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.06)",
+                  backgroundColor: isDark
+                    ? "rgba(255,255,255,0.12)"
+                    : "rgba(0,0,0,0.06)",
                   paddingHorizontal: 10,
                   paddingVertical: 4,
                   borderRadius: 8,
                   marginBottom: 4,
                 }}
               >
-                <Text style={{ fontSize: 13, fontWeight: "600", color: colors.textSecondary }}>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    fontWeight: "600",
+                    color: colors.textSecondary,
+                  }}
+                >
                   {tagCount} {tagCount === 1 ? "tag" : "tags"}
                 </Text>
               </View>
@@ -240,14 +295,30 @@ const SectionHeader = ({
   const { colors } = useTheme();
   return (
     <View style={{ marginBottom: 24, paddingHorizontal: 20 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+      <View
+        style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}
+      >
         <Text style={{ fontSize: 36, marginRight: 10 }}>{emoji}</Text>
-        <Text style={{ fontSize: 30, fontWeight: "900", color: colors.text, letterSpacing: -0.8 }}>
+        <Text
+          style={{
+            fontSize: 30,
+            fontWeight: "900",
+            color: colors.text,
+            letterSpacing: -0.8,
+          }}
+        >
           {title}
         </Text>
       </View>
       {subtitle && (
-        <Text style={{ fontSize: 16, color: colors.textSecondary, marginTop: 4, lineHeight: 22 }}>
+        <Text
+          style={{
+            fontSize: 16,
+            color: colors.textSecondary,
+            marginTop: 4,
+            lineHeight: 22,
+          }}
+        >
           {subtitle}
         </Text>
       )}
@@ -272,17 +343,30 @@ export default function HomeScreen() {
       setLoading(true);
 
       if (isAuthed) {
-        const { data } = await api.get("/bootstrap");
+        // ✅ Correct API path for bootstrap
+        const { data } = await api.get("/api/bootstrap");
         const list = Array.isArray(data?.communities) ? data.communities : [];
         setCommunities(list);
       } else {
-        const { data } = await api.get("/api/public/communities", { params: { paginated: false } });
-        const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+        // ✅ Public catalog (unauthed)
+        const { data } = await api.get("/api/public/communities", {
+          params: { paginated: false },
+        });
+        // Endpoint returns {items: [...]}; keep a fallback to array for safety.
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.items)
+          ? data.items
+          : [];
         setCommunities(list);
       }
     } catch (e: any) {
       console.error("Community fetch error:", e);
-      setError(e?.response?.data?.error || "Failed to load communities");
+      const msg =
+        e?.response?.data?.error ||
+        (e?.message?.includes("404") ? "Endpoint not found" : "") ||
+        "Failed to load communities";
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -308,16 +392,42 @@ export default function HomeScreen() {
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+            />
+          }
         >
           {/* Header */}
           <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 28 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
               <View>
-                <Text style={{ fontSize: 16, color: colors.textSecondary, marginBottom: 6, fontWeight: "500" }}>
+                <Text
+                  style={{
+                    fontSize: 16,
+                    color: colors.textSecondary,
+                    marginBottom: 6,
+                    fontWeight: "500",
+                  }}
+                >
                   Welcome back,
                 </Text>
-                <Text style={{ fontSize: 36, fontWeight: "900", color: colors.text, letterSpacing: -0.8 }}>
+                <Text
+                  style={{
+                    fontSize: 36,
+                    fontWeight: "900",
+                    color: colors.text,
+                    letterSpacing: -0.8,
+                  }}
+                >
                   {firstName} 👋
                 </Text>
               </View>
@@ -329,7 +439,9 @@ export default function HomeScreen() {
                     width: 48,
                     height: 48,
                     borderRadius: 24,
-                    backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)",
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.06)",
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -343,7 +455,9 @@ export default function HomeScreen() {
                     width: 48,
                     height: 48,
                     borderRadius: 24,
-                    backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.06)",
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.1)"
+                      : "rgba(0,0,0,0.06)",
                     alignItems: "center",
                     justifyContent: "center",
                   }}
@@ -384,7 +498,9 @@ export default function HomeScreen() {
                 shadowRadius: 12,
               }}
             >
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
+              <View
+                style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}
+              >
                 <View
                   style={{
                     width: 40,
@@ -398,11 +514,13 @@ export default function HomeScreen() {
                 >
                   <Ionicons name="chatbubbles" size={22} color={colors.primary} />
                 </View>
-                <Text style={{ fontSize: 20, fontWeight: "800", color: colors.text }}>CommunityTalk</Text>
+                <Text style={{ fontSize: 20, fontWeight: "800", color: colors.text }}>
+                  CommunityTalk
+                </Text>
               </View>
               <Text style={{ fontSize: 15, color: colors.textSecondary, lineHeight: 22 }}>
-                Stay connected with your college groups and faith communities. Share stories, join conversations, and
-                make real connections that matter.
+                Stay connected with your college groups and faith communities. Share
+                stories, join conversations, and make real connections that matter.
               </Text>
             </View>
           </View>
@@ -412,13 +530,24 @@ export default function HomeScreen() {
             <SectionHeader
               emoji="✨"
               title={isAuthed ? "Your Communities" : "Public Communities"}
-              subtitle={isAuthed ? "Connect with people who share your campus and faith" : "Browse open communities and find your place"}
+              subtitle={
+                isAuthed
+                  ? "Connect with people who share your campus and faith"
+                  : "Browse open communities and find your place"
+              }
             />
 
             {loading ? (
               <View style={{ paddingVertical: 60, alignItems: "center" }}>
                 <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={{ marginTop: 18, fontSize: 16, color: colors.textSecondary, fontWeight: "500" }}>
+                <Text
+                  style={{
+                    marginTop: 18,
+                    fontSize: 16,
+                    color: colors.textSecondary,
+                    fontWeight: "500",
+                  }}
+                >
                   Loading your communities...
                 </Text>
               </View>
@@ -426,20 +555,33 @@ export default function HomeScreen() {
               <View
                 style={{
                   marginHorizontal: 20,
-                  backgroundColor: isDark ? "rgba(255, 59, 48, 0.15)" : "#FFEBEE",
+                  backgroundColor: isDark
+                    ? "rgba(255, 59, 48, 0.15)"
+                    : "#FFEBEE",
                   borderLeftWidth: 4,
                   borderLeftColor: colors.destructive,
                   borderRadius: 20,
                   padding: 20,
                 }}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}
+                >
                   <Ionicons name="alert-circle" size={24} color={colors.destructive} />
-                  <Text style={{ fontSize: 18, fontWeight: "700", color: colors.destructive, marginLeft: 10 }}>
+                  <Text
+                    style={{
+                      fontSize: 18,
+                      fontWeight: "700",
+                      color: colors.destructive,
+                      marginLeft: 10,
+                    }}
+                  >
                     Something went wrong
                   </Text>
                 </View>
-                <Text style={{ fontSize: 15, color: colors.destructive, lineHeight: 21 }}>{error}</Text>
+                <Text style={{ fontSize: 15, color: colors.destructive, lineHeight: 21 }}>
+                  {error}
+                </Text>
               </View>
             ) : communities.length === 0 ? (
               <View
@@ -462,7 +604,9 @@ export default function HomeScreen() {
                     width: 96,
                     height: 96,
                     borderRadius: 48,
-                    backgroundColor: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+                    backgroundColor: isDark
+                      ? "rgba(255,255,255,0.06)"
+                      : "rgba(0,0,0,0.04)",
                     alignItems: "center",
                     justifyContent: "center",
                     marginBottom: 20,
@@ -470,7 +614,14 @@ export default function HomeScreen() {
                 >
                   <Ionicons name="people-outline" size={48} color={colors.textSecondary} />
                 </View>
-                <Text style={{ fontSize: 22, fontWeight: "800", color: colors.text, marginBottom: 10 }}>
+                <Text
+                  style={{
+                    fontSize: 22,
+                    fontWeight: "800",
+                    color: colors.text,
+                    marginBottom: 10,
+                  }}
+                >
                   {isAuthed ? "No communities yet" : "No public communities"}
                 </Text>
                 <Text
@@ -487,7 +638,9 @@ export default function HomeScreen() {
                     : "No public communities are available right now. Sign in to see communities for your college and faith group."}
                 </Text>
                 <Pressable
-                  onPress={() => router.push("/(tabs)/explore")}
+                  onPress={() =>
+                    isAuthed ? router.push("/(tabs)/explore") : router.push("/profile")
+                  }
                   style={{
                     marginTop: 24,
                     paddingHorizontal: 28,
@@ -512,7 +665,9 @@ export default function HomeScreen() {
                   showsHorizontalScrollIndicator={false}
                   data={communities}
                   keyExtractor={(c) => c._id}
-                  renderItem={({ item, index }) => <CommunityCard community={item} index={index} />}
+                  renderItem={({ item, index }) => (
+                    <CommunityCard community={item} index={index} />
+                  )}
                   contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 8 }}
                 />
 
@@ -524,13 +679,21 @@ export default function HomeScreen() {
                       marginTop: 24,
                       paddingVertical: 16,
                       borderRadius: 18,
-                      backgroundColor: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.04)",
+                      backgroundColor: isDark
+                        ? "rgba(255,255,255,0.08)"
+                        : "rgba(0,0,0,0.04)",
                       borderWidth: 1,
                       borderColor: colors.border,
                       alignItems: "center",
                     }}
                   >
-                    <Text style={{ fontSize: 16, fontWeight: "700", color: colors.primary }}>
+                    <Text
+                      style={{
+                        fontSize: 16,
+                        fontWeight: "700",
+                        color: colors.primary,
+                      }}
+                    >
                       View All Communities →
                     </Text>
                   </Pressable>

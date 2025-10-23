@@ -8,12 +8,8 @@ import React, {
   useState,
 } from "react";
 import * as SplashScreen from "expo-splash-screen";
-
-import {
-  login as apiLogin,
-  register as apiRegister,
-  bootstrap as apiBootstrap,
-} from "../api/auth";
+import { login as apiLogin, register as apiRegister } from "../api/auth";
+import { api } from "../api/api";
 import {
   setAccessToken,
   removeAccessToken,
@@ -57,7 +53,7 @@ export const AuthContext = createContext<AuthState>({
   bootstrap: async () => {},
 });
 
-// keep the splash until we hydrate once
+// Keep the splash until we hydrate once
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Derive collegeSlug / religionKey from communities when missing on user */
@@ -66,14 +62,12 @@ function deriveScope(user: any | null, communities: any[]) {
 
   const hasCollege = !!user.collegeSlug;
   const hasReligion = !!user.religionKey;
-
   if (hasCollege && hasReligion) return user;
 
   let collegeSlug: string | null | undefined = user.collegeSlug ?? null;
   let religionKey: string | null | undefined = user.religionKey ?? null;
 
   if (!collegeSlug) {
-    // look for community typed/marked as college
     const c =
       communities.find((x: any) => x?.type === "college" && x?.key) ||
       communities.find((x: any) => /college/i.test(String(x?.type || "")) && x?.key);
@@ -81,10 +75,12 @@ function deriveScope(user: any | null, communities: any[]) {
   }
 
   if (!religionKey) {
-    // look for community typed/marked as religion/faith
     const r =
-      communities.find((x: any) => (x?.type === "religion" || x?.type === "faith") && x?.key) ||
-      communities.find((x: any) => /(religion|faith)/i.test(String(x?.type || "")) && x?.key);
+      communities.find(
+        (x: any) => (x?.type === "religion" || x?.type === "faith") && x?.key
+      ) || communities.find((x: any) =>
+        /(religion|faith)/i.test(String(x?.type || "")) && x?.key
+      );
     if (r?.key) religionKey = r.key;
   }
 
@@ -111,12 +107,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
   const applyAuthState = useCallback((u: any | null, cs: any[]) => {
     if (!mountedRef.current) return;
-
     const safeCommunities = Array.isArray(cs) ? cs : [];
-
-    // ⬇️ Normalize/augment user with derived scope (collegeSlug, religionKey)
     const augmentedUser = deriveScope(u, safeCommunities);
-
     setUser(augmentedUser);
     setCommunities(safeCommunities);
 
@@ -125,13 +117,17 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         userHasScope: !!augmentedUser?.collegeSlug && !!augmentedUser?.religionKey,
         collegeSlug: augmentedUser?.collegeSlug ?? null,
         religionKey: augmentedUser?.religionKey ?? null,
-        communities: safeCommunities.map((c: any) => ({ id: c?._id, type: c?.type, key: c?.key })),
+        communities: safeCommunities.map((c: any) => ({
+          id: c?._id,
+          type: c?.type,
+          key: c?.key,
+        })),
       });
     }
   }, []);
 
   const clearAuthState = useCallback(async () => {
-    if (clearingRef.current) return; // guard
+    if (clearingRef.current) return;
     clearingRef.current = true;
     try {
       await removeAccessToken();
@@ -139,20 +135,40 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     disconnectSocket();
     applyAuthState(null, []);
     if (mountedRef.current) setIsLoading(false);
-    clearingRef.current = false; // release
+    clearingRef.current = false;
   }, [applyAuthState]);
 
+  /**
+   * Bootstrap user + communities from the server.
+   * Uses /api/bootstrap; if a legacy server responds 404, it will try /bootstrap once.
+   */
+  const triedLegacyOnce = useRef(false);
   const refreshBootstrap = useCallback(async () => {
+    const tryPath = async (path: string) => {
+      const { data } = await api.get(path);
+      return data;
+    };
+
     try {
-      const data = await apiBootstrap();
+      // Preferred modern path
+      const data = await tryPath("/api/bootstrap");
       applyAuthState(data?.user || null, data?.communities || []);
-    } catch (error: any) {
-      // If the token is bad/expired, clear local state + token and STOP here.
-      if (error?.response?.status === 401) {
-        await clearAuthState();
-        return; // prevents retry loops
+    } catch (err: any) {
+      // If server is older and only has /bootstrap without /api prefix, do a one-time fallback
+      const status = err?.response?.status;
+      if (status === 404 && !triedLegacyOnce.current) {
+        triedLegacyOnce.current = true;
+        const data = await tryPath("/bootstrap");
+        applyAuthState(data?.user || null, data?.communities || []);
+        return;
       }
-      throw error; // other errors still bubble
+
+      // Token problems → clear and stop
+      if (err?.response?.status === 401) {
+        await clearAuthState();
+        return;
+      }
+      throw err;
     }
   }, [applyAuthState, clearAuthState]);
 
@@ -190,7 +206,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   // Centralized token→state transition (+ socket auth)
   const completeLoginFromToken = useCallback(
     async (token: string) => {
-      // Persist token first so interceptors & socket can use it
       await setAccessToken(token);
       await refreshSocketAuth(token);
       await refreshBootstrap();
@@ -221,12 +236,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [clearAuthState]);
 
   // Back-compat shims your UI references in some places
-  const setTokenCompat = useCallback(
-    async (token: string) => {
-      await completeLoginFromToken(token);
-    },
-    [completeLoginFromToken]
-  );
+  const setTokenCompat = useCallback(async (token: string) => {
+    await completeLoginFromToken(token);
+  }, [completeLoginFromToken]);
 
   const bootstrapCompat = useCallback(async () => {
     await refreshBootstrap();

@@ -108,8 +108,6 @@ const ProfileHeader = ({
   }));
 
   const gradientColors = isDark ? (['#581c87', '#1e293b'] as const) : (['#f5f3ff', '#e0e7ff'] as const);
-
-  // avatar fallback “CT”
   const initials = 'CT';
 
   return (
@@ -272,10 +270,25 @@ export default function ProfileScreen(): React.JSX.Element {
     stats: { communities: 0, messages: 0, connections: 0 },
   });
 
-  // INITIAL + PULL REFRESH: /bootstrap
+  // INITIAL + PULL REFRESH: try /api/bootstrap then fall back to /api/profile
   const load = React.useCallback(async () => {
     try {
-      const { data } = await api.get('/bootstrap');
+      let data: any | null = null;
+
+      // Primary: /api/bootstrap
+      try {
+        const res = await api.get('/api/bootstrap');
+        data = res?.data ?? null;
+      } catch (e: any) {
+        // Fallback if /api/bootstrap doesn’t exist on this backend
+        if (e?.response?.status === 404) {
+          const res2 = await api.get('/api/profile');
+          data = res2?.data ?? null;
+        } else {
+          throw e;
+        }
+      }
+
       const u = data?.user ?? auth?.user ?? {};
       const communities = Array.isArray(data?.communities) ? data.communities : [];
       const fullName = (u.fullName || '').trim() || (u.email || 'Student').split('@')[0];
@@ -288,11 +301,11 @@ export default function ProfileScreen(): React.JSX.Element {
         stats: {
           communities: communities.length || 0,
           messages: p.stats.messages, // live-updated below
-          connections: 0, // placeholder
+          connections: 0,
         },
       }));
     } catch {
-      // 401 is handled by AuthContext's global handler.
+      // 401 is handled by AuthContext's global handler
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -368,7 +381,6 @@ export default function ProfileScreen(): React.JSX.Element {
     [profile, unreadDMs]
   );
 
-  // ─────────── render ───────────
   if (loading || !schemeReady) {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }} className="bg-slate-100 dark:bg-zinc-950">
@@ -381,13 +393,12 @@ export default function ProfileScreen(): React.JSX.Element {
     <View style={{ flex: 1 }} className="bg-slate-100 dark:bg-zinc-950">
       <StatusBar style={isDark ? 'light' : 'dark'} />
 
-      {/* Gate UI is inside render — no early return that would skip hooks */}
       {!isAuthed ? (
         <View className="flex-1 items-center justify-center" style={{ paddingTop: insets.top }}>
           <Text className="text-2xl font-bold text-black dark:text-white mb-2">You’re not signed in</Text>
           <Text className="text-slate-600 dark:text-slate-300 mb-6">Please log in to view your profile.</Text>
           <Pressable
-            onPress={() => router.push('/modal')}
+            onPress={() => router.push('/modal?context=auth')}
             className="px-5 py-3 rounded-2xl bg-indigo-600"
             accessibilityRole="button"
             accessibilityLabel="Log in"

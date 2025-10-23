@@ -8,6 +8,7 @@ import { Stack } from "expo-router";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import "../global.css";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AuthProvider } from "../src/context/AuthContext";
 import { SocketProvider } from "../src/context/SocketContext";
