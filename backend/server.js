@@ -30,7 +30,7 @@ const registerEventSockets = require("./sockets/events");
 // 📦 Models
 const Person = require("./person");
 const Member = require("./models/Member");
-const Message = require("./models/Message"); 
+const Message = require("./models/Message");
 
 // ⚙️ App + Server
 const app = express();
@@ -87,23 +87,31 @@ registerEventSockets(io /*, presence */);
 
 const communityRoom = (id) => `community:${id}`;
 
+// (From friend) Token endpoints
+app.use("/api", require("./routes/tokenRoutes"));
+
 // Authenticate socket
 io.use(async (socket, next) => {
   try {
     const token =
       socket.handshake.auth?.token ||
       (socket.handshake.headers?.authorization || "").split(" ")[1];
-      console.log("🔑 [Socket Auth] Handshake token received:", token ? token.slice(0, 15) + "..." : "❌ None");
+    console.log(
+      "🔑 [Socket Auth] Handshake token received:",
+      token ? token.slice(0, 15) + "..." : "❌ None"
+    );
     if (!token) return next(new Error("No token provided"));
 
     const decoded = jwt.verify(token, JWT_SECRET);
     console.log("✅ [Socket Auth] Token verified:", decoded);
+
     const user = await Person.findById(decoded.id).lean();
     if (!user) return next(new Error("User not found"));
 
+    // ✅ use Member.memberStatus (not `status`)
     const memberships = await Member.find({
       person: user._id,
-      status: { $in: ["active", "owner"] },
+      memberStatus: { $in: ["active", "owner"] },
     }).select("community");
     const communityIds = memberships.map((m) => String(m.community));
 
@@ -185,7 +193,8 @@ io.on("connection", (socket) => {
 });
 
 // ───────────────────────── Routes ─────────────────────────
-app.use("/api", personRoutes);
+// keep auth’d API mounts
+app.use("/api", personRoutes); // login/registration under /api (your original)
 app.use("/api/communities", authenticate, communityRoutes);
 app.use("/api/members", authenticate, memberRoutes);
 app.use("/api/messages", authenticate, messageRoutes);
@@ -212,7 +221,6 @@ app.use((err, _req, res, _next) => {
 });
 
 // ───────────────────────── Startup ─────────────────────────
-
 const os = require("os");
 
 /** Best guess of a LAN IPv4 address to show in logs */
@@ -263,10 +271,8 @@ process.on("unhandledRejection", (reason) => {
           console.error("Error during server close:", err);
           process.exit(1);
         }
-        // Close any additional resources here (DB, queues, etc.)
         process.exit(0);
       });
-      // Force-exit if it hangs
       setTimeout(() => process.exit(0), 5000).unref();
     };
 

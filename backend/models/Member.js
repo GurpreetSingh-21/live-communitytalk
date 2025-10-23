@@ -16,6 +16,9 @@ const memberSchema = new mongoose.Schema(
     // Avatar URL (may mirror Person.avatar or be custom)
     avatar: { type: String, default: "/default-avatar.png" },
 
+    // Push notifications token (optional)
+    fcmToken: { type: String, default: null, index: true },
+
     // Community this membership belongs to
     community: { type: mongoose.Schema.Types.ObjectId, ref: "Community", required: true, index: true },
 
@@ -69,7 +72,8 @@ memberSchema.pre("findOneAndUpdate", function (next) {
 /* ───────────────────── Back-compat: fullName virtual ─────────────────────
  * Some existing code may still read/write 'fullName'. Map it to 'name'.
  */
-memberSchema.virtual("fullName")
+memberSchema
+  .virtual("fullName")
   .get(function () {
     return this.name;
   })

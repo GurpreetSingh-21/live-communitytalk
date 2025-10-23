@@ -6,7 +6,9 @@ const mongoose = require("mongoose");
 const Message = require("../models/Message");
 const Community = require("../models/Community");
 const Member = require("../models/Member");
+const admin = require("../firebase"); // ✅ Firebase setup
 
+// Require auth
 router.use((req, res, next) => {
   if (!req.user?.id) return res.status(401).json({ error: "Unauthorized" });
   next();
@@ -23,7 +25,8 @@ async function assertCommunityAndMembership(communityId, personId) {
     Member.findOne({
       person: personId,
       community: communityId,
-      status: { $in: ["active", "owner"] },
+      // ✅ match the schema key: memberStatus
+      memberStatus: { $in: ["active", "owner"] },
     }).lean(),
   ]);
 
@@ -39,6 +42,7 @@ router.post("/", async (req, res) => {
   try {
     const { content, communityId, attachments = [], clientMessageId } = req.body || {};
 
+    // 1) Validation
     if (!content?.trim() || !communityId) {
       return res.status(400).json({ error: "content and communityId are required" });
     }
@@ -49,9 +53,11 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Message exceeds 4000 characters" });
     }
 
+    // 2) Membership check
     const gate = await assertCommunityAndMembership(communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
+    // 3) Save message
     const msg = await Message.create({
       sender: req.user.fullName || "Unknown",
       senderId: req.user.id,
@@ -62,6 +68,7 @@ router.post("/", async (req, res) => {
       attachments: Array.isArray(attachments) ? attachments : [],
     });
 
+    // 4) Payload
     const payload = {
       _id: String(msg._id),
       sender: msg.sender,
@@ -77,13 +84,45 @@ router.post("/", async (req, res) => {
       clientMessageId: clientMessageId || undefined,
     };
 
-    // ✅ realtime emits — support both listeners
+    // 5) Real-time emits
     req.io?.to(ROOM(communityId)).emit("receive_message", payload);
     req.io?.to(ROOM(communityId)).emit("message:new", {
       communityId: String(communityId),
       message: payload,
     });
 
+    // 6) Push notifications (FCM)
+    try {
+      // active members of this community except sender, with fcmToken
+      const members = await Member.find({
+        community: OID(communityId),
+        person: { $ne: OID(req.user.id) },
+        fcmToken: { $exists: true, $ne: null },
+        memberStatus: { $in: ["active", "owner"] },
+      }).lean();
+
+      for (const m of members) {
+        const message = {
+          token: m.fcmToken,
+          notification: {
+            title: `${req.user.fullName || "Someone"} sent a message`,
+            body: msg.content.length > 80 ? msg.content.slice(0, 80) + "..." : msg.content,
+          },
+          data: {
+            communityId: String(communityId),
+            senderId: String(req.user.id),
+            messageId: String(msg._id),
+          },
+        };
+
+        await admin.messaging().send(message);
+        console.log(`✅ Push sent to ${m.name || "member"} (${m._id})`);
+      }
+    } catch (notifyErr) {
+      console.warn("⚠️ Push notification failed:", notifyErr?.message || notifyErr);
+    }
+
+    // 7) Done
     return res.status(201).json(payload);
   } catch (error) {
     console.error("POST /api/messages error:", error);
