@@ -1,246 +1,445 @@
-// app/landing.tsx
-import React, { useRef } from 'react';
-import { Animated, View, Image, Pressable, StatusBar as RNStatusBar } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
-import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import React, { useEffect, useMemo, useRef } from "react";
+import {
+  View,
+  ScrollView,
+  Pressable,
+  Platform,
+  Animated,
+} from "react-native";
+import { StatusBar } from "expo-status-bar";
+import { router } from "expo-router";
+import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 
-import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ThemedText } from "@/components/themed-text";
+import { useColorScheme } from "@/hooks/use-color-scheme";
+import { AuthContext } from "@/src/context/AuthContext";
 
-const HERO = require('@/assets/images/react-logo.png'); // swap to require('@/assets/images/hero.jpeg') when ready
+const useTokens = (isDark: boolean) => ({
+  pageBg: isDark ? "#000000" : "#FAFBFC",
+  cardBg: isDark ? "#0A0A0A" : "#FFFFFF",
+  textPrimary: isDark ? "#FFFFFF" : "#0A0A0A",
+  textSecondary: isDark ? "#9CA3AF" : "#6B7280",
+  border: isDark ? "#1F1F1F" : "#E5E7EB",
+  shadow: Platform.OS === "ios" ? (isDark ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.03)") : undefined,
+  primary: "#6366F1",
+  primaryAlt: "#10B981",
+});
+
+type Feature = {
+  emoji: string;
+  title: string;
+  desc: string;
+  gradient: readonly [string, string];
+};
+
+interface AnimatedCardProps {
+  children: React.ReactNode;
+  delay?: number;
+  style?: any;
+}
+
+const AnimatedCard: React.FC<AnimatedCardProps> = ({ children, delay = 0, style }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 700,
+        delay,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 700,
+        delay,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [delay, fadeAnim, slideAnim]);
+
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+};
+
+interface PulseButtonProps {
+  children: React.ReactNode;
+  onPress: () => void;
+  style?: any;
+}
+
+const PulseButton: React.FC<PulseButtonProps> = ({ children, onPress, style }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.97,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 3,
+      tension: 40,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      hitSlop={12}
+    >
+      <Animated.View
+        style={[
+          style,
+          {
+            transform: [{ scale: scaleAnim }],
+          },
+        ]}
+      >
+        {children}
+      </Animated.View>
+    </Pressable>
+  );
+};
 
 export default function Landing() {
   const scheme = useColorScheme();
-  const y = useRef(new Animated.Value(0)).current;
+  const isDark = scheme === "dark";
+  const t = useTokens(isDark);
+  const auth = React.useContext(AuthContext);
+  const insets = useSafeAreaInsets();
 
-  // subtle parallax for watermark
-  const imgTranslate = y.interpolate({
-    inputRange: [0, 360],
-    outputRange: [0, -18],
-    extrapolate: 'clamp',
-  });
-  const imgOpacity = y.interpolate({
-    inputRange: [0, 220],
-    outputRange: [0.12, 0.04],
-    extrapolate: 'clamp',
-  });
+  useEffect(() => {
+    if (auth?.isAuthed) router.replace("/(tabs)");
+  }, [auth?.isAuthed]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (auth?.isAuthed) router.replace("/(tabs)");
+    }, [auth?.isAuthed])
+  );
+
+  const FEATURES: Feature[] = useMemo(
+    () => [
+      {
+        emoji: "🎓",
+        title: "Verified Communities",
+        desc: "Connect with 25+ NYC campuses through .edu verification",
+        gradient: ["#6366F1", "#8B5CF6"] as const,
+      },
+      {
+        emoji: "🛕",
+        title: "Faith Groups",
+        desc: "Sikh, Muslim, Hindu, Christian, Jewish & Buddhist communities",
+        gradient: ["#8B5CF6", "#EC4899"] as const,
+      },
+      {
+        emoji: "📅",
+        title: "Campus Events",
+        desc: "Discover and share what's happening around you",
+        gradient: ["#F59E0B", "#EF4444"] as const,
+      },
+      {
+        emoji: "🔒",
+        title: "Private & Secure",
+        desc: "End-to-end encryption with no ads or tracking",
+        gradient: ["#10B981", "#14B8A6"] as const,
+      },
+      {
+        emoji: "💬",
+        title: "Real-time Chat",
+        desc: "Fast messaging that works anywhere on campus",
+        gradient: ["#06B6D4", "#3B82F6"] as const,
+      },
+      {
+        emoji: "🛡️",
+        title: "Safe Communities",
+        desc: "Built-in moderation and safety tools",
+        gradient: ["#EF4444", "#F97316"] as const,
+      },
+    ],
+    []
+  );
 
   return (
-    <View className="flex-1 bg-white dark:bg-black">
-      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
-      <RNStatusBar translucent />
+    <SafeAreaView className="flex-1" style={{ backgroundColor: t.pageBg }} edges={["top", "left", "right"]}>
+      <StatusBar style={isDark ? "light" : "dark"} translucent={false} />
 
-      <Animated.ScrollView
-        onScroll={Animated.event([{ nativeEvent: { contentOffset: { y } } }], { useNativeDriver: true })}
-        scrollEventThrottle={16}
-        contentContainerStyle={{ paddingBottom: 40 }}
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* HERO (full-bleed) */}
-        <View className="relative overflow-hidden">
-          <LinearGradient
-            // typed as a const tuple so TS is happy with expo-linear-gradient
-            colors={['#5B67F1', '#8B5CF6', '#EC4899'] as const}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            className="px-6 pt-16 pb-10"
-          >
-            {/* watermark */}
-            <Animated.View
+        {/* Header */}
+        <AnimatedCard>
+          <View className="px-5 pt-4 pb-6 flex-row items-center justify-between">
+            <View className="flex-row items-center gap-3">
+              <View
+                className="items-center justify-center"
+                style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 18,
+                  backgroundColor: t.primary,
+                  shadowColor: t.primary,
+                  shadowOpacity: 0.35,
+                  shadowRadius: 14,
+                  shadowOffset: { width: 0, height: 6 },
+                  elevation: 6,
+                }}
+              >
+                <ThemedText style={{ fontSize: 26, fontWeight: "900", color: "#FFFFFF" }}>
+                  CT
+                </ThemedText>
+              </View>
+              <ThemedText
+                style={{
+                  color: t.textPrimary,
+                  fontSize: 22,
+                  fontWeight: "900",
+                  letterSpacing: -0.6,
+                }}
+              >
+                CommunityTalk
+              </ThemedText>
+            </View>
+
+            <PulseButton onPress={() => router.push("/modal")}>
+              <View
+                className="px-6 py-2.5 rounded-xl"
+                style={{
+                  borderWidth: 1.5,
+                  borderColor: t.border,
+                  backgroundColor: t.cardBg,
+                }}
+              >
+                <ThemedText style={{ color: t.primary, fontWeight: "700", fontSize: 15 }}>
+                  Sign in
+                </ThemedText>
+              </View>
+            </PulseButton>
+          </View>
+        </AnimatedCard>
+
+        {/* Hero Section */}
+        <AnimatedCard delay={100}>
+          <View className="px-5 pb-10">
+            <ThemedText
               style={{
-                position: 'absolute',
-                right: -36,
-                bottom: -18,
-                transform: [{ translateY: imgTranslate }],
-                opacity: imgOpacity as any,
+                color: t.textPrimary,
+                fontSize: 44,
+                fontWeight: "900",
+                lineHeight: 50,
+                marginBottom: 18,
+                letterSpacing: -1.2,
               }}
-              pointerEvents="none"
             >
-              <Image source={HERO} resizeMode="contain" className="w-64 h-64" />
-            </Animated.View>
-
-            {/* top bar */}
-            <View className="mb-7 flex-row items-center justify-between z-10">
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Go Home"
-                onPress={() => router.replace('/')}
-                hitSlop={12}
-              >
-                <View className="flex-row items-center gap-3">
-                  <View className="h-10 w-10 items-center justify-center rounded-xl bg-white/15">
-                    <ThemedText className="text-white font-extrabold">CT</ThemedText>
-                  </View>
-                  <View>
-                    <ThemedText className="text-white text-xl font-extrabold">Community</ThemedText>
-                    <ThemedText className="text-yellow-300 text-xl font-extrabold">Talk</ThemedText>
-                  </View>
-                </View>
-              </Pressable>
-
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Register"
-                onPress={() => router.push('/register')}
-                className="rounded-xl px-5 py-2.5 bg-white shadow-xl"
-                hitSlop={12}
-              >
-                <ThemedText className="text-indigo-600 font-bold">Register</ThemedText>
-              </Pressable>
-            </View>
-
-            {/* headline */}
-            <ThemedText className="mb-3 text-[32px] leading-[36px] font-extrabold text-white">
-              Connect with <ThemedText className="text-yellow-300">campus</ThemedText> and{' '}
-              <ThemedText className="text-pink-300">faith groups</ThemedText> across NYC
+              Connect{" "}
+              <ThemedText style={{ fontSize: 44, fontWeight: "900", color: t.primary }}>
+                campus
+              </ThemedText>
+              {"\n"}and faith groups
             </ThemedText>
 
-            {/* subhead */}
-            <ThemedText className="mb-6 text-base leading-6 text-white/90">
-              Your hub for CUNY and NYC college communities. Connect with classmates, discover faith groups,
-              and chat privately—without the ads or distractions.
-            </ThemedText>
-
-            {/* stats */}
-            <View className="mb-6 flex-row justify-between rounded-2xl bg-white/12 p-4">
-              {[
-                ['25+', 'NY campuses'],
-                ['350+', 'Student groups'],
-                ['E2E', 'Encryption'],
-              ].map(([n, l], i) => (
-                <View key={i} className="items-center flex-1">
-                  <ThemedText className="mb-1 text-2xl font-extrabold text-white">{n}</ThemedText>
-                  <ThemedText className="text-xs text-white/80">{l}</ThemedText>
-                </View>
-              ))}
-            </View>
-
-            {/* CTAs */}
-            <View className="z-10 flex-row gap-3">
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Get started"
-                onPress={() => router.push('/register')}
-                className="flex-1 items-center rounded-2xl bg-white px-6 py-4 shadow-xl"
-                hitSlop={12}
-              >
-                <ThemedText className="font-bold text-indigo-600">Get started →</ThemedText>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Log in"
-                onPress={() => router.push('/modal')}
-                className="flex-1 items-center rounded-2xl border-2 border-white/40 px-6 py-4"
-                hitSlop={12}
-              >
-                <ThemedText className="font-bold text-white">Log in</ThemedText>
-              </Pressable>
-            </View>
-          </LinearGradient>
-        </View>
-
-        {/* FEATURES */}
-        <View className="px-6 py-8">
-          <ThemedText className="mb-6 text-2xl font-extrabold">Everything you need for campus life</ThemedText>
-
-          {([
-            { title: 'Campus email verification', desc: 'Sign up with your .edu email to keep spaces authentic and student-focused.', emoji: '🎓', color: ['#3B82F6', '#2563EB'] as const },
-            { title: 'Find your faith community', desc: 'Connect with Sikh, Muslim, Hindu, Christian, Jewish, and Buddhist groups citywide.', emoji: '🛕', color: ['#8B5CF6', '#7C3AED'] as const },
-            { title: 'Smart moderation tools', desc: 'Built-in roles, reporting, and safety features keep conversations respectful.', emoji: '🛡️', color: ['#10B981', '#059669'] as const },
-            { title: 'Event planning made easy', desc: 'Create events, track RSVPs, and send reminders—all in one place.', emoji: '📅', color: ['#F59E0B', '#D97706'] as const },
-            { title: 'Share anything, anywhere', desc: 'Send photos, files, and voice messages that work even on slow campus Wi-Fi.', emoji: '🎞️', color: ['#EF4444', '#DC2626'] as const },
-            { title: 'Privacy first, always', desc: 'End-to-end encrypted messaging means your conversations stay private.', emoji: '🔒', color: ['#6366F1', '#4F46E5'] as const },
-          ] as const).map((item, i) => (
-            <View key={i} className="mb-4 overflow-hidden rounded-3xl bg-white p-5 shadow-xl dark:bg-zinc-900">
-              <LinearGradient
-                colors={item.color}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                className="absolute right-0 top-0 h-full w-1.5"
-              />
-              <View className="mb-3 flex-row items-center gap-3">
-                <View className="h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 dark:bg-zinc-800">
-                  <ThemedText className="text-2xl">{item.emoji}</ThemedText>
-                </View>
-                <ThemedText className="flex-1 text-lg font-bold">{item.title}</ThemedText>
-              </View>
-              <ThemedText className="leading-6 text-slate-600 dark:text-slate-400">{item.desc}</ThemedText>
-            </View>
-          ))}
-        </View>
-
-        {/* GET STARTED */}
-        <View className="px-6 pb-4">
-          <ThemedText className="mb-4 text-2xl font-extrabold">Get started</ThemedText>
-          {([
-            ['Join your campus', 'Find and verify your CUNY/NY college.', '🎓'],
-            ['Find a faith group', 'Search by your Community across all campuses.', '🛕'],
-            ['Create a new group', 'Start a club, study circle, or volunteer team.', '➕'],
-          ] as const).map(([title, desc, emoji], i) => (
-            <Pressable
-              key={i}
-              onPress={() => router.push('/register')}
-              className="mb-3 rounded-2xl bg-white p-5 shadow-lg dark:bg-zinc-900"
-              hitSlop={12}
+            <ThemedText
+              style={{
+                color: t.textSecondary,
+                fontSize: 18,
+                lineHeight: 28,
+                marginBottom: 32,
+                fontWeight: "400",
+              }}
             >
-              <View className="mb-2 flex-row items-center gap-3">
-                <ThemedText className="text-3xl">{emoji}</ThemedText>
-                <ThemedText className="flex-1 text-base font-bold">{title}</ThemedText>
-              </View>
-              <ThemedText className="mb-2 text-slate-600 dark:text-slate-400">{desc}</ThemedText>
-              <ThemedText className="font-semibold text-indigo-600">Get started →</ThemedText>
-            </Pressable>
-          ))}
-        </View>
-
-        {/* ABOUT */}
-        <View className="px-6 py-4">
-          <View className="overflow-hidden rounded-3xl bg-slate-900 p-6 dark:bg-zinc-900">
-            <ThemedText className="mb-4 text-2xl font-extrabold text-white">What is CommunityTalk?</ThemedText>
-            <ThemedText className="mb-6 leading-6 text-white/80">
-              A straightforward platform built specifically for NYC college students. Verified communities, trusted faith
-              groups, and the tools you actually need—minus the clutter.
+              NYC's hub for verified student communities
             </ThemedText>
 
-            <View className="mb-2 flex-row gap-4">
-              <Pressable
-                onPress={() => router.push('/register')}
-                className="flex-1 items-center rounded-2xl bg-white px-5 py-4"
-                hitSlop={12}
+            <PulseButton onPress={() => router.push("/register")}>
+              <View
+                className="rounded-2xl py-5 items-center"
+                style={{
+                  backgroundColor: t.primary,
+                  shadowColor: t.primary,
+                  shadowOpacity: 0.4,
+                  shadowRadius: 18,
+                  shadowOffset: { width: 0, height: 10 },
+                  elevation: 10,
+                }}
               >
-                <ThemedText className="font-bold text-slate-900">Create account</ThemedText>
-              </Pressable>
-              <Pressable
-                onPress={() => router.push('/modal')}
-                className="flex-1 items-center rounded-2xl border-2 border-white/30 px-5 py-4"
-                hitSlop={12}
-              >
-                <ThemedText className="font-bold text-white">Log in</ThemedText>
-              </Pressable>
-            </View>
+                <ThemedText style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 18 }}>
+                  Get Started →
+                </ThemedText>
+              </View>
+            </PulseButton>
+          </View>
+        </AnimatedCard>
+
+        {/* Features Section */}
+        <View className="px-5">
+          <AnimatedCard delay={200}>
+            <ThemedText
+              style={{
+                color: t.textPrimary,
+                fontSize: 30,
+                fontWeight: "900",
+                marginBottom: 24,
+                letterSpacing: -0.6,
+              }}
+            >
+              Why students love us
+            </ThemedText>
+          </AnimatedCard>
+
+          <View style={{ gap: 16 }}>
+            {FEATURES.map((f, i) => (
+              <AnimatedCard key={i} delay={300 + i * 60}>
+                <View
+                  className="rounded-3xl p-6"
+                  style={{
+                    backgroundColor: t.cardBg,
+                    borderWidth: 1,
+                    borderColor: t.border,
+                    shadowColor: t.shadow,
+                    shadowOpacity: isDark ? 0.5 : 1,
+                    shadowRadius: 24,
+                    shadowOffset: { width: 0, height: 12 },
+                    elevation: 4,
+                    overflow: "hidden",
+                  }}
+                >
+                  <LinearGradient
+                    colors={[f.gradient[0], f.gradient[1]]}
+                    style={{
+                      position: "absolute",
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: 6,
+                      opacity: 0.85,
+                    }}
+                  />
+
+                  <View className="flex-row items-center gap-4">
+                    <View
+                      className="items-center justify-center"
+                      style={{
+                        width: 56,
+                        height: 56,
+                        borderRadius: 18,
+                        backgroundColor: isDark ? "#141414" : "#F9FAFB",
+                      }}
+                    >
+                      <ThemedText style={{ fontSize: 28 }}>{f.emoji}</ThemedText>
+                    </View>
+
+                    <View className="flex-1">
+                      <ThemedText
+                        style={{
+                          color: t.textPrimary,
+                          fontSize: 19,
+                          fontWeight: "800",
+                          marginBottom: 6,
+                          letterSpacing: -0.3,
+                        }}
+                      >
+                        {f.title}
+                      </ThemedText>
+                      <ThemedText
+                        style={{
+                          color: t.textSecondary,
+                          fontSize: 15,
+                          lineHeight: 22,
+                          fontWeight: "400",
+                        }}
+                      >
+                        {f.desc}
+                      </ThemedText>
+                    </View>
+                  </View>
+                </View>
+              </AnimatedCard>
+            ))}
           </View>
         </View>
 
-        {/* FOOTER */}
-        <View className="px-6 mt-4">
-          <View className="rounded-2xl bg-slate-100 p-5 dark:bg-zinc-900">
-            <View className="flex-row items-center justify-between">
-              <View>
-                <ThemedText className="text-lg font-bold">Community</ThemedText>
-                <ThemedText className="text-lg font-bold text-indigo-600">Talk</ThemedText>
-              </View>
-              <View className="flex-row gap-2">
-                {['⚡', '✉️', '❤️'].map((e, i) => (
-                  <View key={i} className="h-10 w-10 items-center justify-center rounded-xl bg-white dark:bg-zinc-800">
-                    <ThemedText>{e}</ThemedText>
-                  </View>
-                ))}
-              </View>
+        {/* Footer CTA */}
+        <AnimatedCard delay={900}>
+          <View className="px-5 mt-8">
+            <View
+              className="rounded-3xl p-7"
+              style={{
+                backgroundColor: t.cardBg,
+                borderWidth: 1,
+                borderColor: t.border,
+                shadowColor: t.shadow,
+                shadowOpacity: isDark ? 0.5 : 1,
+                shadowRadius: 28,
+                shadowOffset: { width: 0, height: 14 },
+                elevation: 5,
+              }}
+            >
+              <ThemedText
+                style={{
+                  color: t.textPrimary,
+                  fontSize: 28,
+                  fontWeight: "900",
+                  marginBottom: 12,
+                  letterSpacing: -0.6,
+                }}
+              >
+                Ready to connect?
+              </ThemedText>
+              <ThemedText
+                style={{
+                  color: t.textSecondary,
+                  lineHeight: 26,
+                  marginBottom: 24,
+                  fontSize: 17,
+                  fontWeight: "400",
+                }}
+              >
+                Join authentic student communities across NYC—no noise, no ads, just real connections.
+              </ThemedText>
+
+              <PulseButton onPress={() => router.push("/register")}>
+                <View
+                  className="rounded-2xl py-5 items-center"
+                  style={{
+                    backgroundColor: t.primaryAlt,
+                    shadowColor: t.primaryAlt,
+                    shadowOpacity: 0.4,
+                    shadowRadius: 18,
+                    shadowOffset: { width: 0, height: 10 },
+                    elevation: 10,
+                  }}
+                >
+                  <ThemedText style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 18 }}>
+                    Create Account
+                  </ThemedText>
+                </View>
+              </PulseButton>
             </View>
           </View>
-        </View>
-      </Animated.ScrollView>
-    </View>
+        </AnimatedCard>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

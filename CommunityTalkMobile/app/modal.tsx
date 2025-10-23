@@ -34,8 +34,18 @@ LogBox.ignoreLogs(["[Reanimated]"]);
 
 type ModalContext = "communities" | "default";
 
-/* ────────────────────────── UI Bits ────────────────────────── */
+/* ───────────────────────── Helpers ───────────────────────── */
+const closeModal = () => {
+  // try to dismiss a modal stack if present
+  try {
+    (router as any).dismiss?.();
+  } catch {}
+  // if there is history, go back; otherwise land on tabs home
+  if (router.canGoBack()) router.back();
+  else router.replace("/(tabs)");
+};
 
+/* ────────────────────────── UI Bits ────────────────────────── */
 const FloatingHeaderIllustration = ({ icon }: { icon: string }) => {
   const isDark = useColorScheme() === "dark";
   const translateY = useSharedValue(0);
@@ -149,7 +159,6 @@ const ActionCard = ({
 };
 
 /* ───────────────────── Auth: Login Gateway ───────────────────── */
-
 function LoginGateway({ onDone }: { onDone: () => void }) {
   const isDark = useColorScheme() === "dark";
   const insets = useSafeAreaInsets();
@@ -190,7 +199,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     >
       <View style={{ paddingTop: insets.top, paddingHorizontal: 20, paddingBottom: 8 }}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={closeModal}
           className="h-10 w-10 items-center justify-center"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
@@ -282,12 +291,9 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
           <Text className="text-black/50 dark:text-white/50">Don’t have an account?</Text>
         </View>
 
-        {/* Sign up → push to register screen */}
+        {/* Sign up → replace to register */}
         <TouchableOpacity
-          onPress={() => {
-            router.back();
-            router.push("/register");
-          }}
+          onPress={() => router.replace("/register")}
           style={{ borderRadius: 12, overflow: "hidden" }}
         >
           <LinearGradient
@@ -303,9 +309,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     </KeyboardAvoidingView>
   );
 }
-
 /* ───────────────────── Main Modal (Signed-in) ───────────────────── */
-
 export default function ModalScreen() {
   const isDark = useColorScheme() === "dark";
   const insets = useSafeAreaInsets();
@@ -315,13 +319,38 @@ export default function ModalScreen() {
   const auth = React.useContext(AuthContext) as any;
   const isAuthed = !!auth?.isAuthed;
 
-  // If NOT signed in → show the login gateway
+  // --- FIXED universal close handler ---
+  const closeModal = React.useCallback(() => {
+    try {
+      // ✅ Newer Expo Router (v3+) modal dismiss support
+      // @ts-ignore
+      if (router.canDismiss?.() && router.canDismiss()) {
+        // @ts-ignore
+        router.dismiss();
+        return;
+      }
+
+      // ✅ Classic back stack
+      if (router.canGoBack?.() && router.canGoBack()) {
+        router.back();
+        return;
+      }
+
+      // ✅ Fallback to tabs root
+      router.replace("/(tabs)");
+    } catch (err) {
+      console.warn("[Modal Close] Failed:", err);
+      router.replace("/(tabs)");
+    }
+  }, []);
+
+  // --- if NOT signed in, show login gateway ---
   if (!isAuthed) {
     return (
       <LoginGateway
         onDone={() => {
           Promise.resolve(auth?.refreshBootstrap?.() || auth?.bootstrap?.()).finally(() => {
-            router.back();
+            closeModal();
           });
         }}
       />
@@ -332,17 +361,31 @@ export default function ModalScreen() {
 
   return (
     <View className="flex-1" style={{ backgroundColor: pageBg }}>
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 20, paddingBottom: 8 }}>
+      {/* Header with close button */}
+      <View
+        style={{
+          paddingTop: insets.top,
+          paddingHorizontal: 20,
+          paddingBottom: 8,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "flex-start",
+        }}
+      >
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={closeModal}
           className="h-10 w-10 items-center justify-center"
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
         >
           <Ionicons name="close" size={28} color={isDark ? "white" : "black"} />
         </TouchableOpacity>
       </View>
 
+      {/* Scrollable body */}
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingBottom: insets.bottom + 24,
@@ -365,14 +408,14 @@ export default function ModalScreen() {
           What would you like to do?
         </Text>
 
-        {/* NO direct messages here. */}
+        {/* Primary actions */}
         <ActionCard
           icon="🌍"
           title="Global Communities"
           description="Join public groups you’re not in yet"
           onPress={() => {
-            router.back();
-            router.push("/global/communities");
+            closeModal();
+            router.replace("/global/communities");
           }}
           gradient={["#4F46E5", "#8B5CF6"] as const}
         />
@@ -382,8 +425,8 @@ export default function ModalScreen() {
           title="Explore"
           description="Discover communities and connect"
           onPress={() => {
-            router.back();
-            router.push("/(tabs)/explore");
+            closeModal();
+            router.replace("/(tabs)/explore");
           }}
           gradient={["#14B8A6", "#06B6D4"] as const}
         />

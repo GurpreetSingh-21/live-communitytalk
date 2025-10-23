@@ -158,7 +158,7 @@ export default function RegisterScreen() {
         religionId,
       };
 
-      const { data } = await api.post("/register", body);
+      const { data } = await api.post("/api/register", body);
       if (!data?.token) {
         setServerError("Unexpected response from server.");
         return;
@@ -791,7 +791,7 @@ export default function RegisterScreen() {
 
         {/* Login Link */}
         <TouchableOpacity
-          onPress={() => router.replace("/")}
+          onPress={() => router.push("/modal")}
           activeOpacity={0.8}
           style={{
             backgroundColor: isDark ? "#1F2937" : "#F9FAFB",
