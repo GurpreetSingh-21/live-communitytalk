@@ -26,6 +26,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const publicRoutes = require("./routes/publicRoutes");
 const eventRoutes = require("./routes/events");
 const registerEventSockets = require("./sockets/events");
+const notificationRoutes = require("./routes/notificationRoutes");
 
 // 📦 Models
 const Person = require("./person");
@@ -199,6 +200,7 @@ app.use("/api/communities", authenticate, communityRoutes);
 app.use("/api/members", authenticate, memberRoutes);
 app.use("/api/messages", authenticate, messageRoutes);
 app.use("/api/direct-messages", authenticate, directMessageRoutes);
+app.use("/api/notifications", authenticate, notificationRoutes);
 
 // 🔎 Pre-auth header logger for /api/events
 app.use("/api/events", (req, _res, next) => {

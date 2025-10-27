@@ -1,6 +1,14 @@
 const { getDefaultConfig } = require("expo/metro-config");
 const { withNativeWind } = require('nativewind/metro');
- 
-const config = getDefaultConfig(__dirname)
- 
-module.exports = withNativeWind(config, { input: './global.css' })
+const path = require('path'); // <-- 1. Add this line
+
+const config = getDefaultConfig(__dirname);
+
+
+config.resolver.alias = {
+  ...(config.resolver.alias || {}), 
+  'tslib': path.resolve(__dirname, 'node_modules/tslib/tslib.es6.js'),
+};
+
+// 3. Pass the modified config to withNativeWind
+module.exports = withNativeWind(config, { input: './global.css' });

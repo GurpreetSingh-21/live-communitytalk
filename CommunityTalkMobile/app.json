@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "CommunityTalkMobile",
-    "slug": "CommunityTalkMobile",
+    "slug": "community-talk",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.CommunityTalkMobile",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -19,7 +23,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.CommunityTalkMobile"
     },
     "web": {
       "output": "static",
@@ -27,6 +32,7 @@
     },
     "plugins": [
       "expo-router",
+      
       [
         "expo-splash-screen",
         {
@@ -46,8 +52,13 @@
       "reactCompiler": true
     },
     "extra": {
-      "API_URL_DEV": "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev",
-      "API_URL_PROD": "https://your-production-api.example.com"
-    }
+      "API_URL_DEV": "https://photophilous-britney-uppishly.ngrok-free.dev",
+      "API_URL_PROD": "https://your-production-api.example.com",
+      "router": {},
+      "eas": {
+        "projectId": "1ddb8087-918a-434f-8a8d-71820474ed94"
+      }
+    },
+    "owner": "ravimultani38"
   }
 }

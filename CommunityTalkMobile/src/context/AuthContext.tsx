@@ -17,6 +17,7 @@ import {
 } from "../utils/storage";
 import { setUnauthorizedHandler } from "../api/api";
 import { refreshSocketAuth, disconnectSocket } from "../api/socket";
+import { registerForPushNotificationsAsync } from "../utils/notifications"; 
 
 type RegisterInput = {
   fullName: string;
@@ -177,8 +178,11 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     try {
       const token = await getAccessToken();
       if (token) {
+        console.log('[AuthContext] Found token, attempting bootstrap and push registration...');
         await refreshSocketAuth(token);
         await refreshBootstrap();
+        await registerForPushNotificationsAsync();
+        console.log('[AuthContext] Initial push registration attempt finished.');
       } else {
         applyAuthState(null, []);
       }
@@ -209,6 +213,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       await setAccessToken(token);
       await refreshSocketAuth(token);
       await refreshBootstrap();
+      console.log('[AuthContext] Bootstrap complete, now registering for push notifications...');
+      await registerForPushNotificationsAsync();
+      console.log('[AuthContext] Push notification registration attempt finished.');
     },
     [refreshBootstrap]
   );

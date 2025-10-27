@@ -6,7 +6,8 @@ const mongoose = require("mongoose");
 const Message = require("../models/Message");
 const Community = require("../models/Community");
 const Member = require("../models/Member");
-const admin = require("../firebase"); // ✅ Firebase setup
+const Person = require("../person");
+const { sendPushNotifications } = require("../services/notificationService"); // ✅ Use Expo instead of Firebase
 
 // Require auth
 router.use((req, res, next) => {
@@ -25,13 +26,17 @@ async function assertCommunityAndMembership(communityId, personId) {
     Member.findOne({
       person: personId,
       community: communityId,
-      // ✅ match the schema key: memberStatus
       memberStatus: { $in: ["active", "owner"] },
     }).lean(),
   ]);
 
   if (!exists) return { ok: false, code: 404, msg: "Community not found" };
-  if (!membership) return { ok: false, code: 403, msg: "You are not a member of this community" };
+  if (!membership)
+    return {
+      ok: false,
+      code: 403,
+      msg: "You are not a member of this community",
+    };
   return { ok: true };
 }
 
@@ -40,17 +45,26 @@ const ensureAuthor = (doc, me) => String(doc.senderId) === String(me);
 /* ───────────────────────── POST /api/messages ───────────────────────── */
 router.post("/", async (req, res) => {
   try {
-    const { content, communityId, attachments = [], clientMessageId } = req.body || {};
+    const {
+      content,
+      communityId,
+      attachments = [],
+      clientMessageId,
+    } = req.body || {};
 
     // 1) Validation
     if (!content?.trim() || !communityId) {
-      return res.status(400).json({ error: "content and communityId are required" });
+      return res
+        .status(400)
+        .json({ error: "content and communityId are required" });
     }
     if (!isValidId(communityId)) {
       return res.status(400).json({ error: "Invalid communityId" });
     }
     if (String(content).length > 4000) {
-      return res.status(400).json({ error: "Message exceeds 4000 characters" });
+      return res
+        .status(400)
+        .json({ error: "Message exceeds 4000 characters" });
     }
 
     // 2) Membership check
@@ -91,36 +105,8 @@ router.post("/", async (req, res) => {
       message: payload,
     });
 
-    // 6) Push notifications (FCM)
-    try {
-      // active members of this community except sender, with fcmToken
-      const members = await Member.find({
-        community: OID(communityId),
-        person: { $ne: OID(req.user.id) },
-        fcmToken: { $exists: true, $ne: null },
-        memberStatus: { $in: ["active", "owner"] },
-      }).lean();
-
-      for (const m of members) {
-        const message = {
-          token: m.fcmToken,
-          notification: {
-            title: `${req.user.fullName || "Someone"} sent a message`,
-            body: msg.content.length > 80 ? msg.content.slice(0, 80) + "..." : msg.content,
-          },
-          data: {
-            communityId: String(communityId),
-            senderId: String(req.user.id),
-            messageId: String(msg._id),
-          },
-        };
-
-        await admin.messaging().send(message);
-        console.log(`✅ Push sent to ${m.name || "member"} (${m._id})`);
-      }
-    } catch (notifyErr) {
-      console.warn("⚠️ Push notification failed:", notifyErr?.message || notifyErr);
-    }
+    // 6) Push notifications (EXPO) - ✅ UPDATED TO USE EXPO
+    sendPushNotificationsAsync(communityId, req.user, msg);
 
     // 7) Done
     return res.status(201).json(payload);
@@ -129,6 +115,81 @@ router.post("/", async (req, res) => {
     return res.status(500).json({ error: "Server Error" });
   }
 });
+
+/**
+ * ✅ NEW: Async helper to send push notifications via Expo
+ * This runs in the background and doesn't block the response
+ */
+async function sendPushNotificationsAsync(communityId, sender, message) {
+  try {
+    // Find all active members of the community (except the sender)
+    const members = await Member.find({
+      community: OID(communityId),
+      person: { $ne: OID(sender.id) }, // Don't send to self
+      memberStatus: { $in: ["active", "owner"] },
+    })
+      .select("person")
+      .lean();
+
+    // Get the unique Person IDs
+    const recipientIds = [
+      ...new Set(members.map((m) => m.person).filter(Boolean)),
+    ];
+
+    if (recipientIds.length === 0) {
+      console.log(`[Notify] No members to notify in community ${communityId}`);
+      return;
+    }
+
+    // Get all users with push tokens
+    const recipients = await Person.find({
+      _id: { $in: recipientIds },
+      pushTokens: { $exists: true, $ne: [] },
+    })
+      .select("pushTokens firstName lastName")
+      .lean();
+
+    if (recipients.length === 0) {
+      console.log(`[Notify] No recipients with push tokens in community ${communityId}`);
+      return;
+    }
+
+    console.log(
+      `[Notify] Sending push to ${recipients.length} users in community ${communityId}`
+    );
+
+    // Get community name for notification
+    const community = await Community.findById(communityId).select("name").lean();
+    const communityName = community?.name || "Community";
+
+    // Prepare notification content
+    const senderName = sender.fullName || "Someone";
+    const truncatedMessage =
+      message.content.length > 80
+        ? message.content.slice(0, 80) + "..."
+        : message.content;
+
+    // Use the Expo notification service
+    const result = await sendPushNotifications(recipients, {
+      title: `${senderName} in ${communityName}`,
+      body: truncatedMessage,
+      data: {
+        type: "new_message",
+        communityId: String(communityId),
+        messageId: String(message._id),
+        senderId: String(sender.id),
+        senderName: senderName,
+        screen: "CommunityChat",
+      },
+    });
+
+    console.log(
+      `[Notify] Results - Success: ${result.successCount}, Failure: ${result.failureCount}`
+    );
+  } catch (notifyErr) {
+    console.error("⚠️ Push notification failed:", notifyErr?.message || notifyErr);
+  }
+}
 
 /* ─────────────── GET /api/messages/:communityId ─────────────── */
 router.get("/:communityId", async (req, res) => {
@@ -143,7 +204,10 @@ router.get("/:communityId", async (req, res) => {
     const gate = await assertCommunityAndMembership(communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
-    const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit || "50", 10), 1),
+      200
+    );
     let before = req.query.before ? new Date(req.query.before) : new Date();
     if (isNaN(before.getTime())) before = new Date();
 
@@ -151,7 +215,9 @@ router.get("/:communityId", async (req, res) => {
       communityId: OID(communityId),
       timestamp: { $lt: before },
     })
-      .select("_id sender senderId avatar content timestamp communityId status editedAt isDeleted deletedAt")
+      .select(
+        "_id sender senderId avatar content timestamp communityId status editedAt isDeleted deletedAt"
+      )
       .sort({ timestamp: -1 })
       .limit(limit)
       .lean();
@@ -176,7 +242,9 @@ router.get("/:communityId/latest", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     const latest = await Message.findOne({ communityId: OID(communityId) })
-      .select("_id sender senderId avatar content timestamp communityId status editedAt isDeleted deletedAt")
+      .select(
+        "_id sender senderId avatar content timestamp communityId status editedAt isDeleted deletedAt"
+      )
       .sort({ timestamp: -1 })
       .lean();
 
@@ -192,7 +260,8 @@ router.patch("/:messageId", async (req, res) => {
   try {
     const { messageId } = req.params;
     const { content } = req.body || {};
-    if (!isValidId(messageId)) return res.status(400).json({ error: "Invalid messageId" });
+    if (!isValidId(messageId))
+      return res.status(400).json({ error: "Invalid messageId" });
     if (typeof content !== "string" || !content.trim()) {
       return res.status(400).json({ error: "content is required" });
     }
@@ -200,7 +269,9 @@ router.patch("/:messageId", async (req, res) => {
     const doc = await Message.findById(messageId);
     if (!doc) return res.status(404).json({ error: "Message not found" });
     if (!ensureAuthor(doc, req.user.id))
-      return res.status(403).json({ error: "You can only edit your own message" });
+      return res
+        .status(403)
+        .json({ error: "You can only edit your own message" });
 
     const gate = await assertCommunityAndMembership(doc.communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
@@ -228,12 +299,15 @@ router.patch("/:messageId", async (req, res) => {
 router.delete("/:messageId", async (req, res) => {
   try {
     const { messageId } = req.params;
-    if (!isValidId(messageId)) return res.status(400).json({ error: "Invalid messageId" });
+    if (!isValidId(messageId))
+      return res.status(400).json({ error: "Invalid messageId" });
 
     const doc = await Message.findById(messageId);
     if (!doc) return res.status(404).json({ error: "Message not found" });
     if (!ensureAuthor(doc, req.user.id))
-      return res.status(403).json({ error: "You can only delete your own message" });
+      return res
+        .status(403)
+        .json({ error: "You can only delete your own message" });
 
     const gate = await assertCommunityAndMembership(doc.communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });

@@ -51,6 +51,14 @@ const personSchema = new mongoose.Schema(
     communityIds: [
       { type: mongoose.Schema.Types.ObjectId, ref: "Community", index: true },
     ],
+  
+    /* ------------------ Push Notifications ------------------ */
+    // Array of Expo Push Tokens from user's devices
+    pushTokens: {
+      type: [String],
+      default: [],
+      index: true,
+    },
 
     /* ---------------------- Other Flags ---------------------- */
     nonEduEmail: { type: Boolean, default: false },
