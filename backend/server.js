@@ -8,6 +8,7 @@ const morgan = require("morgan");
 const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
+const { Expo } = require("expo-server-sdk");
 
 // 🔌 Database
 const { connectDB } = require("./db");
@@ -213,6 +214,31 @@ app.use("/api/events", (req, _res, next) => {
   next();
 });
 app.use("/api/events", authenticate, eventRoutes);
+
+
+app.post("/api/test-push", async (req, res) => {
+  try {
+    const { Expo } = require("expo-server-sdk");
+    const expo = new Expo();
+
+    const { expoPushToken } = req.body;
+    if (!expoPushToken) return res.status(400).json({ error: "Missing expoPushToken" });
+
+    const messages = [
+      {
+        to: expoPushToken,
+        sound: "default",
+        body: "🚀 Test push working (no auth)",
+      },
+    ];
+
+    const receipts = await expo.sendPushNotificationsAsync(messages);
+    res.json({ ok: true, receipts });
+  } catch (err) {
+    console.error("💥 Test push failed:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // 404
 app.use((req, res) => res.status(404).json({ error: "Not Found" }));

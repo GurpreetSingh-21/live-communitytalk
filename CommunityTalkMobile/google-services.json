@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "993629171239",
+    "project_id": "community-talk-9f8cd",
+    "storage_bucket": "community-talk-9f8cd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:993629171239:android:3ea921feababb46a2ee802",
+        "android_client_info": {
+          "package_name": "com.anonymous.CommunityTalkMobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDvqbws_dQELVawgqS5jkGCe3vks4toCNU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

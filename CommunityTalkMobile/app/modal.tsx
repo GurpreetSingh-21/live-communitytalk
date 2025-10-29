@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   LogBox,
   ScrollView,
 } from "react-native";
@@ -34,15 +33,79 @@ LogBox.ignoreLogs(["[Reanimated]"]);
 
 type ModalContext = "communities" | "default";
 
-/* ───────────────────────── Helpers ───────────────────────── */
-const closeModal = () => {
-  // try to dismiss a modal stack if present
+/* ───────────────────────── Navigation helpers ───────────────────────── */
+export const safeClose = () => {
+  console.log("🔵 safeClose called");
+  
   try {
-    (router as any).dismiss?.();
-  } catch {}
-  // if there is history, go back; otherwise land on tabs home
-  if (router.canGoBack()) router.back();
-  else router.replace("/(tabs)");
+    // Try to dismiss modal first
+    if (typeof router.canDismiss === "function") {
+      const canDismiss = router.canDismiss();
+      console.log("🔵 canDismiss:", canDismiss);
+      
+      if (canDismiss && typeof router.dismiss === "function") {
+        console.log("🔵 Dismissing modal");
+        router.dismiss();
+        return;
+      }
+    }
+  } catch (err) {
+    console.log("🔵 Dismiss failed:", err);
+  }
+
+  try {
+    // Try to go back
+    if (typeof router.canGoBack === "function") {
+      const canGoBack = router.canGoBack();
+      console.log("🔵 canGoBack:", canGoBack);
+      
+      if (canGoBack) {
+        console.log("🔵 Going back");
+        router.back();
+        return;
+      }
+    }
+  } catch (err) {
+    console.log("🔵 Back failed:", err);
+  }
+
+  // Last resort: navigate to tabs
+  console.log("🔵 Fallback: replacing to /(tabs)");
+  try {
+    router.replace("/(tabs)");
+  } catch (err) {
+    console.log("🔵 Replace failed:", err);
+    // Absolute last resort
+    router.push("/(tabs)");
+  }
+};
+
+/** Leave the modal and navigate somewhere without breaking the back stack */
+const navigateFromModal = (to: "/global/communities" | "/(tabs)/explore") => {
+  console.log("🟢 navigateFromModal called with:", to);
+  
+  // Close the modal first, then navigate
+  try {
+    if (typeof router.canDismiss === "function" && router.canDismiss()) {
+      console.log("🟢 Dismissing modal before navigation");
+      if (typeof router.dismiss === "function") {
+        router.dismiss();
+      }
+      // Use setTimeout to ensure modal is dismissed before navigating
+      setTimeout(() => {
+        console.log("🟢 Navigating to:", to);
+        router.push(to);
+      }, 150);
+    } else {
+      // If not in a modal, just navigate normally
+      console.log("🟢 Direct navigation to:", to);
+      router.push(to);
+    }
+  } catch (err) {
+    console.log("🟢 Navigation error:", err);
+    // Fallback: just try to navigate
+    router.push(to);
+  }
 };
 
 /* ────────────────────────── UI Bits ────────────────────────── */
@@ -56,7 +119,7 @@ const FloatingHeaderIllustration = ({ icon }: { icon: string }) => {
       -1,
       true
     );
-  }, []);
+  }, [translateY]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ translateY: translateY.value }],
@@ -189,6 +252,11 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     }
   };
 
+  const handleClose = () => {
+    console.log("🔴 LoginGateway close button pressed");
+    safeClose();
+  };
+
   const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
 
   return (
@@ -199,9 +267,12 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     >
       <View style={{ paddingTop: insets.top, paddingHorizontal: 20, paddingBottom: 8 }}>
         <TouchableOpacity
-          onPress={closeModal}
+          onPress={handleClose}
           className="h-10 w-10 items-center justify-center"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+          activeOpacity={0.6}
         >
           <Ionicons name="close" size={28} color={isDark ? "white" : "black"} />
         </TouchableOpacity>
@@ -271,6 +342,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
           onPress={doLogin}
           disabled={!canSubmit || busy}
           style={{ borderRadius: 12, overflow: "hidden", opacity: !canSubmit || busy ? 0.7 : 1 }}
+          activeOpacity={0.8}
         >
           <LinearGradient
             colors={["#6D5AE6", "#8B5CF6"] as const}
@@ -288,13 +360,22 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
 
         {/* Divider */}
         <View className="items-center my-6">
-          <Text className="text-black/50 dark:text-white/50">Don’t have an account?</Text>
+          <Text className="text-black/50 dark:text-white/50">Don't have an account?</Text>
         </View>
 
-        {/* Sign up → replace to register */}
+        {/* Sign up → navigate to register */}
         <TouchableOpacity
-          onPress={() => router.replace("/register")}
+          onPress={() => {
+            console.log("🟡 Sign up button pressed");
+            // Close modal first, then navigate to register
+            safeClose();
+            setTimeout(() => {
+              console.log("🟡 Navigating to /register");
+              router.push("/register");
+            }, 150);
+          }}
           style={{ borderRadius: 12, overflow: "hidden" }}
+          activeOpacity={0.8}
         >
           <LinearGradient
             colors={["#14B8A6", "#06B6D4"] as const}
@@ -309,6 +390,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     </KeyboardAvoidingView>
   );
 }
+
 /* ───────────────────── Main Modal (Signed-in) ───────────────────── */
 export default function ModalScreen() {
   const isDark = useColorScheme() === "dark";
@@ -319,38 +401,14 @@ export default function ModalScreen() {
   const auth = React.useContext(AuthContext) as any;
   const isAuthed = !!auth?.isAuthed;
 
-  // --- FIXED universal close handler ---
-  const closeModal = React.useCallback(() => {
-    try {
-      // ✅ Newer Expo Router (v3+) modal dismiss support
-      // @ts-ignore
-      if (router.canDismiss?.() && router.canDismiss()) {
-        // @ts-ignore
-        router.dismiss();
-        return;
-      }
-
-      // ✅ Classic back stack
-      if (router.canGoBack?.() && router.canGoBack()) {
-        router.back();
-        return;
-      }
-
-      // ✅ Fallback to tabs root
-      router.replace("/(tabs)");
-    } catch (err) {
-      console.warn("[Modal Close] Failed:", err);
-      router.replace("/(tabs)");
-    }
-  }, []);
-
-  // --- if NOT signed in, show login gateway ---
+  // not signed in → show login
   if (!isAuthed) {
     return (
       <LoginGateway
         onDone={() => {
+          console.log("🟣 Login completed, refreshing bootstrap");
           Promise.resolve(auth?.refreshBootstrap?.() || auth?.bootstrap?.()).finally(() => {
-            closeModal();
+            safeClose();
           });
         }}
       />
@@ -359,9 +417,14 @@ export default function ModalScreen() {
 
   const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
 
+  const handleClose = () => {
+    console.log("🔴 Quick Actions close button pressed");
+    safeClose();
+  };
+
   return (
     <View className="flex-1" style={{ backgroundColor: pageBg }}>
-      {/* Header with close button */}
+      {/* Header */}
       <View
         style={{
           paddingTop: insets.top,
@@ -373,17 +436,18 @@ export default function ModalScreen() {
         }}
       >
         <TouchableOpacity
-          onPress={closeModal}
+          onPress={handleClose}
           className="h-10 w-10 items-center justify-center"
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           accessibilityRole="button"
           accessibilityLabel="Close"
+          activeOpacity={0.6}
         >
           <Ionicons name="close" size={28} color={isDark ? "white" : "black"} />
         </TouchableOpacity>
       </View>
 
-      {/* Scrollable body */}
+      {/* Body */}
       <ScrollView
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
@@ -408,15 +472,11 @@ export default function ModalScreen() {
           What would you like to do?
         </Text>
 
-        {/* Primary actions */}
         <ActionCard
           icon="🌍"
           title="Global Communities"
-          description="Join public groups you’re not in yet"
-          onPress={() => {
-            closeModal();
-            router.replace("/global/communities");
-          }}
+          description="Join public groups you're not in yet"
+          onPress={() => navigateFromModal("/global/communities")}
           gradient={["#4F46E5", "#8B5CF6"] as const}
         />
 
@@ -424,10 +484,7 @@ export default function ModalScreen() {
           icon="🔍"
           title="Explore"
           description="Discover communities and connect"
-          onPress={() => {
-            closeModal();
-            router.replace("/(tabs)/explore");
-          }}
+          onPress={() => navigateFromModal("/(tabs)/explore")}
           gradient={["#14B8A6", "#06B6D4"] as const}
         />
       </ScrollView>

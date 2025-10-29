@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyDNIf_PJwFobPpinBkyfgs1kdGqTtQFhXI</string>
+	<key>GCM_SENDER_ID</key>
+	<string>993629171239</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.anonymous.CommunityTalkMobile</string>
+	<key>PROJECT_ID</key>
+	<string>community-talk-9f8cd</string>
+	<key>STORAGE_BUCKET</key>
+	<string>community-talk-9f8cd.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:993629171239:ios:a77f0477b9f8832f2ee802</string>
+</dict>
+</plist>
