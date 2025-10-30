@@ -25,12 +25,11 @@ function normalizeTags(tags) {
       out.push(v);
     }
   }
-  return out.slice(0, 20); // cap to something sane
+  return out.slice(0, 20);
 }
 
 const communitySchema = new mongoose.Schema(
   {
-    // Display name shown in UI
     name: {
       type: String,
       required: [true, "Community name is required"],
@@ -44,20 +43,30 @@ const communitySchema = new mongoose.Schema(
       type: String,
       enum: ["college", "religion", "custom"],
       default: "custom",
-      index: true,
+      index: true,                 // ✅ keep this, we query by type
       required: true,
     },
 
-    // Stable identifier (lowercase, hyphenated) e.g., "queens-college", "sikh"
-    // For type "college" and "religion" this is REQUIRED (pre-validate below).
-    key: { type: String, trim: true, lowercase: true, index: true },
+    // stable identifier
+    key: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      // ❌ remove inline index — we add a compound index below
+      // index: true,
+    },
 
-    // Slug for URLs (often equals key). Unique (sparse).
-    slug: { type: String, trim: true, lowercase: true, index: true },
+    // slug for URLs
+    slug: {
+      type: String,
+      trim: true,
+      lowercase: true,
+      // ❌ remove inline index — we add a unique sparse index below
+      // index: true,
+    },
 
     description: { type: String, trim: true, maxlength: 500, default: "" },
 
-    // Visibility / metadata (useful for custom groups)
     isPrivate: { type: Boolean, default: false },
 
     tags: {
@@ -72,7 +81,6 @@ const communitySchema = new mongoose.Schema(
 );
 
 /* ───────────────────────── Validation ───────────────────────── */
-// Require `key` when type is not "custom"
 communitySchema.pre("validate", function requireKeyForTyped(next) {
   if (this.type === "college" || this.type === "religion") {
     if (!this.key) {
@@ -82,15 +90,12 @@ communitySchema.pre("validate", function requireKeyForTyped(next) {
   next();
 });
 
-/* ───────────────────────── Indexes ─────────────────────────
- * Uniqueness on (type, key) and on slug (sparse so null/undefined allowed).
- * Name is NOT globally unique (two custom groups can share the same display name).
- */
+/* ───────────────────────── Indexes ───────────────────────── */
+// ✅ keep these explicit ones
 communitySchema.index({ type: 1, key: 1 }, { unique: true, sparse: true });
 communitySchema.index({ slug: 1 }, { unique: true, sparse: true });
 communitySchema.index({ name: 1 });
 communitySchema.index({ createdBy: 1 });
-// Text index to support /api/communities?q= searches
 communitySchema.index({ name: "text", description: "text", tags: "text" });
 
 /* ───────────────────── Normalization (save) ───────────────────── */
@@ -98,8 +103,6 @@ communitySchema.pre("save", function normalizeOnSave(next) {
   if (this.isModified("key") && this.key) this.key = slugify(this.key);
   if (this.isModified("name")) this.name = this.name.trim();
 
-  // For custom groups, if slug is missing, derive from name.
-  // For typed groups, prefer slug from key; fall back to name if key missing (shouldn’t happen due to validation).
   if (!this.slug || this.isModified("name") || this.isModified("key") || this.isModified("type")) {
     if (this.type === "custom") {
       this.slug = this.slug ? slugify(this.slug) : slugify(this.name || this.key);
@@ -108,7 +111,6 @@ communitySchema.pre("save", function normalizeOnSave(next) {
     }
   }
 
-  // Normalize tags
   if (this.isModified("tags")) {
     this.tags = normalizeTags(this.tags);
   }
@@ -116,13 +118,9 @@ communitySchema.pre("save", function normalizeOnSave(next) {
   next();
 });
 
-/* ───────────────── findOneAndUpdate normalization ─────────────────
- * Prevent "ConflictingUpdateOperators" by coalescing top-level fields into $set,
- * then sanitizing the values (slugify/trim) in one place.
- */
+/* ───────────────── findOneAndUpdate normalization ───────────────── */
 communitySchema.pre("findOneAndUpdate", function normalizeOnUpdate(next) {
   const update = this.getUpdate() || {};
-  // Move any top-level keys into $set to avoid conflicts
   const $set = update.$set ? { ...update.$set } : {};
   const topLevelKeys = ["name", "type", "key", "slug", "description", "isPrivate", "tags", "createdBy"];
 
@@ -133,14 +131,12 @@ communitySchema.pre("findOneAndUpdate", function normalizeOnUpdate(next) {
     }
   }
 
-  // Normalize values being set
   if (typeof $set.name === "string") $set.name = $set.name.trim();
   if (typeof $set.key === "string") $set.key = slugify($set.key);
   if (typeof $set.slug === "string") $set.slug = slugify($set.slug);
   if (typeof $set.description === "string") $set.description = $set.description.trim();
   if (Array.isArray($set.tags)) $set.tags = normalizeTags($set.tags);
 
-  // If we changed name/key/type and slug isn't explicitly set, compute it
   const touchedIdentity = ["name", "key", "type"].some((k) => Object.prototype.hasOwnProperty.call($set, k));
   if (touchedIdentity && !$set.slug) {
     if ($set.type === "custom" || (!$set.type && this.getQuery()?.type === "custom")) {
@@ -150,7 +146,6 @@ communitySchema.pre("findOneAndUpdate", function normalizeOnUpdate(next) {
     }
   }
 
-  // Reassign the normalized $set
   if (Object.keys($set).length) {
     update.$set = $set;
   }
@@ -169,10 +164,6 @@ communitySchema.set("toJSON", {
 });
 
 /* ───────────────────── Statics / Helpers ───────────────────── */
-/**
- * Find or create a community by {type, key}. Name is used on insert.
- * Returns a POJO (lean).
- */
 communitySchema.statics.findOrCreateTyped = async function ({ type, key, name, createdBy = null }) {
   if (!type) throw new Error("type is required");
   if (type !== "custom" && !key) throw new Error("key is required for typed communities");

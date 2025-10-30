@@ -16,45 +16,45 @@ const directMessageSchema = new mongoose.Schema(
       index: true,
     },
 
-    // Text body (routes should enforce text-or-attachments)
+    // Text body
     content: { type: String, trim: true, maxlength: 4000 },
 
     // Optional attachments
     attachments: [
       {
-        url: { type: String },
-        type: { type: String }, // "image", "file", etc.
-        name: { type: String },
-        size: { type: Number },
+        url: String,
+        type: String, // "image", "file", etc.
+        name: String,
+        size: Number,
       },
     ],
 
-    // Lifecycle + read state
     status: {
       type: String,
       enum: ["sent", "read", "edited", "deleted"],
       default: "sent",
       index: true,
     },
-    readAt: { type: Date },
-    editedAt: { type: Date },
-    deletedAt: { type: Date },
-    isDeleted: { type: Boolean, default: false, index: true }, // quick check for clients
 
-    // Client-friendly timestamp (kept in sync)
-    timestamp: { type: Date, default: Date.now, index: true },
+    readAt: Date,
+    editedAt: Date,
+    deletedAt: Date,
+
+    // quick check for clients
+    isDeleted: { type: Boolean, default: false, index: true },
   },
-  { timestamps: true }
+  {
+    timestamps: true, // gives createdAt / updatedAt
+  }
 );
 
-// ─────────────── Indexes for speed ───────────────
-// Common thread fetches & ordering
+/* ───── Indexes for speed ───── */
+// 1) recent messages in a conversation
 directMessageSchema.index({ from: 1, to: 1, createdAt: -1 });
-// Unread queries (e.g., count unread for inbox)
+// 2) unread inbox
 directMessageSchema.index({ to: 1, status: 1, createdAt: -1 });
-directMessageSchema.index({ createdAt: -1 });
 
-// Optional guard: prevent self-DM (routes also check; this is extra safety)
+// Optional guard: prevent self-DM
 directMessageSchema.pre("validate", function (next) {
   if (this.from && this.to && String(this.from) === String(this.to)) {
     return next(new Error("Cannot message yourself"));
@@ -62,20 +62,16 @@ directMessageSchema.pre("validate", function (next) {
   next();
 });
 
-// Keep timestamp in sync and auto-mark edits/deletes
+// Keep status in sync
 directMessageSchema.pre("save", function (next) {
-  if (!this.timestamp) this.timestamp = new Date();
-
   if (this.isDeleted) {
     this.status = "deleted";
     if (!this.deletedAt) this.deletedAt = new Date();
-    // Optional but safer: blank content once deleted so old text never leaks
     this.content = "";
   } else if (!this.isNew && this.isModified("content")) {
     this.status = "edited";
     this.editedAt = new Date();
   }
-
   next();
 });
 
@@ -84,7 +80,7 @@ directMessageSchema.methods.markDeleted = async function () {
   this.isDeleted = true;
   this.deletedAt = new Date();
   this.status = "deleted";
-  this.content = ""; // keep attachments meta if you want to show "file removed" later
+  this.content = "";
   return this.save();
 };
 

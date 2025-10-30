@@ -16,14 +16,16 @@ const personSchema = new mongoose.Schema(
   {
     // Basic identity
     fullName: { type: String, required: true, trim: true },
+
     email: {
       type: String,
       required: true,
-      unique: true,
+      unique: true,          // ✅ keep unique
       lowercase: true,
       trim: true,
-      index: true,
+      // ❌ remove `index: true` here – we define it below
     },
+
     password: { type: String, required: true }, // hashed password
     avatar: { type: String, default: "/default-avatar.png" },
 
@@ -37,8 +39,8 @@ const personSchema = new mongoose.Schema(
       enum: ["user", "mod", "admin"],
       default: "user",
     },
-    isAdmin: { type: Boolean, default: false }, // used for JWT + adminRoutes
-    isActive: { type: Boolean, default: true }, // for banning/deactivation
+    isAdmin: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
 
     /* ---------------------- College ---------------------- */
     collegeName: { type: String, trim: true, lowercase: true, index: true },
@@ -49,15 +51,18 @@ const personSchema = new mongoose.Schema(
 
     /* ---------------------- Communities ---------------------- */
     communityIds: [
-      { type: mongoose.Schema.Types.ObjectId, ref: "Community", index: true },
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Community",
+        // ❌ remove inline index here too
+      },
     ],
-  
+
     /* ------------------ Push Notifications ------------------ */
-    // Array of Expo Push Tokens from user's devices
     pushTokens: {
       type: [String],
       default: [],
-      index: true,
+      index: true, // ✅ this one is fine — array itself indexed
     },
 
     /* ---------------------- Other Flags ---------------------- */
@@ -67,8 +72,13 @@ const personSchema = new mongoose.Schema(
 );
 
 /* ------------------------- Indexes -------------------------- */
+// this one is good
 personSchema.index({ collegeSlug: 1, religionKey: 1 });
-personSchema.index({ email: 1 });
+
+// ✅ keep ONE explicit index for email
+personSchema.index({ email: 1 }, { unique: true });
+
+// ✅ keep ONE explicit index for communityIds
 personSchema.index({ communityIds: 1 });
 
 /* ------------------------- Hooks ---------------------------- */
