@@ -1,5 +1,5 @@
 // CommunityTalkMobile/app/thread/[id].tsx
-// UPDATED TO HANDLE BOTH DM THREADS AND COMMUNITY THREADS
+// UPDATED TO HANDLE BOTH DM THREADS AND COMMUNITY THREADS (TS-safe with your backend)
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -30,9 +30,9 @@ type ChatMessage = {
   senderId: string;
   content: string;
   timestamp: string | Date;
-  threadId?: string;
+  threadId?: string;     // for DMs we store partner id here for convenience
   communityId?: string;
-  status?: "sent" | "edited" | "deleted";
+  status?: "sent" | "edited" | "deleted" | "read";
   isDeleted?: boolean;
   clientMessageId?: string;
 };
@@ -45,22 +45,6 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
 const byAscTime = (a: ChatMessage, b: ChatMessage) =>
   new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-
-// Normalize any message to ChatMessage format
-const normalizeToChatMessage = (msg: any): ChatMessage => {
-  return {
-    _id: msg._id,
-    sender: msg.sender || msg.senderName || "Unknown",
-    senderId: msg.senderId,
-    content: msg.content,
-    timestamp: msg.timestamp,
-    threadId: msg.threadId,
-    communityId: msg.communityId,
-    status: msg.status,
-    isDeleted: msg.isDeleted,
-    clientMessageId: msg.clientMessageId,
-  };
-};
 
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
@@ -89,6 +73,45 @@ const showGap = (prev?: ChatMessage, cur?: ChatMessage) => {
   );
 };
 
+/* Normalize server payload → ChatMessage */
+function normalizeToChatMessage(
+  msg: any,
+  meId: string | undefined,
+  isDM: boolean,
+  partnerId: string
+): ChatMessage {
+  if (isDM) {
+    // DM model: { _id, from, to, content, timestamp|createdAt, status }
+    const ts = msg.timestamp ?? msg.createdAt ?? new Date();
+    const senderId = String(msg.from || "");
+    const mine = meId && senderId === String(meId);
+    return {
+      _id: String(msg._id),
+      sender: mine ? "You" : (msg.senderName || "User"),
+      senderId,
+      content: msg.content || "",
+      timestamp: ts,
+      threadId: partnerId, // partner user id as the "thread id"
+      status: msg.status,
+      isDeleted: !!msg.isDeleted,
+      clientMessageId: msg.clientMessageId,
+    };
+  } else {
+    // Community model: fields already match mostly
+    return {
+      _id: String(msg._id),
+      sender: msg.sender || msg.senderName || "Unknown",
+      senderId: String(msg.senderId || ""),
+      content: msg.content || "",
+      timestamp: msg.timestamp ?? msg.createdAt ?? new Date(),
+      communityId: String(msg.communityId || ""),
+      status: msg.status,
+      isDeleted: !!msg.isDeleted,
+      clientMessageId: msg.clientMessageId,
+    };
+  }
+}
+
 /* ───────────────── Theme Hook ───────────────── */
 const useTheme = () => {
   const isDark = useColorScheme() === "dark";
@@ -115,17 +138,17 @@ const useTheme = () => {
 
 /* ───────────────── Screen ───────────────── */
 export default function ThreadScreen() {
-  const { id, userName, isDM } = useLocalSearchParams<{ 
-    id: string; 
+  const { id, userName, isDM } = useLocalSearchParams<{
+    id: string;
     userName?: string;
     isDM?: string;
   }>();
-  
-  const threadId = String(id || "");
+
+  const threadId = String(id || "");          // for DMs: partner userId; for communities: communityId
   const isDirectMessage = isDM === "true";
-  
+
   const { isDark, colors } = useTheme();
-  const { socket, socketConnected } = useSocket() as any;
+  const { socket } = useSocket() as any;
   const { user } = React.useContext(AuthContext) as any;
 
   const [loading, setLoading] = useState(true);
@@ -133,7 +156,7 @@ export default function ThreadScreen() {
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [hasMore, setHasMore] = useState(true);
+  const [hasMore, setHasMore] = useState(true); // DM "older" is client-simulated
   const fetchingMoreRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
 
@@ -150,22 +173,27 @@ export default function ThreadScreen() {
     });
   }, []);
 
-  const upsertManySorted = useCallback((incoming: ChatMessage[]) => {
-    if (!incoming?.length) return;
-    setMessages((prev) => {
-      const map = new Map<string, ChatMessage>();
-      for (const m of prev) map.set(String(m._id || m.clientMessageId), m);
-      for (const m of incoming) {
-        const k = String(m._id || m.clientMessageId);
-        const prevM = map.get(k);
-        map.set(k, prevM ? { ...prevM, ...m } : m);
-      }
-      const next = Array.from(map.values()).sort(byAscTime);
-      const last = next[next.length - 1];
-      newestTsRef.current = last ? asDate(last.timestamp).toISOString() : newestTsRef.current;
-      return next;
-    });
-  }, []);
+  const upsertManySorted = useCallback(
+    (incoming: ChatMessage[]) => {
+      if (!incoming?.length) return;
+      setMessages((prev) => {
+        const map = new Map<string, ChatMessage>();
+        for (const m of prev) map.set(String(m._id || m.clientMessageId), m);
+        for (const m of incoming) {
+          const k = String(m._id || m.clientMessageId);
+          const prevM = map.get(k);
+          map.set(k, prevM ? { ...prevM, ...m } : m);
+        }
+        const next = Array.from(map.values()).sort(byAscTime);
+        const last = next[next.length - 1];
+        newestTsRef.current = last
+          ? asDate(last.timestamp).toISOString()
+          : newestTsRef.current;
+        return next;
+      });
+    },
+    []
+  );
 
   /* ─────────── Fetch initial ─────────── */
   const fetchInitial = useCallback(async () => {
@@ -174,18 +202,17 @@ export default function ThreadScreen() {
     setError(null);
     try {
       let items: any[] = [];
-
       if (isDirectMessage) {
-        // Fetch DM messages
-        items = await getDMMessages(threadId, { limit: 50 });
+        const res = await getDMMessages(threadId, { limit: 50 }); // backend ignores "before"
+        items = Array.isArray(res) ? res : [];
       } else {
-        // Fetch community messages (fallback to existing API)
         const { data } = await api.get(`/api/messages/${threadId}?limit=50`);
         items = Array.isArray(data) ? data : [];
       }
 
-      // Normalize all messages to ChatMessage format
-      const normalized = items.map(normalizeToChatMessage);
+      const normalized = items.map((m) =>
+        normalizeToChatMessage(m, String(user?._id || ""), isDirectMessage, threadId)
+      );
       normalized.sort(byAscTime);
       setMessages(normalized);
       setHasMore(normalized.length >= 50);
@@ -197,38 +224,48 @@ export default function ThreadScreen() {
     } finally {
       setLoading(false);
     }
-  }, [threadId, isDirectMessage, scrollToEnd]);
+  }, [threadId, isDirectMessage, scrollToEnd, user?._id]);
 
   useEffect(() => {
     fetchInitial();
   }, [fetchInitial]);
 
   /* ─────────── Fetch older ─────────── */
-const fetchOlder = useCallback(async () => {
-  if (!threadId || fetchingMoreRef.current || !hasMore || !messages.length) return;
-  try {
-    fetchingMoreRef.current = true;
-    const oldest = messages[0];
+  const fetchOlder = useCallback(async () => {
+    if (!threadId || fetchingMoreRef.current || !hasMore || !messages.length) return;
+    try {
+      fetchingMoreRef.current = true;
+      const oldest = messages[0];
+      const oldestTs = asDate(oldest.timestamp).getTime();
 
-    let older: any[] = [];
-    if (isDirectMessage) {
-      // ❌ was: const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
-      // Pass a Date (or plain ISO) — getDMMessages() will serialize it correctly.
-      const beforeDate = asDate(oldest.timestamp);
-      older = await getDMMessages(threadId, { limit: 50, before: beforeDate });
-    } else {
-      const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
-      const { data } = await api.get(`/api/messages/${threadId}?limit=50&before=${before}`);
-      older = Array.isArray(data) ? data : [];
+      let older: any[] = [];
+
+      if (isDirectMessage) {
+        // Client-side older paging: request more and slice
+        const desired = messages.length + 50;
+        const res = await getDMMessages(threadId, { limit: desired });
+        const all = Array.isArray(res) ? res : [];
+        older = all
+          .filter((m: any) => new Date(m.timestamp ?? m.createdAt).getTime() < oldestTs)
+          .slice(-50); // last up to 50 older than current oldest
+      } else {
+        const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
+        const { data } = await api.get(
+          `/api/messages/${threadId}?limit=50&before=${before}`
+        );
+        older = Array.isArray(data) ? data : [];
+      }
+
+      const normalized = older
+        .map((m) => normalizeToChatMessage(m, String(user?._id || ""), isDirectMessage, threadId))
+        .sort(byAscTime);
+
+      setMessages((prev) => [...normalized, ...prev]);
+      setHasMore(normalized.length >= 50);
+    } finally {
+      fetchingMoreRef.current = false;
     }
-
-    const normalized = older.map(normalizeToChatMessage).sort(byAscTime);
-    setMessages((prev) => [...normalized, ...prev]);
-    setHasMore(normalized.length >= 50);
-  } finally {
-    fetchingMoreRef.current = false;
-  }
-}, [threadId, isDirectMessage, hasMore, messages]);
+  }, [threadId, isDirectMessage, hasMore, messages, user?._id]);
 
   /* ─────────── Send message ─────────── */
   const sendMessage = useCallback(async () => {
@@ -259,21 +296,27 @@ const fetchOlder = useCallback(async () => {
       let data: any;
 
       if (isDirectMessage) {
-        // Send DM message
+        // NOTE: do not pass clientMessageId – backend doesn't accept it
         data = await sendDMMessage({
           threadId,
           content: text,
-          clientMessageId,
-        });
+        } as any);
       } else {
-        // Send community message
         const res = await api.post(`/api/messages`, {
           content: text,
           communityId: threadId,
-          clientMessageId,
+          clientMessageId, // community route supports/ignores this safely
         });
         data = res.data;
       }
+
+      // Normalize the server response before merging
+      const normalized = normalizeToChatMessage(
+        data,
+        String(user?._id || ""),
+        isDirectMessage,
+        threadId
+      );
 
       setMessages((prev) => {
         const idx = prev.findIndex(
@@ -283,12 +326,14 @@ const fetchOlder = useCallback(async () => {
         const next = [...prev];
         next[idx] = {
           ...next[idx],
-          ...data,
-          _id: String(data._id),
-          timestamp: data.timestamp || next[idx].timestamp,
+          ...normalized,
+          _id: String(normalized._id),
+          timestamp: normalized.timestamp || next[idx].timestamp,
         };
         const last = next[next.length - 1];
-        newestTsRef.current = last ? asDate(last.timestamp).toISOString() : newestTsRef.current;
+        newestTsRef.current = last
+          ? asDate(last.timestamp).toISOString()
+          : newestTsRef.current;
         return next;
       });
     } catch (e: any) {
@@ -305,66 +350,58 @@ const fetchOlder = useCallback(async () => {
     }
   }, [input, sending, threadId, isDirectMessage, user?._id, user?.fullName, scrollToEnd]);
 
-  /* ─────────── Socket: join room ─────────── */
-  useEffect(() => {
-    if (!socket || !threadId) return;
-
-    const roomName = isDirectMessage ? `dm:${threadId}` : `community:${threadId}`;
-    
-    const join = () => {
-      if (isDirectMessage) {
-        socket.emit?.("dm:join", { threadId });
-      } else {
-        socket.emit?.("subscribe:communities", { ids: [threadId] });
-      }
-    };
-
-    const leave = () => {
-      if (isDirectMessage) {
-        socket.emit?.("dm:leave", { threadId });
-      } else {
-        socket.emit?.("unsubscribe:communities", { ids: [threadId] });
-      }
-    };
-
-    join();
-    const onConnect = () => join();
-    socket.on?.("connect", onConnect);
-
-    return () => {
-      socket.off?.("connect", onConnect);
-      leave();
-    };
-  }, [socket, socketConnected, threadId, isDirectMessage]);
-
   /* ─────────── Socket: realtime updates ─────────── */
   useEffect(() => {
     if (!socket || !threadId) return;
 
-    const onNew = (payload: any) => {
-      // Check if message belongs to this thread
-      const belongsHere = isDirectMessage
-        ? String(payload?.threadId) === threadId
-        : String(payload?.communityId) === threadId;
-
+    const onNewDM = (payload: any) => {
+      // belongs to this DM if either endpoint is the partner
+      const belongsHere =
+        String(payload?.from) === threadId || String(payload?.to) === threadId;
       if (!belongsHere) return;
 
+      const normalized = normalizeToChatMessage(
+        payload,
+        String(user?._id || ""),
+        true,
+        threadId
+      );
+
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      upsertManySorted([payload]);
+      upsertManySorted([normalized]);
+      scrollToEnd();
+    };
+
+    const onNewCommunity = (payload: any) => {
+      if (String(payload?.communityId) !== threadId) return;
+      const normalized = normalizeToChatMessage(
+        payload,
+        String(user?._id || ""),
+        false,
+        threadId
+      );
+      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      upsertManySorted([normalized]);
       scrollToEnd();
     };
 
     const onEdited = (p: any) => {
       const belongsHere = isDirectMessage
-        ? String(p?.threadId) === threadId
+        ? String(p?.from) === threadId || String(p?.to) === threadId
         : String(p?.communityId) === threadId;
       if (!belongsHere) return;
-      upsertManySorted([p]);
+      const normalized = normalizeToChatMessage(
+        p,
+        String(user?._id || ""),
+        isDirectMessage,
+        threadId
+      );
+      upsertManySorted([normalized]);
     };
 
     const onDeleted = (p: any) => {
       const belongsHere = isDirectMessage
-        ? String(p?.threadId) === threadId
+        ? String(p?.from) === threadId || String(p?.to) === threadId
         : String(p?.communityId) === threadId;
       if (!belongsHere) return;
       setMessages((prev) =>
@@ -376,19 +413,23 @@ const fetchOlder = useCallback(async () => {
       );
     };
 
-    // Listen to both DM and community events
-    socket.on?.("dm:message", onNew);
-    socket.on?.("receive_message", onNew);
+    // DM events (your backend emits both "receive_direct_message" and "dm:message")
+    socket.on?.("dm:message", onNewDM);
+    socket.on?.("receive_direct_message", onNewDM);
+
+    // Community events
+    socket.on?.("receive_message", onNewCommunity);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
 
     return () => {
-      socket.off?.("dm:message", onNew);
-      socket.off?.("receive_message", onNew);
+      socket.off?.("dm:message", onNewDM);
+      socket.off?.("receive_direct_message", onNewDM);
+      socket.off?.("receive_message", onNewCommunity);
       socket.off?.("message:updated", onEdited);
       socket.off?.("message:deleted", onDeleted);
     };
-  }, [socket, threadId, isDirectMessage, upsertManySorted, scrollToEnd]);
+  }, [socket, threadId, isDirectMessage, upsertManySorted, scrollToEnd, user?._id]);
 
   /* ─────────── Row ─────────── */
   const renderItem = ({ item, index }: { item: ChatMessage; index: number }) => {
@@ -549,7 +590,6 @@ const fetchOlder = useCallback(async () => {
             {headerTitle}
           </Text>
 
-          {/* Placeholder for future actions */}
           <View style={{ width: 36 }} />
         </View>
       </View>
