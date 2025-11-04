@@ -1,3 +1,5 @@
+//CommunityTalkMobile/app/(tabs)/communities.tsx
+
 import React, {
   useMemo,
   useState,

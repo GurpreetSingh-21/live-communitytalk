@@ -1,4 +1,6 @@
 // CommunityTalkMobile/app/thread/[id].tsx
+// UPDATED TO HANDLE BOTH DM THREADS AND COMMUNITY THREADS
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -17,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/api/api";
+import { getDMMessages, sendDMMessage } from "@/src/api/dm";
 import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
 
@@ -27,7 +30,8 @@ type ChatMessage = {
   senderId: string;
   content: string;
   timestamp: string | Date;
-  communityId: string; // if threads have their own id on backend, this can be threadId instead
+  threadId?: string;
+  communityId?: string;
   status?: "sent" | "edited" | "deleted";
   isDeleted?: boolean;
   clientMessageId?: string;
@@ -41,6 +45,22 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
 const byAscTime = (a: ChatMessage, b: ChatMessage) =>
   new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+
+// Normalize any message to ChatMessage format
+const normalizeToChatMessage = (msg: any): ChatMessage => {
+  return {
+    _id: msg._id,
+    sender: msg.sender || msg.senderName || "Unknown",
+    senderId: msg.senderId,
+    content: msg.content,
+    timestamp: msg.timestamp,
+    threadId: msg.threadId,
+    communityId: msg.communityId,
+    status: msg.status,
+    isDeleted: msg.isDeleted,
+    clientMessageId: msg.clientMessageId,
+  };
+};
 
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() &&
@@ -69,7 +89,7 @@ const showGap = (prev?: ChatMessage, cur?: ChatMessage) => {
   );
 };
 
-/* ───────────────── Theme Hook (keeps your exact colors) ───────────────── */
+/* ───────────────── Theme Hook ───────────────── */
 const useTheme = () => {
   const isDark = useColorScheme() === "dark";
   return {
@@ -95,8 +115,15 @@ const useTheme = () => {
 
 /* ───────────────── Screen ───────────────── */
 export default function ThreadScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const communityId = String(id || ""); // if this is actually a threadId in your API, rename consistently
+  const { id, userName, isDM } = useLocalSearchParams<{ 
+    id: string; 
+    userName?: string;
+    isDM?: string;
+  }>();
+  
+  const threadId = String(id || "");
+  const isDirectMessage = isDM === "true";
+  
   const { isDark, colors } = useTheme();
   const { socket, socketConnected } = useSocket() as any;
   const { user } = React.useContext(AuthContext) as any;
@@ -110,10 +137,12 @@ export default function ThreadScreen() {
   const fetchingMoreRef = useRef(false);
   const flatListRef = useRef<FlatList>(null);
 
-  // track newest timestamp to fetch "newer" on reconnect/join
   const newestTsRef = useRef<string | null>(null);
 
-  const headerTitle = useMemo(() => "Thread", []);
+  const headerTitle = useMemo(() => {
+    if (userName) return userName;
+    return isDirectMessage ? "Direct Message" : "Thread";
+  }, [userName, isDirectMessage]);
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => {
@@ -140,16 +169,27 @@ export default function ThreadScreen() {
 
   /* ─────────── Fetch initial ─────────── */
   const fetchInitial = useCallback(async () => {
-    if (!communityId) return;
+    if (!threadId) return;
     setLoading(true);
     setError(null);
     try {
-      const { data } = await api.get(`/api/messages/${communityId}?limit=50`);
-      const items: ChatMessage[] = Array.isArray(data) ? data : [];
-      items.sort(byAscTime);
-      setMessages(items);
-      setHasMore(items.length >= 50);
-      const last = items[items.length - 1];
+      let items: any[] = [];
+
+      if (isDirectMessage) {
+        // Fetch DM messages
+        items = await getDMMessages(threadId, { limit: 50 });
+      } else {
+        // Fetch community messages (fallback to existing API)
+        const { data } = await api.get(`/api/messages/${threadId}?limit=50`);
+        items = Array.isArray(data) ? data : [];
+      }
+
+      // Normalize all messages to ChatMessage format
+      const normalized = items.map(normalizeToChatMessage);
+      normalized.sort(byAscTime);
+      setMessages(normalized);
+      setHasMore(normalized.length >= 50);
+      const last = normalized[normalized.length - 1];
       newestTsRef.current = last ? asDate(last.timestamp).toISOString() : null;
       scrollToEnd();
     } catch (e: any) {
@@ -157,52 +197,43 @@ export default function ThreadScreen() {
     } finally {
       setLoading(false);
     }
-  }, [communityId, scrollToEnd]);
+  }, [threadId, isDirectMessage, scrollToEnd]);
 
   useEffect(() => {
     fetchInitial();
   }, [fetchInitial]);
 
-  /* ─────────── Fetch older (preserve your "Load earlier messages") ─────────── */
-  const fetchOlder = useCallback(async () => {
-    if (!communityId || fetchingMoreRef.current || !hasMore || !messages.length) return;
-    try {
-      fetchingMoreRef.current = true;
-      const oldest = messages[0];
+  /* ─────────── Fetch older ─────────── */
+const fetchOlder = useCallback(async () => {
+  if (!threadId || fetchingMoreRef.current || !hasMore || !messages.length) return;
+  try {
+    fetchingMoreRef.current = true;
+    const oldest = messages[0];
+
+    let older: any[] = [];
+    if (isDirectMessage) {
+      // ❌ was: const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
+      // Pass a Date (or plain ISO) — getDMMessages() will serialize it correctly.
+      const beforeDate = asDate(oldest.timestamp);
+      older = await getDMMessages(threadId, { limit: 50, before: beforeDate });
+    } else {
       const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
-      const { data } = await api.get(`/api/messages/${communityId}?limit=50&before=${before}`);
-      const older: ChatMessage[] = Array.isArray(data) ? data : [];
-      older.sort(byAscTime);
-      setMessages((prev) => [...older, ...prev]);
-      setHasMore(older.length >= 50);
-    } finally {
-      fetchingMoreRef.current = false;
+      const { data } = await api.get(`/api/messages/${threadId}?limit=50&before=${before}`);
+      older = Array.isArray(data) ? data : [];
     }
-  }, [communityId, hasMore, messages]);
 
-  /* ─────────── Fetch newer (used on join/reconnect) ─────────── */
-  const fetchNewer = useCallback(async () => {
-    if (!communityId) return;
-    const since = newestTsRef.current;
-    if (!since) return;
-    try {
-      const after = encodeURIComponent(since);
-      const { data } = await api.get(`/api/messages/${communityId}?after=${after}&limit=100`);
-      const newer: ChatMessage[] = Array.isArray(data) ? data : [];
-      if (newer.length) {
-        upsertManySorted(newer);
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        scrollToEnd();
-      }
-    } catch {
-      // swallow — it's a best-effort catch-up
-    }
-  }, [communityId, upsertManySorted, scrollToEnd]);
+    const normalized = older.map(normalizeToChatMessage).sort(byAscTime);
+    setMessages((prev) => [...normalized, ...prev]);
+    setHasMore(normalized.length >= 50);
+  } finally {
+    fetchingMoreRef.current = false;
+  }
+}, [threadId, isDirectMessage, hasMore, messages]);
 
-  /* ─────────── Send message (optimistic) ─────────── */
+  /* ─────────── Send message ─────────── */
   const sendMessage = useCallback(async () => {
     const text = input.trim();
-    if (!text || sending || !communityId) return;
+    if (!text || sending || !threadId) return;
     setSending(true);
     setError(null);
     const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -214,22 +245,36 @@ export default function ThreadScreen() {
       senderId: String(user?._id || "me"),
       content: text,
       timestamp: new Date(),
-      communityId,
+      threadId: isDirectMessage ? threadId : undefined,
+      communityId: !isDirectMessage ? threadId : undefined,
       status: "sent",
     };
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages((prev) => [...prev, optimistic]);
-    newestTsRef.current = asDate(optimistic.timestamp).toISOString();
     setInput("");
     scrollToEnd();
 
     try {
-      const { data } = await api.post(`/api/messages`, {
-        content: text,
-        communityId,
-        clientMessageId,
-      });
+      let data: any;
+
+      if (isDirectMessage) {
+        // Send DM message
+        data = await sendDMMessage({
+          threadId,
+          content: text,
+          clientMessageId,
+        });
+      } else {
+        // Send community message
+        const res = await api.post(`/api/messages`, {
+          content: text,
+          communityId: threadId,
+          clientMessageId,
+        });
+        data = res.data;
+      }
+
       setMessages((prev) => {
         const idx = prev.findIndex(
           (m) => m.clientMessageId === clientMessageId || m._id === clientMessageId
@@ -258,48 +303,70 @@ export default function ThreadScreen() {
     } finally {
       setSending(false);
     }
-  }, [input, sending, communityId, user?._id, user?.fullName, scrollToEnd]);
+  }, [input, sending, threadId, isDirectMessage, user?._id, user?.fullName, scrollToEnd]);
 
-  /* ─────────── Socket: join & rejoin room ───────────
-     NOTE: If your backend has thread-specific rooms, switch the event name to e.g. "subscribe:threads". */
+  /* ─────────── Socket: join room ─────────── */
   useEffect(() => {
-    if (!socket || !communityId) return;
+    if (!socket || !threadId) return;
 
-    const join = () => socket.emit?.("subscribe:communities", { ids: [communityId] });
-    const leave = () => socket.emit?.("unsubscribe:communities", { ids: [communityId] });
+    const roomName = isDirectMessage ? `dm:${threadId}` : `community:${threadId}`;
+    
+    const join = () => {
+      if (isDirectMessage) {
+        socket.emit?.("dm:join", { threadId });
+      } else {
+        socket.emit?.("subscribe:communities", { ids: [threadId] });
+      }
+    };
+
+    const leave = () => {
+      if (isDirectMessage) {
+        socket.emit?.("dm:leave", { threadId });
+      } else {
+        socket.emit?.("unsubscribe:communities", { ids: [threadId] });
+      }
+    };
 
     join();
-    const onConnect = () => {
-      join();
-      // after reconnect, catch up any missed messages
-      fetchNewer();
-    };
+    const onConnect = () => join();
     socket.on?.("connect", onConnect);
 
     return () => {
       socket.off?.("connect", onConnect);
       leave();
     };
-  }, [socket, socketConnected, communityId, fetchNewer]);
+  }, [socket, socketConnected, threadId, isDirectMessage]);
 
   /* ─────────── Socket: realtime updates ─────────── */
   useEffect(() => {
-    if (!socket || !communityId) return;
+    if (!socket || !threadId) return;
 
     const onNew = (payload: any) => {
-      if (String(payload?.communityId) !== communityId) return;
+      // Check if message belongs to this thread
+      const belongsHere = isDirectMessage
+        ? String(payload?.threadId) === threadId
+        : String(payload?.communityId) === threadId;
+
+      if (!belongsHere) return;
+
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       upsertManySorted([payload]);
       scrollToEnd();
     };
 
     const onEdited = (p: any) => {
-      if (String(p?.communityId) !== communityId) return;
+      const belongsHere = isDirectMessage
+        ? String(p?.threadId) === threadId
+        : String(p?.communityId) === threadId;
+      if (!belongsHere) return;
       upsertManySorted([p]);
     };
 
     const onDeleted = (p: any) => {
-      if (String(p?.communityId) !== communityId) return;
+      const belongsHere = isDirectMessage
+        ? String(p?.threadId) === threadId
+        : String(p?.communityId) === threadId;
+      if (!belongsHere) return;
       setMessages((prev) =>
         prev.map((m) =>
           String(m._id) === String(p._id) || String(m._id) === String(p?.messageId)
@@ -309,18 +376,21 @@ export default function ThreadScreen() {
       );
     };
 
+    // Listen to both DM and community events
+    socket.on?.("dm:message", onNew);
     socket.on?.("receive_message", onNew);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
 
     return () => {
+      socket.off?.("dm:message", onNew);
       socket.off?.("receive_message", onNew);
       socket.off?.("message:updated", onEdited);
       socket.off?.("message:deleted", onDeleted);
     };
-  }, [socket, communityId, upsertManySorted, scrollToEnd]);
+  }, [socket, threadId, isDirectMessage, upsertManySorted, scrollToEnd]);
 
-  /* ─────────── Row (keeps your exact modern UI) ─────────── */
+  /* ─────────── Row ─────────── */
   const renderItem = ({ item, index }: { item: ChatMessage; index: number }) => {
     const myIds = [String(user?._id || ""), "me"];
     const mine = myIds.includes(String(item.senderId || ""));
@@ -444,7 +514,7 @@ export default function ThreadScreen() {
     >
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Header (same look) */}
+      {/* Header */}
       <View
         style={{
           paddingHorizontal: 20,
@@ -456,9 +526,6 @@ export default function ThreadScreen() {
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700", letterSpacing: -0.5 }}>
-            {headerTitle}
-          </Text>
           <TouchableOpacity
             onPress={() => router.back()}
             style={{
@@ -468,14 +535,22 @@ export default function ThreadScreen() {
               backgroundColor: colors.surface,
               alignItems: "center",
               justifyContent: "center",
+              marginRight: 12,
               shadowColor: colors.shadow,
               shadowOffset: { width: 0, height: 2 },
               shadowOpacity: 0.1,
               shadowRadius: 4,
             }}
           >
-            <Ionicons name="close" size={20} color={colors.text} />
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
           </TouchableOpacity>
+
+          <Text style={{ flex: 1, color: colors.text, fontSize: 20, fontWeight: "700", letterSpacing: -0.5 }}>
+            {headerTitle}
+          </Text>
+
+          {/* Placeholder for future actions */}
+          <View style={{ width: 36 }} />
         </View>
       </View>
 
@@ -563,7 +638,7 @@ export default function ThreadScreen() {
         )}
       </View>
 
-      {/* Composer (same look) */}
+      {/* Composer */}
       <View
         style={{
           paddingHorizontal: 16,
@@ -624,7 +699,7 @@ export default function ThreadScreen() {
               {sending ? (
                 <ActivityIndicator color="#fff" size="small" />
               ) : (
-                <Ionicons name="arrow-up" size={20} color="#fff" style={{ fontWeight: "700" }} />
+                <Ionicons name="arrow-up" size={20} color="#fff" />
               )}
             </LinearGradient>
           </TouchableOpacity>

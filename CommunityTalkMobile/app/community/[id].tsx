@@ -1,4 +1,6 @@
 // CommunityTalkMobile/app/community/[id].tsx
+// UPGRADED WITH DISCORD-STYLE AVATARS AND USER PROFILES
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -27,8 +29,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
+import UserProfileModal from "@/components/UserProfileModal";
 
-/* Enable LayoutAnimation on Android */
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -99,7 +101,6 @@ const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
 const isSameDay = (a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-/** "Today / Yesterday / Tue, Oct 7, 2025" */
 const dayLabel = (d: Date) => {
   const today = new Date();
   const y = new Date();
@@ -113,6 +114,7 @@ const dayLabel = (d: Date) => {
     year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
   }).format(d);
 };
+
 const showGap15min = (prev?: ChatMessage, cur?: ChatMessage) => {
   if (!prev || !cur) return true;
   const gap = Math.abs(asDate(cur.timestamp).getTime() - asDate(prev.timestamp).getTime());
@@ -126,6 +128,7 @@ const initials = (name?: string, fallback?: string) => {
   const s = (parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] || "" : "");
   return (s || "U").toUpperCase();
 };
+
 const hueFrom = (s: string) => {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
@@ -144,13 +147,20 @@ export default function CommunityScreen() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
-  /* membership */
+  // User profile modal state
+  const [selectedUser, setSelectedUser] = useState<{
+    id: string;
+    name: string;
+    email?: string;
+    status?: "online" | "offline";
+  } | null>(null);
+  const [showUserModal, setShowUserModal] = useState(false);
+
   const isMember = useMemo(() => {
     const ids: string[] = Array.isArray(user?.communityIds) ? user.communityIds.map(String) : [];
     return ids.includes(communityId);
   }, [user?.communityIds, communityId]);
 
-  /* load community */
   const loadCommunity = useCallback(async () => {
     if (!communityId) return;
     setLoading(true);
@@ -164,6 +174,7 @@ export default function CommunityScreen() {
       setLoading(false);
     }
   }, [communityId]);
+
   useEffect(() => {
     loadCommunity();
   }, [loadCommunity]);
@@ -228,10 +239,8 @@ export default function CommunityScreen() {
     if (isMember && hasMore && !fetchingRef.current) fetchMembers({ useCursor: cursor ?? null });
   };
 
-  /* Listen for status updates via socket */
   useEffect(() => {
     if (!socket || !isMember || !communityId) return;
-
     const onStatusUpdate = (payload: any) => {
       if (payload?.userId && payload?.status) {
         setMembers((prev) =>
@@ -241,7 +250,6 @@ export default function CommunityScreen() {
         );
       }
     };
-
     socket.on?.("presence:update", onStatusUpdate);
     return () => {
       socket.off?.("presence:update", onStatusUpdate);
@@ -258,26 +266,22 @@ export default function CommunityScreen() {
   const [chatHasMore, setChatHasMore] = useState(true);
   const fetchingMoreChatRef = useRef(false);
 
-  // --- Chat list refs & helpers for auto-scroll and stable pagination ---
   const chatListRef = useRef<FlatList<ChatMessage>>(null);
   const contentHeightRef = useRef(0);
   const prevContentHeightRef = useRef(0);
   const loadingOlderRef = useRef(false);
   const initialLoadedRef = useRef(false);
-  const isAtBottomRef = useRef(true); // assume bottom on first paint
-  const AUTO_SCROLL_THRESHOLD = 120; // px
+  const isAtBottomRef = useRef(true);
+  const AUTO_SCROLL_THRESHOLD = 120;
 
-  // --- Typing indicator state (community-wide) ---
   type TypingEntry = { id: string; name: string; expiresAt: number };
   const [typingMap, setTypingMap] = useState<Map<string, TypingEntry>>(new Map());
 
-  // Resolve a nice name for a userId using the loaded members list
   const nameForId = useCallback(
     (uid: string) => members.find(m => String(m.person) === String(uid))?.fullName || "Someone",
     [members]
   );
 
-  // Human label to show in the UI
   const typingLabel = useMemo(() => {
     const entries = Array.from(typingMap.values()).filter(e => e.expiresAt > Date.now());
     if (!entries.length) return "";
@@ -287,7 +291,6 @@ export default function CommunityScreen() {
     return `${names[0]} and ${entries.length - 1} others are typing…`;
   }, [typingMap]);
 
-  // throttle & idle timer for local "I'm typing" pings
   const typingPingRef = useRef<{ lastSent: number; timer?: any }>({ lastSent: 0 });
 
   const scrollToBottom = useCallback((animated = true) => {
@@ -304,7 +307,6 @@ export default function CommunityScreen() {
   };
 
   const handleChatContentSizeChange = (_w: number, h: number) => {
-    // When loading older messages, keep visual position stable
     if (loadingOlderRef.current) {
       const delta = h - prevContentHeightRef.current;
       if (delta > 0) {
@@ -315,11 +317,9 @@ export default function CommunityScreen() {
       }
       loadingOlderRef.current = false;
     } else if (!initialLoadedRef.current && !chatLoading) {
-      // First load after join: jump to bottom
       initialLoadedRef.current = true;
       scrollToBottom(false);
     } else if (isAtBottomRef.current) {
-      // If user is near bottom and content grows (new msg), keep at bottom
       scrollToBottom(true);
     }
     contentHeightRef.current = h;
@@ -334,7 +334,6 @@ export default function CommunityScreen() {
       const items: ChatMessage[] = Array.isArray(data) ? data : [];
       setMessages(items);
       setChatHasMore(items.length >= 50);
-      // mark we need to auto-scroll on first paint
       initialLoadedRef.current = false;
     } catch (e: any) {
       setChatError(e?.response?.data?.error || "Failed to load messages");
@@ -343,7 +342,6 @@ export default function CommunityScreen() {
     }
   }, [communityId, isMember]);
 
-  // When membership flips to true, load chat and join socket room
   useEffect(() => {
     if (isMember) fetchInitialChat();
     else {
@@ -394,7 +392,6 @@ export default function CommunityScreen() {
     setMessages((prev) => [...prev, optimistic]);
     setInput("");
     setInputHeight(44);
-    // ensure we scroll on send
     requestAnimationFrame(() => scrollToBottom(true));
 
     try {
@@ -426,11 +423,8 @@ export default function CommunityScreen() {
     }
   }, [input, sending, communityId, user?._id, user?.fullName, scrollToBottom]);
 
-  /* Socket room join/leave + realtime handlers */
   useEffect(() => {
     if (!socket || !communityId || !isMember) return;
-
-    // Join room for this community
     socket.emit?.("room:join", { room: `community:${communityId}` });
 
     const onNew = (payload: any) => {
@@ -449,8 +443,6 @@ export default function CommunityScreen() {
       } else {
         setMessages((prev) => [...prev, payload]);
       }
-
-      // Auto-scroll only if user is near bottom (or if it's our own message, which we already scrolled on send)
       if (isAtBottomRef.current) {
         requestAnimationFrame(() => scrollToBottom(true));
       }
@@ -484,17 +476,13 @@ export default function CommunityScreen() {
     };
   }, [socket, communityId, isMember, socketConnected, scrollToBottom]);
 
-  // --- Typing realtime: keep a short-lived map of who is typing ---
   useEffect(() => {
     if (!socket || !communityId || !isMember) return;
 
     const onTyping = (p: any) => {
       if (String(p?.communityId) !== String(communityId)) return;
-
-      // Accept either { from } or { userId } from the backend
       const from = String(p?.from || p?.userId || "");
-      if (!from || String(from) === String(user?._id)) return; // ignore self
-
+      if (!from || String(from) === String(user?._id)) return;
       const typing = !!p?.typing;
 
       setTypingMap(prev => {
@@ -510,10 +498,8 @@ export default function CommunityScreen() {
     };
 
     socket.on?.("typing", onTyping);
-    // If your server uses a different event (e.g., "community:typing"), listen to it too:
     socket.on?.("community:typing", onTyping);
 
-    // GC expired typing entries every 2s
     const gc = setInterval(() => {
       const now = Date.now();
       let changed = false;
@@ -537,14 +523,11 @@ export default function CommunityScreen() {
     };
   }, [socket, communityId, isMember, user?._id, nameForId]);
 
-  /* Join / Leave */
   const join = async () => {
     try {
       setBusy(true);
       await api.post(`/api/communities/${communityId}/join`);
       if (Array.isArray(user?.communityIds)) user.communityIds.push(communityId);
-
-      // Immediately (re)load members and chat, then scroll to bottom on first paint
       await loadCommunity();
       await fetchMembers({ reset: true });
       await fetchInitialChat();
@@ -583,7 +566,6 @@ export default function CommunityScreen() {
       },
     ]);
 
-  /* Pager */
   const [page, setPage] = useState(0);
   const pagerRef = useRef<ScrollView>(null);
   const goTo = (p: number) => {
@@ -595,12 +577,23 @@ export default function CommunityScreen() {
     if (p !== page) setPage(p);
   };
 
-  /* Get online member count */
   const onlineCount = useMemo(() => {
     return members.filter((m) => m.status === "online").length;
   }, [members]);
 
-  /* Custom header */
+  // NEW: Handle avatar press - find member and show modal
+  const handleAvatarPress = useCallback((senderId: string, senderName: string) => {
+    const member = members.find(m => String(m.person) === String(senderId));
+    
+    setSelectedUser({
+      id: senderId,
+      name: senderName,
+      email: member?.email,
+      status: member?.status || "offline",
+    });
+    setShowUserModal(true);
+  }, [members]);
+
   const AppHeader = () => (
     <View
       style={{
@@ -691,7 +684,6 @@ export default function CommunityScreen() {
         ) : null}
       </View>
 
-      {/* Modern segmented control */}
       {isMember ? (
         <View
           style={{
@@ -761,16 +753,15 @@ export default function CommunityScreen() {
     </View>
   );
 
-  /* Member Avatar */
-  const Avatar = ({ name, email }: { name?: string; email?: string }) => {
+  const Avatar = ({ name, email, size = 48 }: { name?: string; email?: string; size?: number }) => {
     const label = initials(name, email);
     const bg = hueFrom(name || email || label);
     return (
       <View
         style={{
-          width: 48,
-          height: 48,
-          borderRadius: 24,
+          width: size,
+          height: size,
+          borderRadius: size / 2,
           alignItems: "center",
           justifyContent: "center",
           backgroundColor: bg,
@@ -780,7 +771,7 @@ export default function CommunityScreen() {
           shadowRadius: 4,
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}>{label}</Text>
+        <Text style={{ color: "#fff", fontWeight: "700", fontSize: size * 0.375 }}>{label}</Text>
       </View>
     );
   };
@@ -871,7 +862,6 @@ export default function CommunityScreen() {
 
   const MemberFilters = () => (
     <View style={{ paddingHorizontal: 16, paddingBottom: 12, paddingTop: 8 }}>
-      {/* Search */}
       <View
         style={{
           flexDirection: "row",
@@ -897,7 +887,6 @@ export default function CommunityScreen() {
         />
       </View>
 
-      {/* Filter pills */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -939,7 +928,7 @@ export default function CommunityScreen() {
     </View>
   );
 
-  /* Chat bubbles */
+  // NEW: Discord-style message bubbles with avatars
   const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
     const myIds = [String(user?._id || ""), "me"];
     const mine = myIds.includes(String(item.senderId || ""));
@@ -954,6 +943,9 @@ export default function CommunityScreen() {
     const isLastOfGroup = !next || next.senderId !== item.senderId || showGap15min(item, next);
 
     const deleted = item.isDeleted || item.status === "deleted";
+
+    // Find member info for avatar status
+    const memberInfo = members.find(m => String(m.person) === String(item.senderId));
 
     return (
       <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
@@ -975,14 +967,74 @@ export default function CommunityScreen() {
             </View>
           </View>
         )}
-        <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
-          {!mine && isFirstOfGroup && (
-            <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 4, marginLeft: 12, fontWeight: "500" }}>
-              {item.sender}
-            </Text>
-          )}
-          <View style={{ maxWidth: "75%" }}>
-            {mine ? (
+
+        {/* Discord-style: Show avatar on left for others, gradient bubble on right for self */}
+        {!mine ? (
+          <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
+            {/* Avatar (only show on first message of group) */}
+            <View style={{ width: 40, marginRight: 12, alignItems: "center" }}>
+              {isFirstOfGroup ? (
+                <TouchableOpacity
+                  onPress={() => handleAvatarPress(item.senderId, item.sender)}
+                  activeOpacity={0.7}
+                >
+                  <View style={{ position: "relative" }}>
+                    <Avatar name={item.sender} size={40} />
+                    {/* Online indicator */}
+                    {memberInfo?.status === "online" && (
+                      <View
+                        style={{
+                          position: "absolute",
+                          bottom: -2,
+                          right: -2,
+                          width: 14,
+                          height: 14,
+                          borderRadius: 7,
+                          backgroundColor: colors.success,
+                          borderWidth: 3,
+                          borderColor: colors.bg,
+                        }}
+                      />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {/* Message content */}
+            <View style={{ flex: 1, maxWidth: "75%" }}>
+              {isFirstOfGroup && (
+                <Text style={{ color: colors.textSecondary, fontSize: 13, marginBottom: 4, fontWeight: "600" }}>
+                  {item.sender}
+                </Text>
+              )}
+              <View
+                style={{
+                  backgroundColor: colors.surfaceElevated,
+                  paddingHorizontal: 16,
+                  paddingVertical: 10,
+                  borderRadius: 20,
+                  borderTopLeftRadius: isFirstOfGroup ? 20 : 6,
+                  borderBottomLeftRadius: isLastOfGroup ? 20 : 6,
+                  shadowColor: colors.shadow,
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 3,
+                }}
+              >
+                {deleted ? (
+                  <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
+                    Message deleted
+                  </Text>
+                ) : (
+                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        ) : (
+          <View style={{ alignItems: "flex-end", marginBottom: isLastOfGroup ? 12 : 2 }}>
+            <View style={{ maxWidth: "75%" }}>
               <LinearGradient
                 colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
                 start={{ x: 0, y: 0 }}
@@ -1007,37 +1059,13 @@ export default function CommunityScreen() {
                   <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
                 )}
               </LinearGradient>
-            ) : (
-              <View
-                style={{
-                  backgroundColor: colors.surfaceElevated,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  borderTopLeftRadius: isFirstOfGroup ? 20 : 6,
-                  borderBottomLeftRadius: isLastOfGroup ? 20 : 6,
-                  shadowColor: colors.shadow,
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 3,
-                }}
-              >
-                {deleted ? (
-                  <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
-                    Message deleted
-                  </Text>
-                ) : (
-                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
-                )}
-              </View>
-            )}
+            </View>
           </View>
-        </View>
+        )}
       </View>
     );
   };
 
-  /* ───────── Render ───────── */
   return (
     <KeyboardAvoidingView
       className="flex-1"
@@ -1045,6 +1073,16 @@ export default function CommunityScreen() {
       style={{ backgroundColor: colors.bg }}
     >
       <Stack.Screen options={{ header: () => null }} />
+
+      {/* User Profile Modal */}
+      <UserProfileModal
+        visible={showUserModal}
+        onClose={() => setShowUserModal(false)}
+        user={selectedUser}
+        isDark={isDark}
+        colors={colors}
+        currentUserId={user?._id}
+      />
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
@@ -1194,7 +1232,6 @@ export default function CommunityScreen() {
                   </View>
                 ) : null}
 
-                {/* Modern Composer */}
                 <View
                   style={{
                     paddingHorizontal: 16,
@@ -1226,14 +1263,10 @@ export default function CommunityScreen() {
 
                         if (socket && communityId) {
                           const now = Date.now();
-
-                          // Throttle "typing: true" to at most once every 2s
                           if (now - (typingPingRef.current.lastSent || 0) > 2000) {
                             typingPingRef.current.lastSent = now;
                             socket.emit?.("typing", { communityId, typing: true });
                           }
-
-                          // Send "typing: false" after 5s of no changes
                           clearTimeout(typingPingRef.current.timer);
                           typingPingRef.current.timer = setTimeout(() => {
                             socket.emit?.("typing", { communityId, typing: false });

@@ -51,13 +51,6 @@
         }
       ],
       "expo-font",
-      [
-        "expo-firebase-core",
-        {
-          "ios": { "googleServicesFile": "./GoogleService-Info.plist" },
-          "android": { "googleServicesFile": "./google-services.json" }
-        }
-      ],
       "expo-notifications"
     ],
 

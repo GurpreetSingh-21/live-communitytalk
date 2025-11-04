@@ -37,8 +37,8 @@ const Fab = ({ isDark }: { isDark: boolean }) => {
   };
 
   // Define gradient colors based on theme
-  const gradientColors: readonly [string, string] = isDark 
-    ? ['#0F0F10', '#1A1B1E'] 
+  const gradientColors: readonly [string, string] = isDark
+    ? ['#0F0F10', '#1A1B1E']
     : ['#0E0E10', '#1A1B1E'];
 
   return (
@@ -170,6 +170,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      initialRouteName="dms"
       screenOptions={{
         headerShown: false,
         tabBarShowLabel: false,
@@ -200,9 +201,9 @@ export default function TabLayout() {
         options={{
           tabBarButton: () => (
             <CustomTabButton
-              label="Home Tab"
-              name="house"
-              activeName="house.fill"
+              label="Updates"
+              name="sparkles"
+              activeName="sparkles"
               color={isIndexActive ? activeColor : inactiveColor}
               focused={isIndexActive}
               route="/(tabs)"
