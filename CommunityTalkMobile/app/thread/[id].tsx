@@ -1,278 +1,391 @@
-// CommunityTalkMobile/app/thread/[id].tsx
-// UPDATED TO HANDLE BOTH DM THREADS AND COMMUNITY THREADS (TS-safe with your backend)
-
+// CommunityTalkMobile/app/community/[id].tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   ActivityIndicator,
+  TextInput,
   FlatList,
+  RefreshControl,
+  Alert,
+  ScrollView,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
+  ActionSheetIOS,
   LayoutAnimation,
   UIManager,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
-import { Stack, useLocalSearchParams, router } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+
 import { api } from "@/src/api/api";
-import { getDMMessages, sendDMMessage } from "@/src/api/dm";
 import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
 
-/* ───────────────── Types ───────────────── */
-type ChatMessage = {
-  _id: string;
-  sender: string;
-  senderId: string;
-  content: string;
-  timestamp: string | Date;
-  threadId?: string;     // for DMs we store partner id here for convenience
-  communityId?: string;
-  status?: "sent" | "edited" | "deleted" | "read";
-  isDeleted?: boolean;
-  clientMessageId?: string;
-};
-
+/* Enable LayoutAnimation on Android */
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-/* ───────────────── Helpers ───────────────── */
-const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
-const byAscTime = (a: ChatMessage, b: ChatMessage) =>
-  new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-
-const isSameDay = (a: Date, b: Date) =>
-  a.getFullYear() === b.getFullYear() &&
-  a.getMonth() === b.getMonth() &&
-  a.getDate() === b.getDate();
-
-const dayLabel = (d: Date) => {
-  const today = new Date();
-  const y = new Date();
-  y.setDate(today.getDate() - 1);
-  if (isSameDay(d, today)) return "Today";
-  if (isSameDay(d, y)) return "Yesterday";
-  return new Intl.DateTimeFormat(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: d.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
-  }).format(d);
-};
-
-const showGap = (prev?: ChatMessage, cur?: ChatMessage) => {
-  if (!prev || !cur) return true;
-  return (
-    Math.abs(asDate(cur.timestamp).getTime() - asDate(prev.timestamp).getTime()) >
-    15 * 60 * 1000
-  );
-};
-
-/* Normalize server payload → ChatMessage */
-function normalizeToChatMessage(
-  msg: any,
-  meId: string | undefined,
-  isDM: boolean,
-  partnerId: string
-): ChatMessage {
-  if (isDM) {
-    // DM model: { _id, from, to, content, timestamp|createdAt, status }
-    const ts = msg.timestamp ?? msg.createdAt ?? new Date();
-    const senderId = String(msg.from || "");
-    const mine = meId && senderId === String(meId);
-    return {
-      _id: String(msg._id),
-      sender: mine ? "You" : (msg.senderName || "User"),
-      senderId,
-      content: msg.content || "",
-      timestamp: ts,
-      threadId: partnerId, // partner user id as the "thread id"
-      status: msg.status,
-      isDeleted: !!msg.isDeleted,
-      clientMessageId: msg.clientMessageId,
-    };
-  } else {
-    // Community model: fields already match mostly
-    return {
-      _id: String(msg._id),
-      sender: msg.sender || msg.senderName || "Unknown",
-      senderId: String(msg.senderId || ""),
-      content: msg.content || "",
-      timestamp: msg.timestamp ?? msg.createdAt ?? new Date(),
-      communityId: String(msg.communityId || ""),
-      status: msg.status,
-      isDeleted: !!msg.isDeleted,
-      clientMessageId: msg.clientMessageId,
-    };
-  }
-}
-
-/* ───────────────── Theme Hook ───────────────── */
+/* ───────── Theme ───────── */
 const useTheme = () => {
   const isDark = useColorScheme() === "dark";
   return {
     isDark,
     colors: {
       bg: isDark ? "#000000" : "#FFFFFF",
-      surface: isDark ? "#1C1C1E" : "#F2F2F7",
+      bgSecondary: isDark ? "#1C1C1E" : "#F2F2F7",
+      surface: isDark ? "#1C1C1E" : "#FFFFFF",
       surfaceElevated: isDark ? "#2C2C2E" : "#FFFFFF",
-      border: isDark ? "#38383A" : "#E5E5EA",
       text: isDark ? "#FFFFFF" : "#000000",
       textSecondary: isDark ? "#EBEBF599" : "#3C3C4399",
       textTertiary: isDark ? "#EBEBF54D" : "#3C3C434D",
+      border: isDark ? "#38383A" : "#E5E5EA",
       primary: "#007AFF",
       primaryGradientStart: "#5E5CE6",
       primaryGradientEnd: "#007AFF",
       destructive: "#FF3B30",
       success: "#34C759",
+      warning: "#FF9500",
+      onlineBg: isDark ? "rgba(52, 199, 89, 0.2)" : "#D1FAE5",
+      onlineText: isDark ? "#34C759" : "#059669",
+      offlineBg: isDark ? "rgba(142, 142, 147, 0.2)" : "#F3F4F6",
+      offlineText: isDark ? "#8E8E93" : "#6B7280",
       inputBg: isDark ? "#1C1C1E" : "#F2F2F7",
       shadow: isDark ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.08)",
     },
   };
 };
 
-/* ───────────────── Screen ───────────────── */
-export default function ThreadScreen() {
-  const { id, userName, isDM } = useLocalSearchParams<{
-    id: string;
-    userName?: string;
-    isDM?: string;
-  }>();
+const SCREEN_W = Dimensions.get("window").width;
 
-  const threadId = String(id || "");          // for DMs: partner userId; for communities: communityId
-  const isDirectMessage = isDM === "true";
+/* ───────── Types ───────── */
+type Community = {
+  _id: string;
+  name: string;
+  description?: string;
+};
 
+type MemberRow = {
+  _id: string;
+  person: string | null;
+  community: string;
+  fullName: string;
+  email?: string;
+  avatar?: string;
+  status: "online" | "offline";
+  isYou: boolean;
+};
+
+type ChatMessage = {
+  _id: string;
+  sender: string;
+  senderId: string;
+  content: string;
+  timestamp: string | Date;
+  communityId: string;
+  status?: "sent" | "edited" | "deleted";
+  isDeleted?: boolean;
+  clientMessageId?: string;
+};
+
+const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
+const isSameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+/** "Today / Yesterday / Tue, Oct 7, 2025" */
+const dayLabel = (d: Date | string | undefined | null) => {
+  // convert input to Date
+  const date = d instanceof Date ? d : d ? new Date(d) : null;
+
+  // bail if invalid date
+  if (!date || isNaN(date.getTime())) return ""; 
+
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (isSameDay(date, today)) return "Today";
+  if (isSameDay(date, yesterday)) return "Yesterday";
+
+  // use the sanitized `date` variable here
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
+  }).format(date); 
+};
+const showGap15min = (prev?: ChatMessage, cur?: ChatMessage) => {
+  if (!prev || !cur) return true;
+  const gap = Math.abs(asDate(cur.timestamp).getTime() - asDate(prev.timestamp).getTime());
+  return gap > 15 * 60 * 1000;
+};
+
+/* Avatars */
+const initials = (name?: string, fallback?: string) => {
+  const base = (name || fallback || "").trim();
+  const parts = base.split(/\s+/).filter(Boolean);
+  const s = (parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] || "" : "");
+  return (s || "U").toUpperCase();
+};
+const hueFrom = (s: string) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return `hsl(${h} 70% 45%)`;
+};
+
+/* ───────── Screen ───────── */
+export default function CommunityScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const communityId = String(id || "");
   const { isDark, colors } = useTheme();
-  const { socket } = useSocket() as any;
   const { user } = React.useContext(AuthContext) as any;
+  const { socket, socketConnected } = useSocket() as any;
 
+  const [community, setCommunity] = useState<Community | null>(null);
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [input, setInput] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [hasMore, setHasMore] = useState(true); // DM "older" is client-simulated
-  const fetchingMoreRef = useRef(false);
-  const flatListRef = useRef<FlatList>(null);
+  const [busy, setBusy] = useState(false);
 
-  const newestTsRef = useRef<string | null>(null);
+  /* membership */
+  const isMember = useMemo(() => {
+    const ids: string[] = Array.isArray(user?.communityIds) ? user.communityIds.map(String) : [];
+    return ids.includes(communityId);
+  }, [user?.communityIds, communityId]);
 
-  const headerTitle = useMemo(() => {
-    if (userName) return userName;
-    return isDirectMessage ? "Direct Message" : "Thread";
-  }, [userName, isDirectMessage]);
-
-  const scrollToEnd = useCallback(() => {
-    requestAnimationFrame(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    });
-  }, []);
-
-  const upsertManySorted = useCallback(
-    (incoming: ChatMessage[]) => {
-      if (!incoming?.length) return;
-      setMessages((prev) => {
-        const map = new Map<string, ChatMessage>();
-        for (const m of prev) map.set(String(m._id || m.clientMessageId), m);
-        for (const m of incoming) {
-          const k = String(m._id || m.clientMessageId);
-          const prevM = map.get(k);
-          map.set(k, prevM ? { ...prevM, ...m } : m);
-        }
-        const next = Array.from(map.values()).sort(byAscTime);
-        const last = next[next.length - 1];
-        newestTsRef.current = last
-          ? asDate(last.timestamp).toISOString()
-          : newestTsRef.current;
-        return next;
-      });
-    },
-    []
-  );
-
-  /* ─────────── Fetch initial ─────────── */
-  const fetchInitial = useCallback(async () => {
-    if (!threadId) return;
+  /* load community */
+  const loadCommunity = useCallback(async () => {
+    if (!communityId) return;
     setLoading(true);
-    setError(null);
     try {
-      let items: any[] = [];
-      if (isDirectMessage) {
-        const res = await getDMMessages(threadId, { limit: 50 }); // backend ignores "before"
-        items = Array.isArray(res) ? res : [];
-      } else {
-        const { data } = await api.get(`/api/messages/${threadId}?limit=50`);
-        items = Array.isArray(data) ? data : [];
-      }
-
-      const normalized = items.map((m) =>
-        normalizeToChatMessage(m, String(user?._id || ""), isDirectMessage, threadId)
-      );
-      normalized.sort(byAscTime);
-      setMessages(normalized);
-      setHasMore(normalized.length >= 50);
-      const last = normalized[normalized.length - 1];
-      newestTsRef.current = last ? asDate(last.timestamp).toISOString() : null;
-      scrollToEnd();
+      const { data } = await api.get(`/api/communities/${communityId}`);
+      setCommunity(data);
     } catch (e: any) {
-      setError(e?.response?.data?.error || "Failed to load messages");
+      Alert.alert("Error", e?.response?.data?.error || "Failed to load community");
+      setCommunity(null);
     } finally {
       setLoading(false);
     }
-  }, [threadId, isDirectMessage, scrollToEnd, user?._id]);
+  }, [communityId]);
+  useEffect(() => {
+    loadCommunity();
+  }, [loadCommunity]);
+
+  /* Members */
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [filter, setFilter] = useState<"all" | "online" | "offline">("all");
+  const [q, setQ] = useState("");
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const fetchingRef = useRef(false);
+
+  const fetchMembers = useCallback(
+    async ({ reset = false, useCursor }: { reset?: boolean; useCursor?: string | null } = {}) => {
+      if (!isMember || !communityId) return;
+      if (fetchingRef.current) return;
+      fetchingRef.current = true;
+      try {
+        let nextCursor = useCursor ?? null;
+        if (reset) {
+          setCursor(null);
+          setHasMore(true);
+          nextCursor = null;
+        }
+        const params: string[] = [];
+        if (q.trim()) params.push(`q=${encodeURIComponent(q.trim())}`);
+        if (filter !== "all") params.push(`status=${filter}`);
+        if (nextCursor) params.push(`cursor=${nextCursor}`);
+        const qs = params.length ? `?${params.join("&")}` : "";
+        const { data } = await api.get(`/api/members/${communityId}${qs}`);
+        const list: MemberRow[] = Array.isArray(data?.items) ? data.items : [];
+        setMembers((prev) => (reset || !nextCursor ? list : [...prev, ...list]));
+        setCursor(data?.nextCursor || null);
+        setHasMore(Boolean(data?.hasMore));
+      } catch {
+      } finally {
+        fetchingRef.current = false;
+      }
+    },
+    [isMember, communityId, q, filter]
+  );
 
   useEffect(() => {
-    fetchInitial();
-  }, [fetchInitial]);
-
-  /* ─────────── Fetch older ─────────── */
-  const fetchOlder = useCallback(async () => {
-    if (!threadId || fetchingMoreRef.current || !hasMore || !messages.length) return;
-    try {
-      fetchingMoreRef.current = true;
-      const oldest = messages[0];
-      const oldestTs = asDate(oldest.timestamp).getTime();
-
-      let older: any[] = [];
-
-      if (isDirectMessage) {
-        // Client-side older paging: request more and slice
-        const desired = messages.length + 50;
-        const res = await getDMMessages(threadId, { limit: desired });
-        const all = Array.isArray(res) ? res : [];
-        older = all
-          .filter((m: any) => new Date(m.timestamp ?? m.createdAt).getTime() < oldestTs)
-          .slice(-50); // last up to 50 older than current oldest
-      } else {
-        const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
-        const { data } = await api.get(
-          `/api/messages/${threadId}?limit=50&before=${before}`
-        );
-        older = Array.isArray(data) ? data : [];
-      }
-
-      const normalized = older
-        .map((m) => normalizeToChatMessage(m, String(user?._id || ""), isDirectMessage, threadId))
-        .sort(byAscTime);
-
-      setMessages((prev) => [...normalized, ...prev]);
-      setHasMore(normalized.length >= 50);
-    } finally {
-      fetchingMoreRef.current = false;
+    if (!isMember) {
+      setMembers([]);
+      setCursor(null);
+      setHasMore(true);
+      return;
     }
-  }, [threadId, isDirectMessage, hasMore, messages, user?._id]);
+    fetchMembers({ reset: true });
+  }, [isMember, communityId, q, filter, fetchMembers]);
 
-  /* ─────────── Send message ─────────── */
+  const refreshMembers = useCallback(async () => {
+    if (!isMember) return;
+    setRefreshing(true);
+    await fetchMembers({ reset: true });
+    setRefreshing(false);
+  }, [isMember, fetchMembers]);
+
+  const loadMoreMembers = () => {
+    if (isMember && hasMore && !fetchingRef.current) fetchMembers({ useCursor: cursor ?? null });
+  };
+
+  /* Listen for status updates via socket */
+  useEffect(() => {
+    if (!socket || !isMember || !communityId) return;
+
+    const onStatusUpdate = (payload: any) => {
+      if (payload?.userId && payload?.status) {
+        setMembers((prev) =>
+          prev.map((m) =>
+            String(m.person) === String(payload.userId) ? { ...m, status: payload.status } : m
+          )
+        );
+      }
+    };
+
+    socket.on?.("presence:update", onStatusUpdate);
+    return () => {
+      socket.off?.("presence:update", onStatusUpdate);
+    };
+  }, [socket, isMember, communityId]);
+
+  /* Chat */
+  const [chatLoading, setChatLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [input, setInput] = useState("");
+  const [inputHeight, setInputHeight] = useState(44);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatHasMore, setChatHasMore] = useState(true);
+  const fetchingMoreChatRef = useRef(false);
+
+  // --- Chat list refs & helpers for auto-scroll and stable pagination ---
+  const chatListRef = useRef<FlatList<ChatMessage>>(null);
+  const contentHeightRef = useRef(0);
+  const prevContentHeightRef = useRef(0);
+  const loadingOlderRef = useRef(false);
+  const initialLoadedRef = useRef(false);
+  const isAtBottomRef = useRef(true); // assume bottom on first paint
+  const AUTO_SCROLL_THRESHOLD = 120; // px
+
+  // --- Typing indicator state (community-wide) ---
+  type TypingEntry = { id: string; name: string; expiresAt: number };
+  const [typingMap, setTypingMap] = useState<Map<string, TypingEntry>>(new Map());
+
+  // Resolve a nice name for a userId using the loaded members list
+  const nameForId = useCallback(
+    (uid: string) => members.find(m => String(m.person) === String(uid))?.fullName || "Someone",
+    [members]
+  );
+
+  // Human label to show in the UI
+  const typingLabel = useMemo(() => {
+    const entries = Array.from(typingMap.values()).filter(e => e.expiresAt > Date.now());
+    if (!entries.length) return "";
+    const names = entries.map(e => e.name).slice(0, 2);
+    if (entries.length === 1) return `${names[0]} is typing…`;
+    if (entries.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    return `${names[0]} and ${entries.length - 1} others are typing…`;
+  }, [typingMap]);
+
+  // throttle & idle timer for local "I'm typing" pings
+  const typingPingRef = useRef<{ lastSent: number; timer?: any }>({ lastSent: 0 });
+
+  const scrollToBottom = useCallback((animated = true) => {
+    requestAnimationFrame(() => {
+      chatListRef.current?.scrollToEnd({ animated });
+      isAtBottomRef.current = true;
+    });
+  }, []);
+
+  const handleChatScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+    isAtBottomRef.current = distanceFromBottom < AUTO_SCROLL_THRESHOLD;
+  };
+
+  const handleChatContentSizeChange = (_w: number, h: number) => {
+    // When loading older messages, keep visual position stable
+    if (loadingOlderRef.current) {
+      const delta = h - prevContentHeightRef.current;
+      if (delta > 0) {
+        chatListRef.current?.scrollToOffset({
+          offset: delta,
+          animated: false,
+        });
+      }
+      loadingOlderRef.current = false;
+    } else if (!initialLoadedRef.current && !chatLoading) {
+      // First load after join: jump to bottom
+      initialLoadedRef.current = true;
+      scrollToBottom(false);
+    } else if (isAtBottomRef.current) {
+      // If user is near bottom and content grows (new msg), keep at bottom
+      scrollToBottom(true);
+    }
+    contentHeightRef.current = h;
+  };
+
+  const fetchInitialChat = useCallback(async () => {
+    if (!communityId || !isMember) return;
+    setChatLoading(true);
+    setChatError(null);
+    try {
+      const { data } = await api.get(`/api/messages/${communityId}?limit=50`);
+      const items: ChatMessage[] = Array.isArray(data) ? data : [];
+      setMessages(items);
+      setChatHasMore(items.length >= 50);
+      // mark we need to auto-scroll on first paint
+      initialLoadedRef.current = false;
+    } catch (e: any) {
+      setChatError(e?.response?.data?.error || "Failed to load messages");
+    } finally {
+      setChatLoading(false);
+    }
+  }, [communityId, isMember]);
+
+  // When membership flips to true, load chat and join socket room
+  useEffect(() => {
+    if (isMember) fetchInitialChat();
+    else {
+      setMessages([]);
+      setChatError(null);
+      setChatLoading(false);
+    }
+  }, [fetchInitialChat, isMember]);
+
+  const fetchOlderChat = useCallback(async () => {
+    if (!communityId || fetchingMoreChatRef.current || !chatHasMore || !messages.length) return;
+    try {
+      fetchingMoreChatRef.current = true;
+      loadingOlderRef.current = true;
+      prevContentHeightRef.current = contentHeightRef.current;
+
+      const oldest = messages[0];
+      const before = encodeURIComponent(asDate(oldest.timestamp).toISOString());
+      const { data } = await api.get(`/api/messages/${communityId}?limit=50&before=${before}`);
+      const older: ChatMessage[] = Array.isArray(data) ? data : [];
+      setMessages((prev) => [...older, ...prev]);
+      setChatHasMore(older.length >= 50);
+    } catch {
+    } finally {
+      fetchingMoreChatRef.current = false;
+    }
+  }, [communityId, chatHasMore, messages]);
+
   const sendMessage = useCallback(async () => {
     const text = input.trim();
-    if (!text || sending || !threadId) return;
+    if (!text || sending || !communityId) return;
     setSending(true);
-    setError(null);
+    setChatError(null);
     const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
     const optimistic: ChatMessage = {
@@ -282,58 +395,30 @@ export default function ThreadScreen() {
       senderId: String(user?._id || "me"),
       content: text,
       timestamp: new Date(),
-      threadId: isDirectMessage ? threadId : undefined,
-      communityId: !isDirectMessage ? threadId : undefined,
+      communityId,
       status: "sent",
     };
 
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages((prev) => [...prev, optimistic]);
     setInput("");
-    scrollToEnd();
+    setInputHeight(44);
+    // ensure we scroll on send
+    requestAnimationFrame(() => scrollToBottom(true));
 
     try {
-      let data: any;
-
-      if (isDirectMessage) {
-        // NOTE: do not pass clientMessageId – backend doesn't accept it
-        data = await sendDMMessage({
-          threadId,
-          content: text,
-        } as any);
-      } else {
-        const res = await api.post(`/api/messages`, {
-          content: text,
-          communityId: threadId,
-          clientMessageId, // community route supports/ignores this safely
-        });
-        data = res.data;
-      }
-
-      // Normalize the server response before merging
-      const normalized = normalizeToChatMessage(
-        data,
-        String(user?._id || ""),
-        isDirectMessage,
-        threadId
-      );
-
+      const { data } = await api.post(`/api/messages`, { content: text, communityId, clientMessageId });
       setMessages((prev) => {
-        const idx = prev.findIndex(
-          (m) => m.clientMessageId === clientMessageId || m._id === clientMessageId
-        );
+        const idx = prev.findIndex((m) => m.clientMessageId === clientMessageId || m._id === clientMessageId);
         if (idx === -1) return prev;
         const next = [...prev];
         next[idx] = {
           ...next[idx],
-          ...normalized,
-          _id: String(normalized._id),
-          timestamp: normalized.timestamp || next[idx].timestamp,
+          ...data,
+          _id: String(data._id),
+          timestamp: data.timestamp || next[idx].timestamp,
+          clientMessageId: data.clientMessageId ?? next[idx].clientMessageId,
         };
-        const last = next[next.length - 1];
-        newestTsRef.current = last
-          ? asDate(last.timestamp).toISOString()
-          : newestTsRef.current;
         return next;
       });
     } catch (e: any) {
@@ -344,66 +429,49 @@ export default function ThreadScreen() {
             : m
         )
       );
-      setError(e?.response?.data?.error || "Failed to send");
+      setChatError(e?.response?.data?.error || "Failed to send");
     } finally {
       setSending(false);
     }
-  }, [input, sending, threadId, isDirectMessage, user?._id, user?.fullName, scrollToEnd]);
+  }, [input, sending, communityId, user?._id, user?.fullName, scrollToBottom]);
 
-  /* ─────────── Socket: realtime updates ─────────── */
+  /* Socket room join/leave + realtime handlers */
   useEffect(() => {
-    if (!socket || !threadId) return;
+    if (!socket || !communityId || !isMember) return;
 
-    const onNewDM = (payload: any) => {
-      // belongs to this DM if either endpoint is the partner
-      const belongsHere =
-        String(payload?.from) === threadId || String(payload?.to) === threadId;
-      if (!belongsHere) return;
+    // Join room for this community
+    socket.emit?.("room:join", { room: `community:${communityId}` });
 
-      const normalized = normalizeToChatMessage(
-        payload,
-        String(user?._id || ""),
-        true,
-        threadId
-      );
-
+    const onNew = (payload: any) => {
+      if (String(payload?.communityId) !== communityId) return;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      upsertManySorted([normalized]);
-      scrollToEnd();
-    };
+      if (payload?.clientMessageId) {
+        setMessages((prev) => {
+          const i = prev.findIndex(
+            (m) => m.clientMessageId === payload.clientMessageId || m._id === payload.clientMessageId
+          );
+          if (i === -1) return [...prev, payload];
+          const next = [...prev];
+          next[i] = { ...next[i], ...payload, _id: String(payload._id) };
+          return next;
+        });
+      } else {
+        setMessages((prev) => [...prev, payload]);
+      }
 
-    const onNewCommunity = (payload: any) => {
-      if (String(payload?.communityId) !== threadId) return;
-      const normalized = normalizeToChatMessage(
-        payload,
-        String(user?._id || ""),
-        false,
-        threadId
-      );
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      upsertManySorted([normalized]);
-      scrollToEnd();
+      // Auto-scroll only if user is near bottom (or if it's our own message, which we already scrolled on send)
+      if (isAtBottomRef.current) {
+        requestAnimationFrame(() => scrollToBottom(true));
+      }
     };
 
     const onEdited = (p: any) => {
-      const belongsHere = isDirectMessage
-        ? String(p?.from) === threadId || String(p?.to) === threadId
-        : String(p?.communityId) === threadId;
-      if (!belongsHere) return;
-      const normalized = normalizeToChatMessage(
-        p,
-        String(user?._id || ""),
-        isDirectMessage,
-        threadId
-      );
-      upsertManySorted([normalized]);
+      if (String(p?.communityId) !== communityId) return;
+      setMessages((prev) => prev.map((m) => (String(m._id) === String(p._id) ? { ...m, ...p } : m)));
     };
 
     const onDeleted = (p: any) => {
-      const belongsHere = isDirectMessage
-        ? String(p?.from) === threadId || String(p?.to) === threadId
-        : String(p?.communityId) === threadId;
-      if (!belongsHere) return;
+      if (String(p?.communityId) !== communityId) return;
       setMessages((prev) =>
         prev.map((m) =>
           String(m._id) === String(p._id) || String(m._id) === String(p?.messageId)
@@ -413,36 +481,486 @@ export default function ThreadScreen() {
       );
     };
 
-    // DM events (your backend emits both "receive_direct_message" and "dm:message")
-    socket.on?.("dm:message", onNewDM);
-    socket.on?.("receive_direct_message", onNewDM);
-
-    // Community events
-    socket.on?.("receive_message", onNewCommunity);
+    socket.on?.("receive_message", onNew);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
 
     return () => {
-      socket.off?.("dm:message", onNewDM);
-      socket.off?.("receive_direct_message", onNewDM);
-      socket.off?.("receive_message", onNewCommunity);
+      socket.off?.("receive_message", onNew);
       socket.off?.("message:updated", onEdited);
       socket.off?.("message:deleted", onDeleted);
+      socket.emit?.("room:leave", { room: `community:${communityId}` });
     };
-  }, [socket, threadId, isDirectMessage, upsertManySorted, scrollToEnd, user?._id]);
+  }, [socket, communityId, isMember, socketConnected, scrollToBottom]);
 
-  /* ─────────── Row ─────────── */
-  const renderItem = ({ item, index }: { item: ChatMessage; index: number }) => {
+  // --- Typing realtime: keep a short-lived map of who is typing ---
+  useEffect(() => {
+    if (!socket || !communityId || !isMember) return;
+
+    const onTyping = (p: any) => {
+      if (String(p?.communityId) !== String(communityId)) return;
+
+      // Accept either { from } or { userId } from the backend
+      const from = String(p?.from || p?.userId || "");
+      if (!from || String(from) === String(user?._id)) return; // ignore self
+
+      const typing = !!p?.typing;
+
+      setTypingMap(prev => {
+        const next = new Map(prev);
+        if (typing) {
+          const label = (p?.name as string) || nameForId(from);
+          next.set(from, { id: from, name: label, expiresAt: Date.now() + 6000 });
+        } else {
+          next.delete(from);
+        }
+        return next;
+      });
+    };
+
+    socket.on?.("typing", onTyping);
+    // If your server uses a different event (e.g., "community:typing"), listen to it too:
+    socket.on?.("community:typing", onTyping);
+
+    // GC expired typing entries every 2s
+    const gc = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      setTypingMap(prev => {
+        const next = new Map(prev);
+        for (const [k, v] of next) {
+          if (v.expiresAt <= now) {
+            next.delete(k);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 2000);
+
+    return () => {
+      socket.off?.("typing", onTyping);
+      socket.off?.("community:typing", onTyping);
+      clearInterval(gc);
+      clearTimeout(typingPingRef.current.timer);
+    };
+  }, [socket, communityId, isMember, user?._id, nameForId]);
+
+  /* Join / Leave */
+  const join = async () => {
+    try {
+      setBusy(true);
+      await api.post(`/api/communities/${communityId}/join`);
+      if (Array.isArray(user?.communityIds)) user.communityIds.push(communityId);
+
+      // Immediately (re)load members and chat, then scroll to bottom on first paint
+      await loadCommunity();
+      await fetchMembers({ reset: true });
+      await fetchInitialChat();
+    } catch (e: any) {
+      Alert.alert("Join failed", e?.response?.data?.error || "Unable to join this community");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmLeave = () =>
+    Alert.alert("Leave community?", "You will lose access to members & messages.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Leave",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            setBusy(true);
+            await api.post(`/api/communities/${communityId}/leave`);
+            if (Array.isArray(user?.communityIds)) {
+              const i = user.communityIds.findIndex((x: any) => String(x) === communityId);
+              if (i >= 0) user.communityIds.splice(i, 1);
+            }
+            setMembers([]);
+            setCursor(null);
+            setHasMore(true);
+            setMessages([]);
+            await loadCommunity();
+          } catch (e: any) {
+            Alert.alert("Leave failed", e?.response?.data?.error || "Unable to leave this community");
+          } finally {
+            setBusy(false);
+          }
+        },
+      },
+    ]);
+
+  /* Pager */
+  const [page, setPage] = useState(0);
+  const pagerRef = useRef<ScrollView>(null);
+  const goTo = (p: number) => {
+    setPage(p);
+    pagerRef.current?.scrollTo({ x: p * SCREEN_W, animated: true });
+  };
+  const onMomentumEnd = (e: any) => {
+    const p = Math.round(e.nativeEvent.contentOffset.x / SCREEN_W);
+    if (p !== page) setPage(p);
+  };
+
+  /* Get online member count */
+  const onlineCount = useMemo(() => {
+    return members.filter((m) => m.status === "online").length;
+  }, [members]);
+
+  /* Custom header */
+  const AppHeader = () => (
+    <View
+      style={{
+        paddingHorizontal: 20,
+        paddingTop: Platform.OS === "ios" ? 60 : 16,
+        paddingBottom: 16,
+        borderBottomWidth: 0.5,
+        borderBottomColor: colors.border,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700", letterSpacing: -0.5 }} numberOfLines={1}>
+            {community?.name || "Community"}
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 15 }}>
+              {members.length ? `${members.length} members` : "—"}
+            </Text>
+            {isMember && onlineCount > 0 && (
+              <>
+                <View
+                  style={{
+                    width: 3,
+                    height: 3,
+                    borderRadius: 1.5,
+                    backgroundColor: colors.textTertiary,
+                    marginHorizontal: 8,
+                  }}
+                />
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: 4,
+                      backgroundColor: colors.success,
+                      marginRight: 6,
+                    }}
+                  />
+                  <Text style={{ color: colors.success, fontSize: 15, fontWeight: "600" }}>
+                    {onlineCount} online
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+        {isMember ? (
+          <TouchableOpacity
+            onPress={() => {
+              if (Platform.OS === "ios") {
+                ActionSheetIOS.showActionSheetWithOptions(
+                  {
+                    options: ["Cancel", "View Members", "Leave Community"],
+                    cancelButtonIndex: 0,
+                    destructiveButtonIndex: 2,
+                    userInterfaceStyle: isDark ? "dark" : "light",
+                  },
+                  (i) => {
+                    if (i === 1) goTo(1);
+                    if (i === 2) confirmLeave();
+                  }
+                );
+              } else {
+                Alert.alert("Community", undefined, [
+                  { text: "View Members", onPress: () => goTo(1) },
+                  { text: "Leave Community", style: "destructive", onPress: confirmLeave },
+                  { text: "Cancel", style: "cancel" },
+                ]);
+              }
+            }}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: colors.surface,
+              alignItems: "center",
+              justifyContent: "center",
+              shadowColor: colors.shadow,
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+            }}
+          >
+            <Ionicons name="ellipsis-horizontal" size={20} color={colors.text} />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {/* Modern segmented control */}
+      {isMember ? (
+        <View
+          style={{
+            marginTop: 16,
+            flexDirection: "row",
+            borderRadius: 12,
+            padding: 3,
+            backgroundColor: colors.bgSecondary,
+          }}
+        >
+          {["Chat", "Members"].map((label, i) => {
+            const active = page === i;
+            return (
+              <TouchableOpacity
+                key={label}
+                onPress={() => goTo(i)}
+                style={{
+                  flex: 1,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  backgroundColor: active ? colors.surfaceElevated : "transparent",
+                  shadowColor: active ? colors.shadow : "transparent",
+                  shadowOpacity: active ? 0.15 : 0,
+                  shadowRadius: active ? 6 : 0,
+                  shadowOffset: { width: 0, height: 2 },
+                }}
+              >
+                <Text style={{ color: colors.text, fontWeight: active ? "700" : "600", fontSize: 15 }}>{label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      ) : (
+        <TouchableOpacity
+          disabled={busy}
+          onPress={join}
+          style={{
+            marginTop: 16,
+            borderRadius: 14,
+            overflow: "hidden",
+            shadowColor: colors.primary,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+          }}
+        >
+          <LinearGradient
+            colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{
+              paddingVertical: 14,
+              paddingHorizontal: 24,
+              alignItems: "center",
+            }}
+          >
+            {busy ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 17 }}>Join Community</Text>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  /* Member Avatar */
+  const Avatar = ({ name, email }: { name?: string; email?: string }) => {
+    const label = initials(name, email);
+    const bg = hueFrom(name || email || label);
+    return (
+      <View
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 24,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: bg,
+          shadowColor: colors.shadow,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.15,
+          shadowRadius: 4,
+        }}
+      >
+        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}>{label}</Text>
+      </View>
+    );
+  };
+
+  const MemberRowCard = ({ item }: { item: MemberRow }) => {
+    const isOnline = item.status === "online";
+    return (
+      <View
+        style={{
+          marginHorizontal: 16,
+          marginBottom: 12,
+          backgroundColor: colors.surfaceElevated,
+          borderRadius: 16,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          shadowColor: colors.shadow,
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.08,
+          shadowRadius: 8,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center" }}>
+          <View>
+            <Avatar name={item.fullName} email={item.email} />
+            {isOnline && (
+              <View
+                style={{
+                  position: "absolute",
+                  bottom: 2,
+                  right: 2,
+                  width: 14,
+                  height: 14,
+                  borderRadius: 7,
+                  backgroundColor: colors.success,
+                  borderWidth: 2.5,
+                  borderColor: colors.surfaceElevated,
+                }}
+              />
+            )}
+          </View>
+          <View style={{ marginLeft: 14, flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+              <Text style={{ color: colors.text, fontWeight: "600", fontSize: 17 }}>{item.fullName}</Text>
+              {item.isYou && (
+                <View
+                  style={{
+                    marginLeft: 8,
+                    backgroundColor: colors.primary + "20",
+                    paddingHorizontal: 8,
+                    paddingVertical: 2,
+                    borderRadius: 6,
+                  }}
+                >
+                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>YOU</Text>
+                </View>
+              )}
+            </View>
+            {!!item.email && (
+              <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 2 }} numberOfLines={1}>
+                {item.email}
+              </Text>
+            )}
+          </View>
+
+          <View
+            style={{
+              borderRadius: 12,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              backgroundColor: isOnline ? colors.onlineBg : colors.offlineBg,
+            }}
+          >
+            <Text
+              style={{
+                color: isOnline ? colors.onlineText : colors.offlineText,
+                fontSize: 12,
+                fontWeight: "700",
+                letterSpacing: 0.5,
+              }}
+            >
+              {item.status.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
+  const MemberFilters = () => (
+    <View style={{ paddingHorizontal: 16, paddingBottom: 12, paddingTop: 8 }}>
+      {/* Search */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: colors.inputBg,
+          borderRadius: 12,
+          paddingHorizontal: 14,
+          shadowColor: colors.shadow,
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.05,
+          shadowRadius: 3,
+        }}
+      >
+        <Ionicons name="search" size={18} color={colors.textSecondary as any} />
+        <TextInput
+          value={q}
+          onChangeText={setQ}
+          placeholder="Search members"
+          placeholderTextColor={colors.textSecondary}
+          style={{ color: colors.text, paddingVertical: 12, flex: 1, marginLeft: 10, fontSize: 17 }}
+          returnKeyType="search"
+          onSubmitEditing={() => fetchMembers({ reset: true })}
+        />
+      </View>
+
+      {/* Filter pills */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={{ marginTop: 12 }}
+        contentContainerStyle={{ paddingRight: 16 }}
+      >
+        {(["all", "online", "offline"] as const).map((k) => {
+          const active = filter === k;
+          const count = k === "all" ? members.length : members.filter((m) => m.status === k).length;
+          return (
+            <TouchableOpacity
+              key={k}
+              onPress={() => setFilter(k)}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 20,
+                marginRight: 8,
+                backgroundColor: active ? colors.primary : colors.surface,
+                shadowColor: active ? colors.primary : colors.shadow,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: active ? 0.3 : 0.05,
+                shadowRadius: active ? 4 : 2,
+              }}
+            >
+              <Text
+                style={{
+                  color: active ? "#FFFFFF" : colors.text,
+                  fontWeight: "600",
+                  fontSize: 15,
+                }}
+              >
+                {k.charAt(0).toUpperCase() + k.slice(1)} {count > 0 && `(${count})`}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+
+  /* Chat bubbles */
+  const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
     const myIds = [String(user?._id || ""), "me"];
     const mine = myIds.includes(String(item.senderId || ""));
     const prev = messages[index - 1];
-    const cur = asDate(item.timestamp);
-    const prevDate = prev ? asDate(prev.timestamp) : undefined;
-    const showDateDivider = !prev || !prevDate || !isSameDay(cur, prevDate);
-
     const next = messages[index + 1];
-    const isFirstOfGroup = !prev || prev.senderId !== item.senderId || showGap(prev, item);
-    const isLastOfGroup = !next || next.senderId !== item.senderId || showGap(item, next);
+
+    const curDate = asDate(item.timestamp);
+    const prevDate = prev ? asDate(prev.timestamp) : undefined;
+    const showDateDivider = !prev || !prevDate || !isSameDay(curDate, prevDate);
+
+    const isFirstOfGroup = !prev || prev.senderId !== item.senderId || showGap15min(prev, item);
+    const isLastOfGroup = !next || next.senderId !== item.senderId || showGap15min(item, next);
 
     const deleted = item.isDeleted || item.status === "deleted";
 
@@ -462,28 +980,16 @@ export default function ThreadScreen() {
                 shadowRadius: 2,
               }}
             >
-              <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}>
-                {dayLabel(cur)}
-              </Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}>{dayLabel(curDate)}</Text>
             </View>
           </View>
         )}
-
         <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
           {!mine && isFirstOfGroup && (
-            <Text
-              style={{
-                color: colors.textSecondary,
-                fontSize: 12,
-                marginBottom: 4,
-                marginLeft: 12,
-                fontWeight: "500",
-              }}
-            >
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 4, marginLeft: 12, fontWeight: "500" }}>
               {item.sender}
             </Text>
           )}
-
           <View style={{ maxWidth: "75%" }}>
             {mine ? (
               <LinearGradient
@@ -507,9 +1013,7 @@ export default function ThreadScreen() {
                     Message deleted
                   </Text>
                 ) : (
-                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>
-                    {item.content}
-                  </Text>
+                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
                 )}
               </LinearGradient>
             ) : (
@@ -532,9 +1036,7 @@ export default function ThreadScreen() {
                     Message deleted
                   </Text>
                 ) : (
-                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>
-                    {item.content}
-                  </Text>
+                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
                 )}
               </View>
             )}
@@ -544,207 +1046,314 @@ export default function ThreadScreen() {
     );
   };
 
-  const keyExtractor = (m: ChatMessage) => String(m._id);
-
-  /* ─────────── UI ─────────── */
+  /* ───────── Render ───────── */
   return (
     <KeyboardAvoidingView
       className="flex-1"
       behavior={Platform.select({ ios: "padding", android: undefined })}
       style={{ backgroundColor: colors.bg }}
     >
-      <Stack.Screen options={{ headerShown: false }} />
+      <Stack.Screen options={{ header: () => null }} />
 
-      {/* Header */}
-      <View
-        style={{
-          paddingHorizontal: 20,
-          paddingTop: Platform.OS === "ios" ? 60 : 16,
-          paddingBottom: 16,
-          backgroundColor: colors.bg,
-          borderBottomWidth: 0.5,
-          borderBottomColor: colors.border,
-        }}
-      >
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              backgroundColor: colors.surface,
-              alignItems: "center",
-              justifyContent: "center",
-              marginRight: 12,
-              shadowColor: colors.shadow,
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.1,
-              shadowRadius: 4,
-            }}
-          >
-            <Ionicons name="chevron-back" size={20} color={colors.text} />
-          </TouchableOpacity>
-
-          <Text style={{ flex: 1, color: colors.text, fontSize: 20, fontWeight: "700", letterSpacing: -0.5 }}>
-            {headerTitle}
-          </Text>
-
-          <View style={{ width: 36 }} />
+      {loading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
-      </View>
-
-      {/* Error banner */}
-      {!!error && (
-        <View
-          style={{
-            marginHorizontal: 16,
-            marginTop: 12,
-            backgroundColor: isDark ? "rgba(255, 59, 48, 0.15)" : "#FFEBEE",
-            borderLeftWidth: 3,
-            borderLeftColor: colors.destructive,
-            borderRadius: 12,
-            paddingHorizontal: 16,
-            paddingVertical: 12,
-          }}
-        >
-          <Text style={{ color: colors.destructive, fontSize: 14, fontWeight: "500" }}>{error}</Text>
+      ) : !community ? (
+        <View className="flex-1 items-center justify-center px-6">
+          <Text style={{ color: colors.text, fontSize: 16, textAlign: "center" }}>Community not found.</Text>
         </View>
-      )}
+      ) : (
+        <>
+          <AppHeader />
 
-      {/* Messages */}
-      <View className="flex-1" style={{ marginTop: 8 }}>
-        {loading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            keyExtractor={keyExtractor}
-            renderItem={renderItem}
-            ListHeaderComponent={
-              hasMore ? (
-                <TouchableOpacity
-                  onPress={fetchOlder}
-                  disabled={fetchingMoreRef.current}
-                  style={{ paddingVertical: 16, alignItems: "center" }}
-                >
-                  {fetchingMoreRef.current ? (
-                    <ActivityIndicator color={colors.primary} />
+          {!isMember ? (
+            <View style={{ paddingHorizontal: 16, paddingVertical: 24 }}>
+              <View
+                style={{
+                  backgroundColor: colors.surfaceElevated,
+                  borderRadius: 16,
+                  padding: 20,
+                  shadowColor: colors.shadow,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.08,
+                  shadowRadius: 8,
+                }}
+              >
+                <View style={{ alignItems: "center", marginBottom: 12 }}>
+                  <Ionicons name="lock-closed-outline" size={40} color={colors.textSecondary} />
+                </View>
+                <Text style={{ color: colors.text, fontSize: 17, textAlign: "center", fontWeight: "600" }}>
+                  Members Only
+                </Text>
+                <Text style={{ color: colors.textSecondary, marginTop: 8, textAlign: "center" }}>
+                  Join this community to chat and view members.
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <ScrollView
+              ref={pagerRef}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={onMomentumEnd}
+            >
+              {/* CHAT */}
+              <View style={{ width: SCREEN_W, flex: 1 }}>
+                {!!chatError && (
+                  <View
+                    style={{
+                      marginHorizontal: 16,
+                      marginTop: 12,
+                      backgroundColor: isDark ? "rgba(255, 59, 48, 0.15)" : "#FFEBEE",
+                      borderLeftWidth: 3,
+                      borderLeftColor: colors.destructive,
+                      borderRadius: 12,
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                    }}
+                  >
+                    <Text style={{ color: colors.destructive, fontSize: 14, fontWeight: "500" }}>{chatError}</Text>
+                  </View>
+                )}
+
+                <View style={{ flex: 1, marginTop: 8 }}>
+                  {chatLoading ? (
+                    <View className="flex-1 items-center justify-center">
+                      <ActivityIndicator size="large" color={colors.primary} />
+                    </View>
                   ) : (
+                    <FlatList
+                      ref={chatListRef}
+                      data={messages}
+                      keyExtractor={(m) => String(m._id)}
+                      renderItem={renderMessage}
+                      onContentSizeChange={handleChatContentSizeChange}
+                      onScroll={handleChatScroll}
+                      scrollEventThrottle={16}
+                      ListHeaderComponent={
+                        chatHasMore ? (
+                          <TouchableOpacity
+                            onPress={fetchOlderChat}
+                            disabled={fetchingMoreChatRef.current}
+                            style={{ paddingVertical: 16, alignItems: "center" }}
+                          >
+                            {fetchingMoreChatRef.current ? (
+                              <ActivityIndicator color={colors.primary} />
+                            ) : (
+                              <View
+                                style={{
+                                  backgroundColor: colors.surface,
+                                  paddingHorizontal: 16,
+                                  paddingVertical: 8,
+                                  borderRadius: 20,
+                                }}
+                              >
+                                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
+                                  Load earlier messages
+                                </Text>
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                        ) : (
+                          <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                            <View style={{ alignItems: "center" }}>
+                              <View
+                                style={{
+                                  width: 48,
+                                  height: 48,
+                                  borderRadius: 24,
+                                  backgroundColor: colors.surface,
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  marginBottom: 8,
+                                }}
+                              >
+                                <Ionicons name="chatbubbles-outline" size={24} color={colors.textSecondary} />
+                              </View>
+                              <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: "500" }}>
+                                Start of conversation
+                              </Text>
+                            </View>
+                          </View>
+                        )
+                      }
+                      contentContainerStyle={{ paddingBottom: 110, paddingTop: 8 }}
+                      showsVerticalScrollIndicator={false}
+                    />
+                  )}
+                </View>
+
+                {typingLabel ? (
+                  <View style={{ paddingHorizontal: 16, marginTop: 6 }}>
                     <View
                       style={{
-                        backgroundColor: colors.surface,
-                        paddingHorizontal: 16,
-                        paddingVertical: 8,
-                        borderRadius: 20,
+                        alignSelf: "flex-start",
+                        backgroundColor: isDark ? "rgba(52, 199, 89, 0.15)" : "#E8F8EF",
+                        borderRadius: 12,
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
                       }}
                     >
-                      <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
-                        Load earlier messages
+                      <Text style={{ color: isDark ? "#34C759" : "#0F8C4C", fontSize: 13, fontWeight: "600" }}>
+                        {typingLabel}
                       </Text>
                     </View>
-                  )}
-                </TouchableOpacity>
-              ) : (
-                <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                  <View style={{ alignItems: "center" }}>
-                    <View
+                  </View>
+                ) : null}
+
+                {/* Modern Composer */}
+                <View
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 12,
+                    paddingBottom: Platform.OS === "ios" ? 32 : 12,
+                    borderTopWidth: 0.5,
+                    borderTopColor: colors.border,
+                    backgroundColor: colors.bg,
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "flex-end",
+                      backgroundColor: colors.inputBg,
+                      borderRadius: 24,
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      shadowColor: colors.shadow,
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.08,
+                      shadowRadius: 8,
+                    }}
+                  >
+                    <TextInput
+                      value={input}
+                      onChangeText={(t) => {
+                        setInput(t);
+
+                        if (socket && communityId) {
+                          const now = Date.now();
+
+                          // Throttle "typing: true" to at most once every 2s
+                          if (now - (typingPingRef.current.lastSent || 0) > 2000) {
+                            typingPingRef.current.lastSent = now;
+                            socket.emit?.("typing", { communityId, typing: true });
+                          }
+
+                          // Send "typing: false" after 5s of no changes
+                          clearTimeout(typingPingRef.current.timer);
+                          typingPingRef.current.timer = setTimeout(() => {
+                            socket.emit?.("typing", { communityId, typing: false });
+                          }, 5000);
+                        }
+                      }}
+                      placeholder="Message"
+                      placeholderTextColor={colors.textSecondary}
                       style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 24,
-                        backgroundColor: colors.surface,
-                        alignItems: "center",
-                        justifyContent: "center",
-                        marginBottom: 8,
+                        color: colors.text,
+                        fontSize: 17,
+                        flex: 1,
+                        minHeight: 36,
+                        maxHeight: 100,
+                        height: Math.max(36, inputHeight),
+                        paddingVertical: 8,
+                        textAlignVertical: "top",
+                      }}
+                      onContentSizeChange={(e) => {
+                        const h = e.nativeEvent.contentSize.height;
+                        setInputHeight(Math.min(100, Math.max(36, h)));
+                      }}
+                      editable={!sending}
+                      multiline
+                    />
+
+                    <TouchableOpacity
+                      onPress={sendMessage}
+                      disabled={sending || input.trim().length === 0}
+                      style={{
+                        marginLeft: 8,
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        overflow: "hidden",
+                        opacity: sending || input.trim().length === 0 ? 0.4 : 1,
                       }}
                     >
-                      <Ionicons name="chatbubbles-outline" size={24} color={colors.textSecondary} />
-                    </View>
-                    <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: "500" }}>
-                      Start of conversation
-                    </Text>
+                      <LinearGradient
+                        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+                      >
+                        {sending ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <Ionicons name="arrow-up" size={20} color="#fff" />
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
                   </View>
                 </View>
-              )
-            }
-            onContentSizeChange={() => scrollToEnd()}
-            contentContainerStyle={{ paddingBottom: 100, paddingTop: 8 }}
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
+              </View>
 
-      {/* Composer */}
-      <View
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          paddingBottom: Platform.OS === "ios" ? 32 : 12,
-          borderTopWidth: 0.5,
-          borderTopColor: colors.border,
-          backgroundColor: colors.bg,
-        }}
-      >
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "flex-end",
-            backgroundColor: colors.inputBg,
-            borderRadius: 24,
-            paddingHorizontal: 16,
-            paddingVertical: 8,
-            shadowColor: colors.shadow,
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.08,
-            shadowRadius: 8,
-          }}
-        >
-          <TextInput
-            value={input}
-            onChangeText={setInput}
-            placeholder="Message"
-            placeholderTextColor={colors.textSecondary}
-            style={{
-              color: colors.text,
-              paddingVertical: 8,
-              fontSize: 17,
-              flex: 1,
-              maxHeight: 100,
-            }}
-            editable={!sending}
-            multiline
-          />
-          <TouchableOpacity
-            onPress={sendMessage}
-            disabled={sending || input.trim().length === 0}
-            style={{
-              marginLeft: 8,
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              overflow: "hidden",
-              opacity: sending || input.trim().length === 0 ? 0.4 : 1,
-            }}
-          >
-            <LinearGradient
-              colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-            >
-              {sending ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Ionicons name="arrow-up" size={20} color="#fff" />
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
-        </View>
-      </View>
+              {/* MEMBERS */}
+              <View style={{ width: SCREEN_W }}>
+                <MemberFilters />
+                <FlatList
+                  data={members}
+                  keyExtractor={(m) => String(m._id)}
+                  renderItem={({ item }) => <MemberRowCard item={item} />}
+                  onEndReachedThreshold={0.3}
+                  onEndReached={loadMoreMembers}
+                  refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={refreshMembers} tintColor={colors.primary} />
+                  }
+                  ListEmptyComponent={
+                    !fetchingRef.current ? (
+                      <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                        <View
+                          style={{
+                            width: 64,
+                            height: 64,
+                            borderRadius: 32,
+                            backgroundColor: colors.surface,
+                            alignItems: "center",
+                            justifyContent: "center",
+                            marginBottom: 12,
+                          }}
+                        >
+                          <Ionicons name="people-outline" size={32} color={colors.textSecondary} />
+                        </View>
+                        <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>No members found</Text>
+                        <Text style={{ color: colors.textSecondary, fontSize: 15, marginTop: 4 }}>
+                          Try adjusting your filters
+                        </Text>
+                      </View>
+                    ) : null
+                  }
+                  ListFooterComponent={
+                    hasMore && members.length > 0 ? (
+                      <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                        <ActivityIndicator color={colors.primary} />
+                      </View>
+                    ) : members.length > 0 ? (
+                      <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                        <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "500" }}>
+                          • • •
+                        </Text>
+                      </View>
+                    ) : null
+                  }
+                  contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}
+                  showsVerticalScrollIndicator={false}
+                />
+              </View>
+            </ScrollView>
+          )}
+        </>
+      )}
     </KeyboardAvoidingView>
   );
 }

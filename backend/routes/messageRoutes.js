@@ -72,24 +72,25 @@ router.post("/", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     // 3) Save message
+    // ✅ FIX: Removed redundant 'timestamp' field. 'createdAt' is added automatically.
     const msg = await Message.create({
       sender: req.user.fullName || "Unknown",
       senderId: req.user.id,
       avatar: req.user.avatar || "/default-avatar.png",
       content: content.trim(),
-      timestamp: new Date(),
       communityId: OID(communityId),
       attachments: Array.isArray(attachments) ? attachments : [],
     });
 
     // 4) Payload
+    // ✅ FIX: Use 'msg.createdAt' for the 'timestamp' field.
     const payload = {
       _id: String(msg._id),
       sender: msg.sender,
       senderId: String(msg.senderId),
       avatar: msg.avatar,
       content: msg.content,
-      timestamp: msg.timestamp,
+      timestamp: msg.createdAt, // <-- FIX
       communityId: String(msg.communityId),
       status: msg.status,
       editedAt: msg.editedAt || null,
@@ -205,24 +206,32 @@ router.get("/:communityId", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     const limit = Math.min(
-      Math.max(parseInt(req.query.limit || "50", 10), 1),
+      Math.max(parseInt(req.query.limit || "500r", 10), 1),
       200
     );
     let before = req.query.before ? new Date(req.query.before) : new Date();
     if (isNaN(before.getTime())) before = new Date();
 
+    // ✅ FIX: Query using 'createdAt' instead of 'timestamp'
     const docs = await Message.find({
       communityId: OID(communityId),
-      timestamp: { $lt: before },
+      createdAt: { $lt: before }, // <-- FIX
     })
       .select(
-        "_id sender senderId avatar content timestamp communityId status editedAt isDeleted deletedAt"
+        // ✅ FIX: Select 'createdAt' instead of 'timestamp'
+        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt" // <-- FIX
       )
-      .sort({ timestamp: -1 })
+      .sort({ createdAt: -1 }) // <-- FIX
       .limit(limit)
       .lean();
 
-    return res.status(200).json(docs.reverse());
+    // ✅ FIX: Map results to rename 'createdAt' to 'timestamp' for the frontend
+    const results = docs.reverse().map((d) => {
+      const { createdAt, ...rest } = d;
+      return { ...rest, timestamp: createdAt };
+    });
+
+    return res.status(200).json(results);
   } catch (error) {
     console.error("GET /api/messages/:communityId error:", error);
     return res.status(500).json({ error: "Server Error" });
@@ -241,14 +250,23 @@ router.get("/:communityId/latest", async (req, res) => {
     const gate = await assertCommunityAndMembership(communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
+    // ✅ FIX: Sort by 'createdAt'
     const latest = await Message.findOne({ communityId: OID(communityId) })
       .select(
-        "_id sender senderId avatar content timestamp communityId status editedAt isDeleted deletedAt"
+        // ✅ FIX: Select 'createdAt'
+        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt" // <-- FIX
       )
-      .sort({ timestamp: -1 })
+      .sort({ createdAt: -1 }) // <-- FIX
       .lean();
 
-    return res.status(200).json(latest || null);
+    // ✅ FIX: Rename 'createdAt' to 'timestamp' for the frontend
+    if (!latest) {
+      return res.status(200).json(null);
+    }
+    const { createdAt, ...rest } = latest;
+    const result = { ...rest, timestamp: createdAt };
+
+    return res.status(200).json(result);
   } catch (error) {
     console.error("GET /api/messages/:communityId/latest error:", error);
     return res.status(500).json({ error: "Server Error" });

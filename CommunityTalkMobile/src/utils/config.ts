@@ -40,7 +40,7 @@ function resolveBaseUrl(): string {
     normalizeBase(fromEnv) ??
     normalizeBase(fromExtra) ??
     normalizeBase(fromLegacy) ??
-    (__DEV__ ? "http://localhost:3000" : "https://stephane-mastoparietal-saniyah.ngrok-free.dev");
+    (__DEV__ ? "http://localhost:3000" : "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev");
 
   if (__DEV__) {
     // Helpful diagnostics so you know exactly what got used

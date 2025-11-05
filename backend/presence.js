@@ -1,90 +1,105 @@
 // backend/presence.js
-// In-memory presence tracker (per Node process).
-// ⚠️ If you scale to multiple Node instances, back this with Redis or another shared store.
+// ⚠️ This module is now backed by Redis and is safe for multi-instance scaling.
 
-const socketsByUser = new Map();      // userId -> Set<socketId>
-const communitiesByUser = new Map();  // userId -> Set<communityId>
-const lastSeen = new Map();           // userId -> Date
+let redis;
 
-/* ───────────────────────── Helpers ───────────────────────── */
+// We use Hashes for socket counts and Sets for community/online lists
+const SOCKET_COUNT_KEY = "presence:user:sockets"; // HASH: { userId -> count }
+const ONLINE_USERS_KEY = "presence:users:online"; // SET:  { userId1, userId2, ... }
+const COMMUNITY_KEY_PREFIX = "presence:community:"; // SET: (per-community)
+const USER_COMMUNITIES_PREFIX = "presence:user:communities:"; // SET: (per-user)
+
+/**
+ * Initialize the presence module with a Redis client.
+ * @param {object} redisClient - An ioredis client instance
+ */
+function init(redisClient) {
+  if (!redisClient) {
+    throw new Error("Presence module requires a Redis client.");
+  }
+  redis = redisClient;
+  console.log("✅ Presence module initialized with Redis.");
+}
+
 const toId = (v) => (v == null ? "" : String(v));
-const toSet = (iterable) => {
-  const s = new Set();
-  if (Array.isArray(iterable)) for (const x of iterable) s.add(toId(x));
-  return s;
-};
 
 /* ───────────────────────── Core API ───────────────────────── */
 
 /**
  * Register a new socket connection.
- * Optionally associate the user with communities (array).
+ * Returns true if this was the user's first connection (i.e., they were offline).
  */
-function connect(userId, socketId, communities = []) {
+async function connect(userId) {
   userId = toId(userId);
-  socketId = toId(socketId);
-  if (!userId || !socketId) return;
+  if (!userId || !redis) return { isFirstConnection: false };
 
-  // Track sockets
-  const sockSet = socketsByUser.get(userId) || new Set();
-  sockSet.add(socketId);
-  socketsByUser.set(userId, sockSet);
+  // Increment the user's socket count
+  const count = await redis.hincrby(SOCKET_COUNT_KEY, userId, 1);
 
-  // Track communities (optional initial list)
-  if (communities && communities.length) {
-    const commSet = communitiesByUser.get(userId) || new Set();
-    for (const cid of communities) commSet.add(toId(cid));
-    communitiesByUser.set(userId, commSet);
+  if (count === 1) {
+    // This is their first connection
+    await redis.sadd(ONLINE_USERS_KEY, userId);
+    return { isFirstConnection: true };
   }
 
-  // User is online → clear last seen
-  lastSeen.delete(userId);
+  return { isFirstConnection: false };
 }
 
 /**
- * Remove a socket connection. If this was the last socket, user goes offline.
+ * Remove a socket connection.
+ * Returns true if this was the user's last connection (i.e., they are now offline).
  */
-function disconnect(userId, socketId) {
+async function disconnect(userId) {
   userId = toId(userId);
-  socketId = toId(socketId);
-  if (!userId || !socketId) return;
+  if (!userId || !redis) return { isLastConnection: false };
 
-  const sockSet = socketsByUser.get(userId);
-  if (sockSet) {
-    sockSet.delete(socketId);
-    if (sockSet.size === 0) {
-      socketsByUser.delete(userId);
-      communitiesByUser.delete(userId);
-      lastSeen.set(userId, new Date()); // record last seen
-    }
+  // Decrement the user's socket count
+  const count = await redis.hincrby(SOCKET_COUNT_KEY, userId, -1);
+
+  if (count <= 0) {
+    // This was their last connection
+    await redis.hdel(SOCKET_COUNT_KEY, userId); // Clean up hash
+    await redis.srem(ONLINE_USERS_KEY, userId); // Remove from online set
+    return { isLastConnection: true };
   }
+
+  return { isLastConnection: false };
 }
 
 /**
  * Join a specific community.
  */
-function joinCommunity(userId, communityId) {
+async function joinCommunity(userId, communityId) {
   userId = toId(userId);
   communityId = toId(communityId);
-  if (!userId || !communityId) return;
-  const commSet = communitiesByUser.get(userId) || new Set();
-  commSet.add(communityId);
-  communitiesByUser.set(userId, commSet);
+  if (!userId || !communityId || !redis) return;
+
+  const communityKey = `${COMMUNITY_KEY_PREFIX}${communityId}`;
+  const userKey = `${USER_COMMUNITIES_PREFIX}${userId}`;
+
+  await redis
+    .pipeline()
+    .sadd(communityKey, userId) // Add user to community roster
+    .sadd(userKey, communityId) // Add community to user's roster
+    .exec();
 }
 
 /**
  * Leave a specific community.
  */
-function leaveCommunity(userId, communityId) {
+async function leaveCommunity(userId, communityId) {
   userId = toId(userId);
   communityId = toId(communityId);
-  if (!userId || !communityId) return;
-  const commSet = communitiesByUser.get(userId);
-  if (!commSet) return;
-  commSet.delete(communityId);
-  if (commSet.size === 0) {
-    communitiesByUser.delete(userId);
-  }
+  if (!userId || !communityId || !redis) return;
+
+  const communityKey = `${COMMUNITY_KEY_PREFIX}${communityId}`;
+  const userKey = `${USER_COMMUNITIES_PREFIX}${userId}`;
+
+  await redis
+    .pipeline()
+    .srem(communityKey, userId) // Remove user from community roster
+    .srem(userKey, communityId) // Remove community from user's roster
+    .exec();
 }
 
 /* ───────────────────────── Batch ops ───────────────────────── */
@@ -92,127 +107,177 @@ function leaveCommunity(userId, communityId) {
 /**
  * Join multiple communities at once.
  */
-function joinCommunities(userId, communityIds = []) {
+async function joinCommunities(userId, communityIds = []) {
   userId = toId(userId);
-  if (!userId || !Array.isArray(communityIds) || communityIds.length === 0) return;
-  const commSet = communitiesByUser.get(userId) || new Set();
-  for (const cid of communityIds) commSet.add(toId(cid));
-  communitiesByUser.set(userId, commSet);
+  if (
+    !userId ||
+    !Array.isArray(communityIds) ||
+    communityIds.length === 0 ||
+    !redis
+  )
+    return;
+
+  const userKey = `${USER_COMMUNITIES_PREFIX}${userId}`;
+  const pipeline = redis.pipeline();
+
+  const cleanCommunityIds = communityIds.map(toId);
+  pipeline.sadd(userKey, ...cleanCommunityIds); // Add all communities to user's roster
+
+  for (const cid of cleanCommunityIds) {
+    const communityKey = `${COMMUNITY_KEY_PREFIX}${cid}`;
+    pipeline.sadd(communityKey, userId); // Add user to each community roster
+  }
+  await pipeline.exec();
 }
 
 /**
  * Leave multiple communities at once.
  */
-function leaveCommunities(userId, communityIds = []) {
+async function leaveCommunities(userId, communityIds = []) {
   userId = toId(userId);
-  if (!userId || !Array.isArray(communityIds) || communityIds.length === 0) return;
-  const commSet = communitiesByUser.get(userId);
-  if (!commSet) return;
-  for (const cid of communityIds) commSet.delete(toId(cid));
-  if (commSet.size === 0) communitiesByUser.delete(userId);
+  if (
+    !userId ||
+    !Array.isArray(communityIds) ||
+    communityIds.length === 0 ||
+    !redis
+  )
+    return;
+
+  const userKey = `${USER_COMMUNITIES_PREFIX}${userId}`;
+  const pipeline = redis.pipeline();
+
+  const cleanCommunityIds = communityIds.map(toId);
+  pipeline.srem(userKey, ...cleanCommunityIds); // Remove all communities from user's roster
+
+  for (const cid of cleanCommunityIds) {
+    const communityKey = `${COMMUNITY_KEY_PREFIX}${cid}`;
+    pipeline.srem(communityKey, userId); // Remove user from each community roster
+  }
+  await pipeline.exec();
 }
 
 /* ───────────────────────── Queries ───────────────────────── */
 
-function isOnline(userId) {
+async function isOnline(userId) {
   userId = toId(userId);
-  return socketsByUser.has(userId);
+  if (!userId || !redis) return false;
+  return (await redis.sismember(ONLINE_USERS_KEY, userId)) === 1;
 }
 
-function isOnlineInCommunity(userId, communityId) {
+async function isOnlineInCommunity(userId, communityId) {
   userId = toId(userId);
   communityId = toId(communityId);
-  const commSet = communitiesByUser.get(userId);
-  return !!(commSet && commSet.has(communityId));
+  if (!userId || !communityId || !redis) return false;
+
+  const key = `${COMMUNITY_KEY_PREFIX}${communityId}`;
+  return (await redis.sismember(key, userId)) === 1;
 }
 
-function listOnlineUsers() {
-  return Array.from(socketsByUser.keys());
+async function listOnlineUsers() {
+  if (!redis) return [];
+  return await redis.smembers(ONLINE_USERS_KEY);
 }
 
-function listOnlineInCommunity(communityId) {
+async function listOnlineInCommunity(communityId) {
   communityId = toId(communityId);
-  const online = [];
-  for (const [uid, commSet] of communitiesByUser.entries()) {
-    if (commSet.has(communityId)) online.push(uid);
-  }
-  return online;
+  if (!communityId || !redis) return [];
+
+  const key = `${COMMUNITY_KEY_PREFIX}${communityId}`;
+  return await redis.smembers(key);
 }
 
-function listCommunitiesForUser(userId) {
+async function listCommunitiesForUser(userId) {
   userId = toId(userId);
-  const set = communitiesByUser.get(userId);
-  return set ? Array.from(set) : [];
+  if (!userId || !redis) return [];
+
+  const userKey = `${USER_COMMUNITIES_PREFIX}${userId}`;
+  return await redis.smembers(userKey);
 }
 
-function socketsForUser(userId) {
+async function countOnline() {
+  if (!redis) return 0;
+  return await redis.scard(ONLINE_USERS_KEY);
+}
+
+// These functions are no longer relevant in a distributed model
+// as we don't track individual sockets, only user counts.
+// We keep the exports for API compatibility where possible.
+async function getLastSeen(userId) {
   userId = toId(userId);
-  const set = socketsByUser.get(userId);
-  return set ? Array.from(set) : [];
+  if (!redis) return null;
+  // This is a proxy. If not online, they were "last seen" when they disconnected.
+  // For a true "last seen" timestamp, you'd add another HSET on disconnect.
+  const online = await isOnline(userId);
+  return online ? null : new Date(); // Cannot get historical data from this model
 }
 
-function countOnline() {
-  return socketsByUser.size;
+async function touch(userId) {
+  // In this model, "touching" is implicit. As long as they are connected,
+  // they are online. If you need idle tracking, that's a separate
+  // mechanism you'd build on top (e.g., using EXPIRE on user keys).
+  return;
 }
 
-function getLastSeen(userId) {
+async function socketsForUser(userId) {
+  // We no longer track individual socket IDs, only the *count*.
+  // Return count for partial compatibility.
   userId = toId(userId);
-  return isOnline(userId) ? null : lastSeen.get(userId) || null;
-}
-
-/**
- * Touch a user (update last seen timestamp to now without marking offline).
- * Useful when you want to record activity without disconnecting.
- */
-function touch(userId) {
-  userId = toId(userId);
-  if (!userId) return;
-  if (!isOnline(userId)) lastSeen.set(userId, new Date());
+  if (!redis) return 0;
+  const count = await redis.hget(SOCKET_COUNT_KEY, userId);
+  return Number(count) || 0;
 }
 
 /* ───────────────────────── Admin / Debug ───────────────────────── */
 
 /**
- * Clear all in-memory presence (useful on dev hot reload).
+ * Clear all in-memory presence (dev only).
+ * NOTE: This clears the *entire* Redis presence state.
  */
-function reset() {
-  socketsByUser.clear();
-  communitiesByUser.clear();
-  lastSeen.clear();
+async function reset() {
+  if (!redis) return;
+  console.warn("⚠️ Resetting all presence state in Redis...");
+  const keys = await redis.keys("presence:*");
+  if (keys && keys.length) {
+    await redis.del(keys);
+  }
 }
 
 /**
  * Quick summary for dashboards/logging.
  */
-function summary() {
+async function summary() {
+  if (!redis) return { totalOnlineUsers: 0 };
+  const totalOnlineUsers = await countOnline();
   return {
-    totalOnlineUsers: socketsByUser.size,
-    usersWithCommunities: communitiesByUser.size,
-    lastSeenTracked: lastSeen.size,
+    totalOnlineUsers,
   };
 }
 
 /**
  * Export a shallow snapshot of current presence state (debug only).
  */
-function snapshot() {
-  const users = Array.from(socketsByUser.keys());
+async function snapshot() {
+  if (!redis) return { users: [], communities: {} };
+
+  const users = await listOnlineUsers();
+  const communities = {};
+
+  for (const uid of users) {
+    communities[uid] = await listCommunitiesForUser(uid);
+  }
+
   return {
     users,
-    socketsByUser: users.reduce((acc, uid) => {
-      acc[uid] = Array.from(socketsByUser.get(uid) || []);
-      return acc;
-    }, {}),
-    communitiesByUser: users.reduce((acc, uid) => {
-      acc[uid] = Array.from(communitiesByUser.get(uid) || []);
-      return acc;
-    }, {}),
+    communitiesByUser: communities,
   };
 }
 
 /* ───────────────────────── Public API ───────────────────────── */
 
 module.exports = {
+  // NEW: Init function must be called
+  init,
+
   // Core
   connect,
   disconnect,
@@ -229,7 +294,7 @@ module.exports = {
   listOnlineUsers,
   listOnlineInCommunity,
   listCommunitiesForUser,
-  socketsForUser,
+  socketsForUser, // Note: Returns count, not socket IDs
   countOnline,
   getLastSeen,
   touch,

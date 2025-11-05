@@ -10,10 +10,14 @@ const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const { Expo } = require("expo-server-sdk");
 
+// 🔌 Redis & Socket.io Adapter
+const { createAdapter } = require("@socket.io/redis-adapter");
+const Redis = require("ioredis"); // Using 'ioredis' for presence & pub/sub
+
 // 🔌 Database
 const { connectDB } = require("./db");
 
-// 👥 Presence Tracker
+// 👥 Presence Tracker (This will be our new Redis-backed version)
 const presence = require("./presence");
 
 // 🧰 Routes & Middleware
@@ -45,6 +49,41 @@ const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.MY_SECRET_KEY;
 if (!JWT_SECRET) console.warn("⚠️ Missing MY_SECRET_KEY — JWT auth will fail.");
 
+// NEW: Redis Configuration
+const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
+if (!process.env.REDIS_URL) {
+  console.warn("⚠️ Missing REDIS_URL. Using fallback. This is required for scaling.");
+}
+// Special TLS config for connecting to Render Redis from outside its network
+const redisOptions =
+  process.env.NODE_ENV === "production"
+    ? {
+        // Options for Render Private Services
+        tls: { rejectUnauthorized: false },
+      }
+    : {};
+
+
+// ───────────────────────── Redis & Presence Init ─────────────────────────
+// Create one client for our new presence module
+const redisClient = new Redis(REDIS_URL, redisOptions);
+
+redisClient.on('connect', () => console.log('✅ Redis connected for Presence.'));
+redisClient.on('error', (err) => console.error('❌ Redis Presence error:', err));
+
+// Pass the client to our new presence module
+presence.init(redisClient);
+
+// Create Pub/Sub clients for the Socket.io adapter
+const pubClient = new Redis(REDIS_URL, redisOptions);
+const subClient = pubClient.duplicate();
+
+pubClient.on('connect', () => console.log('✅ Redis PubClient connected.'));
+pubClient.on('error', (err) => console.error('❌ Redis PubClient error:', err));
+subClient.on('connect', () => console.log('✅ Redis SubClient connected.'));
+subClient.on('error', (err) => console.error('❌ Redis SubClient error:', err));
+
+
 // ───────────────────────── Middleware ─────────────────────────
 app.use(
   helmet({
@@ -69,7 +108,7 @@ app.use("/api/public", publicRoutes);
 let io;
 app.use((req, _res, next) => {
   req.io = io;
-  req.presence = presence;
+  req.presence = presence; // Now req.presence is Redis-backed
   next();
 });
 
@@ -84,6 +123,9 @@ io = new Server(server, {
   pingTimeout: 25000,
   pingInterval: 20000,
 });
+
+// 🔥 THIS IS THE KEY FOR SCALING SOCKET.IO 🔥
+io.adapter(createAdapter(pubClient, subClient));
 
 registerEventSockets(io /*, presence */);
 
@@ -124,22 +166,29 @@ io.use(async (socket, next) => {
       communityIds,
     };
     next();
-  } catch {
+  } catch (err) { // Catch the error object
+    console.error("💥 Socket Auth Error:", err.message);
     next(new Error("Invalid token"));
   }
 });
 
 // ───────────────────────── Realtime Logic ─────────────────────────
-io.on("connection", (socket) => {
+io.on("connection", async (socket) => {
   const uid = socket.user?.id;
   const communities = socket.user?.communityIds || [];
+  if (!uid) return; // Defensive check
 
   console.log(`🔌 ${uid} connected (${socket.id})`);
 
-  // Track online presence
-  presence.connect(uid, socket.id);
+  // Track online presence (MODIFIED)
+  // We no longer pass socket.id, just the user ID.
+  const { isFirstConnection } = await presence.connect(uid);
+  
   socket.join(uid);
-  for (const cid of communities) socket.join(communityRoom(cid));
+  for (const cid of communities) {
+    socket.join(communityRoom(cid));
+    await presence.joinCommunity(uid, cid); // Also track community presence
+  }
 
   // Notify UI
   socket.emit("rooms:init", {
@@ -147,13 +196,22 @@ io.on("connection", (socket) => {
     communities,
   });
 
-  io.emit("presence:update", { userId: uid, status: "online" });
+  // (MODIFIED) Only emit 'online' if this is their *first* connection
+  if (isFirstConnection) {
+    io.emit("presence:update", { userId: uid, status: "online" });
+  }
 
-  // Manual room join
-  socket.on("community:join", (cid) => socket.join(communityRoom(cid)));
-  socket.on("community:leave", (cid) => socket.leave(communityRoom(cid)));
+  // Manual room join (MODIFIED)
+  socket.on("community:join", async (cid) => {
+    socket.join(communityRoom(cid));
+    await presence.joinCommunity(uid, cid);
+  });
+  socket.on("community:leave", async (cid) => {
+    socket.leave(communityRoom(cid));
+    await presence.leaveCommunity(uid, cid);
+  });
 
-  // 🔥 Receive new message directly (for instant echo)
+  // 🔥 Receive new message directly (No changes needed, this logic is solid)
   socket.on("message:send", async (msg) => {
     try {
       const { communityId, content, clientMessageId } = msg;
@@ -170,6 +228,7 @@ io.on("connection", (socket) => {
       });
 
       // Broadcast to community instantly
+      // The Redis adapter ensures this goes to *all* instances
       const payload = {
         ...saved.toObject(),
         clientMessageId,
@@ -184,18 +243,27 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Handle disconnect
-  socket.on("disconnect", () => {
-    presence.disconnect(uid, socket.id);
-    if (!presence.isOnline(uid)) {
+  // Handle disconnect (MODIFIED)
+  socket.on("disconnect", async () => {
+    // This logic is now robust for multiple instances
+    // We just pass uid, not socket.id
+    if (!uid) return; // Handle cases where auth might have failed
+    
+    const { isLastConnection } = await presence.disconnect(uid);
+    
+    // If this was their *very last* socket across all instances
+    if (isLastConnection) {
       io.emit("presence:update", { userId: uid, status: "offline" });
+      
+      // Clean up their community presence
+      const userCommunities = await presence.listCommunitiesForUser(uid);
+      await presence.leaveCommunities(uid, userCommunities);
     }
     console.log(`❌ ${uid} disconnected (${socket.id})`);
   });
 });
 
 // ───────────────────────── Routes ─────────────────────────
-// keep auth’d API mounts
 app.use("/api", personRoutes); // login/registration under /api (your original)
 app.use("/api/communities", authenticate, communityRoutes);
 app.use("/api/members", authenticate, memberRoutes);
@@ -275,6 +343,9 @@ process.on("unhandledRejection", (reason) => {
 (async () => {
   try {
     await connectDB();
+    // Note: ioredis clients connect automatically,
+    // so we don't need an explicit 'await pubClient.connect()' block
+    // unless we were using 'node-redis' v4.
 
     const HOST = "0.0.0.0"; // bind to all interfaces
     const lanIp = getLanIPv4();
@@ -294,14 +365,24 @@ process.on("unhandledRejection", (reason) => {
     // Graceful shutdown
     const shutdown = (signal) => {
       console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
+      // NEW: Close Redis connections
+      redisClient.quit();
+      pubClient.quit();
+      subClient.quit();
+      
       server.close((err) => {
         if (err) {
           console.error("Error during server close:", err);
           process.exit(1);
         }
+        console.log("✅ Server closed.");
         process.exit(0);
       });
-      setTimeout(() => process.exit(0), 5000).unref();
+      // Force exit after 5s
+      setTimeout(() => {
+        console.warn("⚠️ Forcing shutdown after 5s.");
+        process.exit(1);
+      }, 5000).unref();
     };
 
     process.on("SIGINT", () => shutdown("SIGINT"));

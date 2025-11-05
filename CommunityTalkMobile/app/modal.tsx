@@ -491,3 +491,4 @@ export default function ModalScreen() {
     </View>
   );
 }
+
