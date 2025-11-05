@@ -54,15 +54,8 @@ const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 if (!process.env.REDIS_URL) {
   console.warn("⚠️ Missing REDIS_URL. Using fallback. This is required for scaling.");
 }
-// Special TLS config for connecting to Render Redis from outside its network
-const redisOptions =
-  process.env.NODE_ENV === "production"
-    ? {
-        // Options for Render Private Services
-        tls: { rejectUnauthorized: false },
-      }
-    : {};
-
+// We just need an empty object. Render's internal network does not use TLS.
+const redisOptions = {};
 
 // ───────────────────────── Redis & Presence Init ─────────────────────────
 // Create one client for our new presence module
