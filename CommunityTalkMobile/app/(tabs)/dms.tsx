@@ -434,12 +434,11 @@ export default function DMsScreen(): React.JSX.Element {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-  const openDM = async (partnerId: string) => {
-    await markThreadRead?.(partnerId);
-    setThreads(cur => cur.map(t => (t.id === partnerId ? { ...t, unread: 0 } : t)));
-    // TODO: Navigate to DM thread screen
-    router.push('/(tabs)/dms'); // placeholder
-  };
+const openDM = async (partnerId: string) => {
+  await markThreadRead?.(partnerId);
+  setThreads(cur => cur.map(t => (t.id === partnerId ? { ...t, unread: 0 } : t)));
+  router.push(`/dm/${partnerId}`);   // <-- go to the thread screen
+};
 
   const onRefresh = useCallback(async () => {
     const ac = new AbortController();

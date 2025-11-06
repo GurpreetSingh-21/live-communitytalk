@@ -65,20 +65,22 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
     setLoading(true);
     try {
-      // Get or create DM thread with this user
+      // 1) Create (or fetch) the DM thread
       const thread = await getOrCreateDMThread(user.id);
-      
+
+      // 2) Figure out the partner's id to use in the DM route
+      const partnerId =
+        (thread as any)?.partnerId ||
+        (thread as any)?.partner?.id ||
+        (Array.isArray((thread as any)?.participants)
+          ? (thread as any).participants.find((p: string) => String(p) !== String(currentUserId))
+          : null) ||
+        user.id; // fallback
+
       onClose();
-      
-      // Navigate to the DM thread
-      router.push({
-        pathname: "/thread/[id]",
-        params: { 
-          id: thread._id,
-          userName: user.name,
-          isDM: "true" // Flag to indicate this is a DM, not a community
-        },
-      });
+
+      // 3) Navigate to the dedicated DM screen (NOT /thread)
+      router.push(`/dm/${partnerId}`);
     } catch (error: any) {
       console.error("Failed to create DM thread:", error);
       Alert.alert(
