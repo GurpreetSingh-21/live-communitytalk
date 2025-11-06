@@ -1,0 +1,41 @@
+# load-test.yml (v5 - Local Test)
+
+config:
+  # -----------------------------------------------------------------
+  # CORRECTION: Target your local server, not Render
+  # -----------------------------------------------------------------
+  target: "http://localhost:3000"
+  
+  engines:
+    socketio: {}
+    
+  phases:
+    # Let's start with the test that failed on Render: 1 user/sec
+    - duration: 30
+      arrivalRate: 1
+      
+  variables:
+    # Get a fresh token from your local server
+    AUTH_TOKEN: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY4ZjIzMjBiMTFlNjBmODEyODY2NWMwNSIsImVtYWlsIjoic3NAcW1haWwuY3VueS5lZHUiLCJmdWxsTmFtZSI6IlMiLCJpYXQiOjE3NjIzNjkyOTEsImV4cCI6MTc2MzU3ODg5MX0.p_RqJN0L2_3hs5QvYcW3WGQfOAHxUxTPG_7u6m3_Lfo" 
+    COMMUNITY_ID: "68e49d1e35da2b0da14ee030"
+
+scenarios:
+  - engine: socketio
+    flow:
+      - connect:
+          path: "/socket.io"
+          auth:
+            token: "{{ AUTH_TOKEN }}"
+      - think: 2 
+      - emit:
+          channel: "community:join"
+          data: "{{ COMMUNITY_ID }}"
+      - loop:
+          - think: 5
+          - emit:
+              channel: "message:send"
+              data:
+                communityId: "{{ COMMUNITY_ID }}"
+                content: "Local test message {{ $loopCount }}"
+                clientMessageId: "artillery-{{ $loopCount }}-{{ $uuid }}"
+        count: 5

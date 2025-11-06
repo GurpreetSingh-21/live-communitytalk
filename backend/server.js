@@ -52,7 +52,9 @@ if (!JWT_SECRET) console.warn("⚠️ Missing MY_SECRET_KEY — JWT auth will fa
 // NEW: Redis Configuration
 const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 if (!process.env.REDIS_URL) {
-  console.warn("⚠️ Missing REDIS_URL. Using fallback. This is required for scaling.");
+  console.warn(
+    "⚠️ Missing REDIS_URL. Using fallback. This is required for scaling."
+  );
 }
 // We just need an empty object. Render's internal network does not use TLS.
 const redisOptions = {};
@@ -61,8 +63,12 @@ const redisOptions = {};
 // Create one client for our new presence module
 const redisClient = new Redis(REDIS_URL, redisOptions);
 
-redisClient.on('connect', () => console.log('✅ Redis connected for Presence.'));
-redisClient.on('error', (err) => console.error('❌ Redis Presence error:', err));
+redisClient.on("connect", () =>
+  console.log("✅ Redis connected for Presence.")
+);
+redisClient.on("error", (err) =>
+  console.error("❌ Redis Presence error:", err)
+);
 
 // Pass the client to our new presence module
 presence.init(redisClient);
@@ -71,11 +77,10 @@ presence.init(redisClient);
 const pubClient = new Redis(REDIS_URL, redisOptions);
 const subClient = pubClient.duplicate();
 
-pubClient.on('connect', () => console.log('✅ Redis PubClient connected.'));
-pubClient.on('error', (err) => console.error('❌ Redis PubClient error:', err));
-subClient.on('connect', () => console.log('✅ Redis SubClient connected.'));
-subClient.on('error', (err) => console.error('❌ Redis SubClient error:', err));
-
+pubClient.on("connect", () => console.log("✅ Redis PubClient connected."));
+pubClient.on("error", (err) => console.error("❌ Redis PubClient error:", err));
+subClient.on("connect", () => console.log("✅ Redis SubClient connected."));
+subClient.on("error", (err) => console.error("❌ Redis SubClient error:", err));
 
 // ───────────────────────── Middleware ─────────────────────────
 app.use(
@@ -107,7 +112,9 @@ app.use((req, _res, next) => {
 
 // Health route
 app.get("/", (_req, res) => res.json({ ok: true, service: "community-talk" }));
-app.get("/health", (_req, res) => res.status(200).json({ ok: true, uptime: process.uptime() }));
+app.get("/health", (_req, res) =>
+  res.status(200).json({ ok: true, uptime: process.uptime() })
+);
 
 // ───────────────────────── Socket.IO ─────────────────────────
 io = new Server(server, {
@@ -159,7 +166,8 @@ io.use(async (socket, next) => {
       communityIds,
     };
     next();
-  } catch (err) { // Catch the error object
+  } catch (err) {
+    // Catch the error object
     console.error("💥 Socket Auth Error:", err.message);
     next(new Error("Invalid token"));
   }
@@ -176,7 +184,7 @@ io.on("connection", async (socket) => {
   // Track online presence (MODIFIED)
   // We no longer pass socket.id, just the user ID.
   const { isFirstConnection } = await presence.connect(uid);
-  
+
   socket.join(uid);
   for (const cid of communities) {
     socket.join(communityRoom(cid));
@@ -204,13 +212,42 @@ io.on("connection", async (socket) => {
     await presence.leaveCommunity(uid, cid);
   });
 
-  // 🔥 Receive new message directly (No changes needed, this logic is solid)
+  // ----------------------------------------------------
+  // ✅ THIS IS THE HANDLER THAT WAS MISSING
+  // ----------------------------------------------------
+  // 🔥 Receive new message directly (with security patch)
   socket.on("message:send", async (msg) => {
-    try {
-      const { communityId, content, clientMessageId } = msg;
-      if (!content || !communityId) return;
+    // Get the clientMessageId *outside* the try block
+    const clientMessageId = msg?.clientMessageId;
 
-      // Save message in DB
+    try {
+      const { communityId, content } = msg;
+      // const uid = socket.user?.id; // Already defined above
+
+      if (!content || !communityId) {
+        console.warn(`[SECURITY] User ${uid} sent empty message.`);
+        return; // Don't reply, just ignore
+      }
+
+      // ----------------------------------------------------
+      // ✅ SECURITY FIX (OWASP A01)
+      // Check if the user is *actually* a member of this community.
+      // ----------------------------------------------------
+      const isMember = socket.user.communityIds.includes(communityId);
+      if (!isMember) {
+        // The user is an attacker.
+        console.warn(
+          `[SECURITY] User ${uid} tried to post to community ${communityId} WITHOUT membership.`
+        );
+        socket.emit("message:error", {
+          clientMessageId: clientMessageId, // Send the ID back
+          error: "Unauthorized",
+        });
+        return; // Stop processing.
+      }
+      // ----------------------------------------------------
+
+      // Save message in DB (Only "Good Users" get here)
       const saved = await Message.create({
         communityId,
         content,
@@ -221,7 +258,6 @@ io.on("connection", async (socket) => {
       });
 
       // Broadcast to community instantly
-      // The Redis adapter ensures this goes to *all* instances
       const payload = {
         ...saved.toObject(),
         clientMessageId,
@@ -232,7 +268,8 @@ io.on("connection", async (socket) => {
       socket.emit("message:ack", { clientMessageId, serverId: saved._id });
     } catch (err) {
       console.error("💥 Socket message send error:", err);
-      socket.emit("message:error", { clientMessageId: msg.clientMessageId });
+      // Now our catch block can safely send the ID back
+      socket.emit("message:error", { clientMessageId: clientMessageId });
     }
   });
 
@@ -241,13 +278,13 @@ io.on("connection", async (socket) => {
     // This logic is now robust for multiple instances
     // We just pass uid, not socket.id
     if (!uid) return; // Handle cases where auth might have failed
-    
+
     const { isLastConnection } = await presence.disconnect(uid);
-    
+
     // If this was their *very last* socket across all instances
     if (isLastConnection) {
       io.emit("presence:update", { userId: uid, status: "offline" });
-      
+
       // Clean up their community presence
       const userCommunities = await presence.listCommunitiesForUser(uid);
       await presence.leaveCommunities(uid, userCommunities);
@@ -276,14 +313,14 @@ app.use("/api/events", (req, _res, next) => {
 });
 app.use("/api/events", authenticate, eventRoutes);
 
-
 app.post("/api/test-push", async (req, res) => {
   try {
     const { Expo } = require("expo-server-sdk");
     const expo = new Expo();
 
     const { expoPushToken } = req.body;
-    if (!expoPushToken) return res.status(400).json({ error: "Missing expoPushToken" });
+    if (!expoPushToken)
+      return res.status(400).json({ error: "Missing expoPushToken" });
 
     const messages = [
       {
@@ -346,7 +383,8 @@ process.on("unhandledRejection", (reason) => {
     server.listen(PORT, HOST, () => {
       const localUrl = `http://localhost:${PORT}`;
       const lanUrl = `http://${lanIp}:${PORT}`;
-      console.log("✅ Server is up!");
+      // 🚀 MODIFIED to show the port
+      console.log(`✅ Server is up on port ${PORT}!`);
       console.log(`   • Local:  ${localUrl}`);
       console.log(`   • LAN:    ${lanUrl}`);
       console.log(`🔗 CORS allowed origins: ${ORIGIN.join(", ")}`);
@@ -362,7 +400,7 @@ process.on("unhandledRejection", (reason) => {
       redisClient.quit();
       pubClient.quit();
       subClient.quit();
-      
+
       server.close((err) => {
         if (err) {
           console.error("Error during server close:", err);

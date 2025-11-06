@@ -192,7 +192,7 @@ export default function Landing() {
         {/* Header */}
         <AnimatedCard>
           <View className="px-5 pt-4 pb-6 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-3">
+          <View className="flex-row items-start gap-4">
               <View
                 className="items-center justify-center"
                 style={{
