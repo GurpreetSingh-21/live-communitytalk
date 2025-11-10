@@ -102,7 +102,9 @@ export default function RegisterScreen() {
     };
   }, []);
 
-  /* ---------------- Validation (unchanged logic) ---------------- */
+  // ----------------------------------------------------
+  // ✅ FIX: This is the ONLY validate function
+  // ----------------------------------------------------
   const validate = () => {
     let ok = true;
     setErrName(null);
@@ -117,6 +119,7 @@ export default function RegisterScreen() {
       setErrName("Full name is required");
       ok = false;
     }
+
     const em = email.trim().toLowerCase();
     if (!em) {
       setErrEmail("Email is required");
@@ -124,7 +127,15 @@ export default function RegisterScreen() {
     } else if (!/^\S+@\S+\.\S+$/.test(em)) {
       setErrEmail("Email is invalid");
       ok = false;
+    } else {
+      // ✅ NEW CUNY CHECK (mirrors the backend)
+      const domain = em.split('@')[1] || ''; // Get domain, handle empty string
+      if (domain !== 'cuny.edu' && !domain.endsWith('.cuny.edu')) {
+        setErrEmail("Please use a valid CUNY college email"); // Your requested error
+        ok = false;
+      }
     }
+
     if (!pw) {
       setErrPw("Password is required");
       ok = false;
@@ -146,7 +157,7 @@ export default function RegisterScreen() {
   /* ---------------- Submit (unchanged logic) ---------------- */
   const handleRegister = async () => {
     if (submitting) return;
-    if (!validate()) return;
+    if (!validate()) return; // This will now correctly stop bad emails
 
     try {
       setSubmitting(true);
@@ -261,7 +272,11 @@ export default function RegisterScreen() {
     );
   };
 
-  const eduDetected = useMemo(() => email.toLowerCase().includes(".edu"), [email]);
+  const eduDetected = useMemo(() => {
+    const em = email.trim().toLowerCase();
+    const domain = em.split('@')[1] || '';
+    return (domain === 'cuny.edu' || domain.endsWith('.cuny.edu'));
+  }, [email]);
 
   // Design tokens
   const bgColor = isDark ? "#0B0F19" : "#F8FAFC";
@@ -525,7 +540,7 @@ export default function RegisterScreen() {
               >
                 <Ionicons name="checkmark-circle" size={16} color="#10B981" />
                 <Text style={{ fontSize: 12, color: "#10B981", marginLeft: 6, fontWeight: "600" }}>
-                  .edu email verified ✓
+                  CUNY email verified ✓
                 </Text>
               </View>
             )}
