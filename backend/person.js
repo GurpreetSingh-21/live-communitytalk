@@ -20,10 +20,9 @@ const personSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      unique: true,          // ✅ keep unique
+      unique: true,
       lowercase: true,
       trim: true,
-      // ❌ remove `index: true` here – we define it below
     },
 
     password: { type: String, required: true }, // hashed password
@@ -34,15 +33,16 @@ const personSchema = new mongoose.Schema(
 
     /* ---------------------- Account & Role ---------------------- */
     emailVerified: { type: Boolean, default: false },
-role: {
-  type: String,
-  enum: ["user", "mod", "admin"],
-  default: "user",
-},
+    role: {
+      type: String,
+      enum: ["user", "mod", "admin"],
+      default: "user",
+    },
     isAdmin: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
-  verificationCode: { type: String, select: false },
-verificationCodeExpires: { type: Date, select: false },
+    verificationCode: { type: String, select: false },
+    verificationCodeExpires: { type: Date, select: false },
+
     /* ---------------------- College ---------------------- */
     collegeName: { type: String, trim: true, lowercase: true, index: true },
     collegeSlug: { type: String, trim: true, lowercase: true, index: true },
@@ -55,15 +55,14 @@ verificationCodeExpires: { type: Date, select: false },
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Community",
-        // ❌ remove inline index here too
       },
     ],
-    isAdmin: { type: Boolean, default: false },
+
     /* ------------------ Push Notifications ------------------ */
     pushTokens: {
       type: [String],
       default: [],
-      index: true, // ✅ this one is fine — array itself indexed
+      index: true,
     },
 
     /* ---------------------- Other Flags ---------------------- */
@@ -73,14 +72,9 @@ verificationCodeExpires: { type: Date, select: false },
 );
 
 /* ------------------------- Indexes -------------------------- */
-// this one is good
 personSchema.index({ collegeSlug: 1, religionKey: 1 });
-
-// ✅ keep ONE explicit index for email
-personSchema.index({ email: 1 }, { unique: true });
-
-// ✅ keep ONE explicit index for communityIds
-personSchema.index({ communityIds: 1 });
+personSchema.index({ email: 1 }, { unique: true }); // Correct
+personSchema.index({ communityIds: 1 }); // Correct
 
 /* ------------------------- Hooks ---------------------------- */
 personSchema.pre("save", function normalize(next) {

@@ -380,20 +380,25 @@ router.post("/login", async (req, res) => {
  * POST /api/verify-code
  * User submits the 6-digit code here.
  */
-router.post("/api/verify-code", async (req, res) => {
+router.post("/verify-code", async (req, res) => {
   try {
     const { email, code } = req.body;
+    
+    // We get the email from the request body
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !code) {
       return res.status(400).json({ error: "Email and code are required." });
     }
 
+    // Find the user by email
     const user = await Person.findOne({ 
       email: normalizedEmail
-    }).select("+verificationCode +verificationCodeExpires");
+      // Select the hidden fields needed for verification
+    }).select("+verificationCode +verificationCodeExpires"); 
 
     if (!user) {
+      // This is the error you saw in the screenshot
       return res.status(404).json({ error: "User not found." });
     }
     
@@ -421,9 +426,7 @@ router.post("/api/verify-code", async (req, res) => {
     console.error("POST /api/verify-code error:", err);
     res.status(500).json({ error: "An error occurred during verification. Please try again later." });
   }
-});
-
-/* -------------------------------- PROFILE -------------------------------- */
+});/* -------------------------------- PROFILE -------------------------------- */
 // (This route remains unchanged)
 router.get("/profile", authenticate, async (req, res) => {
   try {

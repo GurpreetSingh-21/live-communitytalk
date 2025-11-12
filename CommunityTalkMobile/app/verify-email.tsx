@@ -4,11 +4,12 @@ import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, Keyb
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
-import { api } from '@/src/api/api';
+import { api } from '@/src/api/api'; // Use your api instance
 
 export default function VerifyEmailScreen() {
   const params = useLocalSearchParams();
-  const email = String(params.email || "");
+  // We get the email from the navigation parameters
+  const email = String(params.email || ""); 
   const message = String(params.message || "Please check your email for a 6-digit code.");
 
   const [code, setCode] = useState("");
@@ -22,10 +23,17 @@ export default function VerifyEmailScreen() {
     }
     setLoading(true);
     setError("");
+
+    if (!email) {
+      setError("Email address is missing. Please go back and try again.");
+      setLoading(false);
+      return;
+    }
+
     try {
       // Call the new backend route
       const { data } = await api.post("/api/verify-code", {
-        email: email,
+        email: email, // <-- Now email is guaranteed to be here
         code: code,
       });
 
@@ -34,6 +42,7 @@ export default function VerifyEmailScreen() {
 
     } catch (err: any) {
       setError(err?.response?.data?.error || "Verification failed. Please try again.");
+    } finally {
       setLoading(false);
     }
   };

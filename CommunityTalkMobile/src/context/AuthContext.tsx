@@ -8,7 +8,12 @@ import React, {
   useState,
 } from "react";
 import * as SplashScreen from "expo-splash-screen";
-import { login as apiLogin, register as apiRegister } from "../api/auth";
+// *** We MUST import the new 'RegisterResponse' type ***
+import {
+  login as apiLogin,
+  register as apiRegister,
+  RegisterResponse, // <-- IMPORT THIS
+} from "../api/auth";
 import { api } from "../api/api";
 import {
   setAccessToken,
@@ -17,7 +22,7 @@ import {
 } from "../utils/storage";
 import { setUnauthorizedHandler } from "../api/api";
 import { refreshSocketAuth, disconnectSocket } from "../api/socket";
-import { registerForPushNotificationsAsync } from "../utils/notifications"; 
+import { registerForPushNotificationsAsync } from "../utils/notifications";
 
 type RegisterInput = {
   fullName: string;
@@ -33,7 +38,8 @@ type AuthState = {
   user: any | null;
   communities: any[];
   signIn: (email: string, password: string) => Promise<void>;
-  register: (input: RegisterInput) => Promise<void>;
+  // *** This function will now return the server message ***
+  register: (input: RegisterInput) => Promise<RegisterResponse>; // <-- UPDATED TYPE
   signOut: () => Promise<void>;
   refreshBootstrap: () => Promise<void>;
   /** Back-compat shims used by your UI in a few places */
@@ -47,7 +53,7 @@ export const AuthContext = createContext<AuthState>({
   user: null,
   communities: [],
   signIn: async () => {},
-  register: async () => {},
+  register: async () => ({ message: "" }), // <-- UPDATED DEFAULT
   signOut: async () => {},
   refreshBootstrap: async () => {},
   setToken: async () => {},
@@ -59,6 +65,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 /** Derive collegeSlug / religionKey from communities when missing on user */
 function deriveScope(user: any | null, communities: any[]) {
+  // ... (This function is correct, no changes needed)
   if (!user) return user;
 
   const hasCollege = !!user.collegeSlug;
@@ -107,6 +114,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const clearingRef = useRef(false);
 
   const applyAuthState = useCallback((u: any | null, cs: any[]) => {
+    // ... (This function is correct, no changes needed)
     if (!mountedRef.current) return;
     const safeCommunities = Array.isArray(cs) ? cs : [];
     const augmentedUser = deriveScope(u, safeCommunities);
@@ -128,6 +136,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, []);
 
   const clearAuthState = useCallback(async () => {
+    // ... (This function is correct, no changes needed)
     if (clearingRef.current) return;
     clearingRef.current = true;
     try {
@@ -139,12 +148,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     clearingRef.current = false;
   }, [applyAuthState]);
 
-  /**
-   * Bootstrap user + communities from the server.
-   * Uses /api/bootstrap; if a legacy server responds 404, it will try /bootstrap once.
-   */
   const triedLegacyOnce = useRef(false);
   const refreshBootstrap = useCallback(async () => {
+    // ... (This function is correct, no changes needed)
     const tryPath = async (path: string) => {
       const { data } = await api.get(path);
       return data;
@@ -173,8 +179,8 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     }
   }, [applyAuthState, clearAuthState]);
 
-  // Initial hydration
   const initialLoad = useCallback(async () => {
+    // ... (This function is correct, no changes needed)
     try {
       const token = await getAccessToken();
       if (token) {
@@ -197,19 +203,20 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [applyAuthState, clearAuthState, refreshBootstrap]);
 
   useEffect(() => {
-    // One global 401 hook: clears auth and socket, UI reacts naturally.
+    // ... (This function is correct, no changes needed)
     setUnauthorizedHandler(async () => {
       await clearAuthState();
     });
   }, [clearAuthState]);
 
   useEffect(() => {
+    // ... (This function is correct, no changes needed)
     initialLoad();
   }, [initialLoad]);
 
-  // Centralized token→state transition (+ socket auth)
   const completeLoginFromToken = useCallback(
     async (token: string) => {
+      // ... (This function is correct, no changes needed)
       await setAccessToken(token);
       await refreshSocketAuth(token);
       await refreshBootstrap();
@@ -222,6 +229,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
   const signIn = useCallback(
     async (email: string, password: string) => {
+      // ... (This function is correct, no changes needed)
       const res = await apiLogin(email, password);
       if (!res?.token) throw new Error("No token received from server");
       await completeLoginFromToken(res.token);
@@ -229,27 +237,41 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     [completeLoginFromToken]
   );
 
+  // --- THIS IS THE FIX (PART 1) ---
   const doRegister = useCallback(
-    async (input: RegisterInput) => {
+    async (input: RegisterInput): Promise<RegisterResponse> => {
+      // This function now just calls apiRegister and returns the response.
+      // It DOES NOT log the user in.
       const res = await apiRegister(input);
-      if (!res?.token) throw new Error("No token received from server");
-      await completeLoginFromToken(res.token);
+      return res; // Returns { message: "..." }
     },
-    [completeLoginFromToken]
+    [] // No dependencies
   );
+  // --- END OF FIX (PART 1) ---
 
   const signOut = useCallback(async () => {
+    // ... (This function is correct, no changes needed)
     await clearAuthState();
   }, [clearAuthState]);
 
-  // Back-compat shims your UI references in some places
+  // Back-compat shims
   const setTokenCompat = useCallback(async (token: string) => {
-    await completeLoginFromToken(token);
-  }, [completeLoginFromToken]);
-
+      await completeLoginFromToken(token);
+    }, [completeLoginFromToken]);
+  
   const bootstrapCompat = useCallback(async () => {
-    await refreshBootstrap();
-  }, [refreshBootstrap]);
+      await refreshBootstrap();
+    }, [refreshBootstrap]);
+  
+  // --- THIS IS THE FIX (PART 2) ---
+  // We update this adapter to return the response from doRegister
+  const registerCompat = useCallback(
+    async (input: RegisterInput): Promise<RegisterResponse> => {
+      return doRegister(input); // <-- It now returns the response
+    },
+    [doRegister]
+  );
+  // --- END OF FIX (PART 2) ---
 
   const value = useMemo<AuthState>(
     () => ({
@@ -258,7 +280,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       user,
       communities,
       signIn,
-      register: doRegister,
+      register: registerCompat, // <-- This now correctly returns { message: "..." }
       signOut,
       refreshBootstrap,
       setToken: setTokenCompat,
@@ -269,7 +291,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       user,
       communities,
       signIn,
-      doRegister,
+      registerCompat,
       signOut,
       refreshBootstrap,
       setTokenCompat,

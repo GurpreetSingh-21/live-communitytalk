@@ -35,7 +35,7 @@ type CommunityLite = {
 };
 
 export default function RegisterScreen() {
-  const { setToken, bootstrap } = (React.useContext(AuthContext) as any) ?? {};
+  const { setToken, bootstrap, register } = (React.useContext(AuthContext) as any) ?? {};
   const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === "dark";
 
@@ -145,50 +145,52 @@ export default function RegisterScreen() {
 
   /* ---------------- Submit (unchanged logic) ---------------- */
   const handleRegister = async () => {
-  if (submitting) return;
-  if (!validate()) return;
+    if (submitting) return;
+    if (!validate()) return;
 
-  try {
-    setSubmitting(true);
-    const body = {
-      fullName: name.trim(),
-      email: email.trim().toLowerCase(),
-      password: pw,
-      collegeId,
-      religionId,
-    };
+    try {
+      setSubmitting(true);
+      const body = {
+        fullName: name.trim(),
+        email: email.trim().toLowerCase(),
+        password: pw,
+        collegeId,
+        religionId,
+      };
+      
+      // Use the 'register' function from AuthContext
+      // It no longer throws an error, it returns a message
+      const data = await register(body);
 
-    // This no longer returns a token
-    const { data } = await api.post("/api/register", body);
+      // --- START FIX ---
+      // Do NOT log the user in.
+      // Send them to the new code verification screen.
+      router.replace({
+        pathname: "/verify-email",
+        // Pass the email and the server message to the next screen
+        params: { email: body.email, message: data.message }
+      });
+      // --- END FIX ---
 
-    // --- START FIX ---
-    // Do NOT log the user in.
-    // Instead, send them to a new "check your email" screen.
-    // We can pass the message from the server to the new screen
-    router.replace(
-      { pathname: "/verify-email", params: { message: data.message } } as any
-    );
-    // --- END FIX ---
-
-  } catch (err: any) {
-    // (Keep your existing catch block)
-    const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
-    if (typeof e === "string") {
-      setServerError(e);
-    } else if (e && typeof e === "object") {
-      if (e.fullName) setErrName(String(e.fullName));
-      if (e.email) setErrEmail(String(e.email));
-      if (e.password) setErrPw(String(e.password));
-      if (e.collegeId) setErrCollege(String(e.collegeId));
-      if (e.religionId) setErrReligion(String(e.religionId));
-      if (e.message) setServerError(String(e.message));
-    } else {
-      setServerError("Registration failed. Please try again.");
+    } catch (err: any) {
+      // (This catch block will now catch errors like "User already exists")
+      const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
+      if (typeof e === "string") {
+        setServerError(e);
+      } else if (e && typeof e === "object") {
+        if (e.fullName) setErrName(String(e.fullName));
+        if (e.email) setErrEmail(String(e.email));
+        if (e.password) setErrPw(String(e.password));
+        if (e.collegeId) setErrCollege(String(e.collegeId));
+        if (e.religionId) setErrReligion(String(e.religionId));
+        if (e.message) setServerError(String(e.message));
+      } else {
+        setServerError("Registration failed. Please try again.");
+      }
+    } finally {
+      setSubmitting(false);
     }
-  } finally {
-    setSubmitting(false);
-  }
-};
+  };
   /* ---------------- Modern UI Components ---------------- */
   const Pill = ({
     active,

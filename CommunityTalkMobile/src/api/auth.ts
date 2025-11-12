@@ -1,4 +1,4 @@
-// CommunityTalkMobile/src/api/auth.ts
+// src/api/auth.ts
 import { api } from "./api";
 
 /** ===== Types ===== */
@@ -24,13 +24,24 @@ export type Community = {
   key?: string;
   createdAt?: string;
   updatedAt?: string;
+  // This is the new field from your /bootstrap route
+  lastMessage?: {
+    content?: string;
+    timestamp?: string | Date;
+  };
 };
 
+// This type is returned by LOGIN
 export type AuthBundle = {
   message: string;
   token: string;
   user: User;
   communities: Community[];
+};
+
+// This type is returned by REGISTER
+export type RegisterResponse = {
+  message: string;
 };
 
 export type BootstrapBundle = {
@@ -80,6 +91,10 @@ export async function login(
   return data;
 }
 
+/**
+ * --- THIS FUNCTION IS UPDATED ---
+ * It no longer expects a token, only a message.
+ */
 export async function register(
   input: {
     fullName: string;
@@ -89,7 +104,7 @@ export async function register(
     religionId: string;
   },
   opts?: CommonOpts
-): Promise<AuthBundle> {
+): Promise<RegisterResponse> { // <-- Changed return type
   assertNonEmpty("fullName", input.fullName);
   assertNonEmpty("email", input.email);
   assertNonEmpty("password", input.password);
@@ -98,18 +113,16 @@ export async function register(
 
   const payload = { ...input, email: normalizeEmail(input.email) };
 
-  const { data } = await api.post<AuthBundle>("/api/register", payload, {
+  const { data } = await api.post<RegisterResponse>("/api/register", payload, {
     signal: opts?.signal,
   });
 
-  if (!data?.token) throw new Error("No token received from server");
-  return data;
+  if (!data?.message) throw new Error("Invalid response from server");
+  return data; // <-- Returns { message: "..." }
 }
 
 /**
  * Fetch user + communities using the current Bearer token.
- * Memoized while an identical request is in flight to avoid duplicate calls
- * (helpful in React 18 Strict Mode).
  */
 let bootstrapInflight: Promise<BootstrapBundle> | null = null;
 

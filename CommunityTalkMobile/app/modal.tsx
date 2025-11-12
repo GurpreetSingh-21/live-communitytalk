@@ -225,6 +225,7 @@ const ActionCard = ({
 function LoginGateway({ onDone }: { onDone: () => void }) {
   const isDark = useColorScheme() === "dark";
   const insets = useSafeAreaInsets();
+  const auth = React.useContext(AuthContext) as any;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -238,20 +239,36 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const { data } = await api.post("/api/login", { email, password });
-      if (!data?.token) throw new Error("Missing token in response");
-      await setAccessToken(data.token);
+      // We now call the 'signIn' function from AuthContext
+      await auth.signIn(email, password);
+      // onDone() will be called, which closes the modal
       onDone();
+
     } catch (e: any) {
-      const msg =
-        e?.response?.data?.error ||
-        (typeof e?.message === "string" ? e.message : "Login failed");
-      setError(String(msg));
+      // --- START OF FIX ---
+      
+      // Check for the specific "EMAIL_NOT_VERIFIED" code from the backend
+      const errorCode = e?.response?.data?.code;
+      const errorMessage = e?.response?.data?.error || (typeof e?.message === "string" ? e.message : "Login failed");
+
+      if (errorCode === "EMAIL_NOT_VERIFIED") {
+        // This is the user we need to verify
+        const userEmail = email.trim().toLowerCase();
+        
+        // Navigate to the verify screen, passing the email and message
+        router.replace({
+          pathname: "/verify-email",
+          params: { email: userEmail, message: errorMessage }
+        });
+      } else {
+        // It's a different error (like "Invalid password"), so just show it
+        setError(String(errorMessage));
+      }
+      // --- END OF FIX ---
     } finally {
       setBusy(false);
     }
   };
-
   const handleClose = () => {
     console.log("🔴 LoginGateway close button pressed");
     safeClose();
