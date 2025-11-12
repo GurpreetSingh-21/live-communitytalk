@@ -145,48 +145,50 @@ export default function RegisterScreen() {
 
   /* ---------------- Submit (unchanged logic) ---------------- */
   const handleRegister = async () => {
-    if (submitting) return;
-    if (!validate()) return;
+  if (submitting) return;
+  if (!validate()) return;
 
-    try {
-      setSubmitting(true);
-      const body = {
-        fullName: name.trim(),
-        email: email.trim().toLowerCase(),
-        password: pw,
-        collegeId,
-        religionId,
-      };
+  try {
+    setSubmitting(true);
+    const body = {
+      fullName: name.trim(),
+      email: email.trim().toLowerCase(),
+      password: pw,
+      collegeId,
+      religionId,
+    };
 
-      const { data } = await api.post("/api/register", body);
-      if (!data?.token) {
-        setServerError("Unexpected response from server.");
-        return;
-      }
+    // This no longer returns a token
+    const { data } = await api.post("/api/register", body);
 
-      if (typeof setToken === "function") setToken(data.token);
-      if (typeof bootstrap === "function") await bootstrap();
+    // --- START FIX ---
+    // Do NOT log the user in.
+    // Instead, send them to a new "check your email" screen.
+    // We can pass the message from the server to the new screen
+    router.replace(
+      { pathname: "/verify-email", params: { message: data.message } } as any
+    );
+    // --- END FIX ---
 
-      router.replace("/(tabs)");
-    } catch (err: any) {
-      const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
-      if (typeof e === "string") {
-        setServerError(e);
-      } else if (e && typeof e === "object") {
-        if (e.fullName) setErrName(String(e.fullName));
-        if (e.email) setErrEmail(String(e.email));
-        if (e.password) setErrPw(String(e.password));
-        if (e.collegeId) setErrCollege(String(e.collegeId));
-        if (e.religionId) setErrReligion(String(e.religionId));
-        if (e.message) setServerError(String(e.message));
-      } else {
-        setServerError("Registration failed. Please try again.");
-      }
-    } finally {
-      setSubmitting(false);
+  } catch (err: any) {
+    // (Keep your existing catch block)
+    const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
+    if (typeof e === "string") {
+      setServerError(e);
+    } else if (e && typeof e === "object") {
+      if (e.fullName) setErrName(String(e.fullName));
+      if (e.email) setErrEmail(String(e.email));
+      if (e.password) setErrPw(String(e.password));
+      if (e.collegeId) setErrCollege(String(e.collegeId));
+      if (e.religionId) setErrReligion(String(e.religionId));
+      if (e.message) setServerError(String(e.message));
+    } else {
+      setServerError("Registration failed. Please try again.");
     }
-  };
-
+  } finally {
+    setSubmitting(false);
+  }
+};
   /* ---------------- Modern UI Components ---------------- */
   const Pill = ({
     active,

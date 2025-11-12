@@ -34,14 +34,15 @@ const personSchema = new mongoose.Schema(
 
     /* ---------------------- Account & Role ---------------------- */
     emailVerified: { type: Boolean, default: false },
-    role: {
-      type: String,
-      enum: ["user", "mod", "admin"],
-      default: "user",
-    },
+role: {
+  type: String,
+  enum: ["user", "mod", "admin"],
+  default: "user",
+},
     isAdmin: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
-
+  verificationCode: { type: String, select: false },
+verificationCodeExpires: { type: Date, select: false },
     /* ---------------------- College ---------------------- */
     collegeName: { type: String, trim: true, lowercase: true, index: true },
     collegeSlug: { type: String, trim: true, lowercase: true, index: true },
@@ -57,7 +58,7 @@ const personSchema = new mongoose.Schema(
         // ❌ remove inline index here too
       },
     ],
-
+    isAdmin: { type: Boolean, default: false },
     /* ------------------ Push Notifications ------------------ */
     pushTokens: {
       type: [String],
