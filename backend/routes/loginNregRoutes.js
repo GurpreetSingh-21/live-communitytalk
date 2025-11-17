@@ -383,22 +383,17 @@ router.post("/login", async (req, res) => {
 router.post("/verify-code", async (req, res) => {
   try {
     const { email, code } = req.body;
-    
-    // We get the email from the request body
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !code) {
       return res.status(400).json({ error: "Email and code are required." });
     }
 
-    // Find the user by email
     const user = await Person.findOne({ 
       email: normalizedEmail
-      // Select the hidden fields needed for verification
     }).select("+verificationCode +verificationCodeExpires"); 
 
     if (!user) {
-      // This is the error you saw in the screenshot
       return res.status(404).json({ error: "User not found." });
     }
     
@@ -420,13 +415,31 @@ router.post("/verify-code", async (req, res) => {
     user.verificationCodeExpires = undefined;
     await user.save();
     
-    return res.status(200).json({ message: "Email verified successfully. You can now log in." });
+    // --- START OF SIMPLIFIED LOGIN LOGIC ---
+    
+    // 1. Sign a token for the now-verified user
+    const token = signToken(user);
+
+    // 2. Return ONLY the token and basic user info.
+    // The frontend will now call /bootstrap to get communities.
+    return res.status(200).json({
+      message: "Login successful",
+      token,
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        role: user.role || "user",
+      },
+      communities: [], // Send empty array, /bootstrap will fetch the real list
+    });
+    // --- END OF SIMPLIFIED LOGIN LOGIC ---
 
   } catch (err) {
     console.error("POST /api/verify-code error:", err);
     res.status(500).json({ error: "An error occurred during verification. Please try again later." });
   }
-});/* -------------------------------- PROFILE -------------------------------- */
+});
 // (This route remains unchanged)
 router.get("/profile", authenticate, async (req, res) => {
   try {

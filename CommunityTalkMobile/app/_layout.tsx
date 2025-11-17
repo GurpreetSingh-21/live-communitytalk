@@ -50,7 +50,7 @@ export default function RootLayout() {
                 <Stack.Screen name="landing" />
                 <Stack.Screen name="register" />
                 <Stack.Screen name="verify-email" />
-            <Stack.Screen name="verification-success" />
+            
                 <Stack.Screen
                   name="modal"
                   options={{

@@ -1,5 +1,3 @@
-//CommunityTalkMobile/app/(tabs)/communities.tsx
-
 import React, {
   useMemo,
   useState,
@@ -124,7 +122,8 @@ const SmartPreview = ({ msg, isUnread }: { msg: MessageContent; isUnread: boolea
     );
   }
   return (
-    <View className="flex-row items-center gap-1.5 self-start px-2 py-1 rounded-lg" style={{ backgroundColor: isDark ? '#27272a' : '#e5e7eb' }}>
+    // FIX 2: Removed 'self-start' from className
+    <View className="flex-row items-center gap-1.5 px-2 py-1 rounded-lg" style={{ backgroundColor: isDark ? '#27272a' : '#e5e7eb' }}>
       <Ionicons
         name={(msg.type === 'photo' ? 'camera-outline' : 'mic-outline') as any}
         size={14}
@@ -133,7 +132,8 @@ const SmartPreview = ({ msg, isUnread }: { msg: MessageContent; isUnread: boolea
       />
       <Text
         className="text-xs font-medium"
-        style={{ color: baseColor, fontWeight: baseWeight as any }}
+        style={{ flexShrink: 1, color: baseColor, fontWeight: baseWeight as any }} // ADDED flexShrink: 1
+        numberOfLines={1} // ADDED numberOfLines: 1
       >
         {msg.content}
       </Text>
@@ -286,8 +286,11 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                   </Text>
                 </View>
 
+                {/* FIX 1: ADDED flex-1 WRAPPER */}
                 <View className="flex-row items-center justify-between mt-1">
-                  <SmartPreview msg={item.lastMsg} isUnread={isUnread} />
+                  <View className="flex-1">
+                    <SmartPreview msg={item.lastMsg} isUnread={isUnread} />
+                  </View>
                   {!!item.unread && <UnreadBadge count={item.unread} pulseKey={item.unread} />}
                 </View>
               </View>
@@ -567,6 +570,7 @@ export default function CommunitiesScreen(): React.JSX.Element {
       {/* Frosted header */}
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }, animatedHeaderStyle]} className="px-4 pb-2">
         <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
+        {/* TYPO FIX: isDarks -> isDark */}
         <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }, animatedHeaderBorderStyle]} />
         <Animated.View style={animatedHeaderTitleStyle}>
           <View className="flex-row items-center justify-between mt-2 mb-5">
