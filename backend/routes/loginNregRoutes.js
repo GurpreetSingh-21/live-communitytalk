@@ -68,8 +68,8 @@ async function upsertMembership({ session, person, community }) {
     fullName: person.fullName || person.email,
     email: person.email,
     avatar: person.avatar || "/default-avatar.png",
-    status: "active",        // legacy field
-    memberStatus: "active",  // new field used elsewhere
+    status: "active", // legacy field
+    memberStatus: "active", // new field used elsewhere
     role: "member",
   };
 
@@ -91,7 +91,9 @@ async function upsertMembership({ session, person, community }) {
         strict: false,
       }
     )
-      .select("_id person personId community communityId fullName email avatar status memberStatus role")
+      .select(
+        "_id person personId community communityId fullName email avatar status memberStatus role"
+      )
       .lean();
 
     await Person.updateOne(
@@ -117,7 +119,9 @@ async function upsertMembership({ session, person, community }) {
         );
 
         const upgraded = await Member.findById(legacy._id)
-          .select("_id person personId community communityId fullName email avatar status memberStatus role")
+          .select(
+            "_id person personId community communityId fullName email avatar status memberStatus role"
+          )
           .lean();
 
         await Person.updateOne(
@@ -169,8 +173,10 @@ router.post("/register", async (req, res) => {
         .select("_id name type key")
         .lean(),
     ]);
-    if (!college) return res.status(400).json({ error: { collegeId: "College not found" } });
-    if (!religion) return res.status(400).json({ error: { religionId: "Religion not found" } });
+    if (!college)
+      return res.status(400).json({ error: { collegeId: "College not found" } });
+    if (!religion)
+      return res.status(400).json({ error: { religionId: "Religion not found" } });
 
     let userForEmail;
     let verificationCode;
@@ -184,7 +190,9 @@ router.post("/register", async (req, res) => {
       if (exists) {
         if (!exists.emailVerified) {
           // Unverified user → regenerate code
-          exists.verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+          exists.verificationCode = Math.floor(
+            100000 + Math.random() * 900000
+          ).toString();
           exists.verificationCodeExpires = new Date(Date.now() + 3600000); // 1 hour
           await exists.save({ session });
 
@@ -500,7 +508,13 @@ router.patch("/profile", authenticate, async (req, res) => {
   }
 });
 
-/* ------------------ NOTIFICATION PREFERENCES (GET/PUT) ------------------ */
+/* ------------------ NOTIFICATION / PRIVACY PREFS (GET/PUT) ------------------ */
+/**
+ * These prefs are shared by:
+ *  - Notifications screen (pushEnabled, dms, communities, mentions)
+ *  - Privacy & Security screen (showOnlineStatus, allowDMsFromSameCollege, allowDMsFromOthers)
+ * They are all stored under `notificationPrefs` on Person.
+ */
 
 router.get("/notification-prefs", authenticate, async (req, res) => {
   try {
@@ -512,12 +526,18 @@ router.get("/notification-prefs", authenticate, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const prefs = user.notificationPrefs || {
-      pushEnabled: true,
-      dms: true,
-      communities: true,
-      mentions: true,
-    };
+    const prefs =
+      user.notificationPrefs || {
+        // notification.tsx
+        pushEnabled: true,
+        dms: true,
+        communities: true,
+        mentions: true,
+        // security.tsx (privacy)
+        showOnlineStatus: true,
+        allowDMsFromSameCollege: true,
+        allowDMsFromOthers: false,
+      };
 
     return res.status(200).json({ notificationPrefs: prefs });
   } catch (err) {
@@ -529,7 +549,15 @@ router.get("/notification-prefs", authenticate, async (req, res) => {
 router.put("/notification-prefs", authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
-    const { pushEnabled, dms, communities, mentions } = req.body || {};
+    const {
+      pushEnabled,
+      dms,
+      communities,
+      mentions,
+      showOnlineStatus,
+      allowDMsFromSameCollege,
+      allowDMsFromOthers,
+    } = req.body || {};
 
     const updates = {};
     const errors = {};
@@ -543,10 +571,16 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
       }
     };
 
+    // Notification screen fields
     assignIfBool("pushEnabled", pushEnabled);
     assignIfBool("dms", dms);
     assignIfBool("communities", communities);
     assignIfBool("mentions", mentions);
+
+    // Privacy & Security screen fields
+    assignIfBool("showOnlineStatus", showOnlineStatus);
+    assignIfBool("allowDMsFromSameCollege", allowDMsFromSameCollege);
+    assignIfBool("allowDMsFromOthers", allowDMsFromOthers);
 
     if (Object.keys(errors).length > 0) {
       return res.status(400).json({ error: errors });
@@ -564,12 +598,16 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const currentPrefs = existing.notificationPrefs || {
-      pushEnabled: true,
-      dms: true,
-      communities: true,
-      mentions: true,
-    };
+    const currentPrefs =
+      existing.notificationPrefs || {
+        pushEnabled: true,
+        dms: true,
+        communities: true,
+        mentions: true,
+        showOnlineStatus: true,
+        allowDMsFromSameCollege: true,
+        allowDMsFromOthers: false,
+      };
 
     const nextPrefs = {
       ...currentPrefs,

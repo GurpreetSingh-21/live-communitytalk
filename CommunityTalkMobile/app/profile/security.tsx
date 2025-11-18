@@ -75,7 +75,7 @@ export default function SecurityAndPrivacyScreen() {
     loadLocal();
   }, []);
 
-  // ───────────────── Sync from backend (/privacy-prefs) ─────────────────
+  // ───────────────── Sync from backend (/api/notification-prefs) ─────────────────
   useEffect(() => {
     let cancelled = false;
 
@@ -85,9 +85,9 @@ export default function SecurityAndPrivacyScreen() {
 
       try {
         setLoadingPrefs(true);
-        const res = await api.get('/privacy-prefs');
+        const res = await api.get('/api/notification-prefs');
         const serverPrefs =
-          (res.data && (res.data.privacyPrefs || res.data)) || {};
+          (res.data && (res.data.notificationPrefs || res.data)) || {};
 
         if (cancelled) return;
 
@@ -172,9 +172,9 @@ export default function SecurityAndPrivacyScreen() {
         payload.allowDMsFromOthers = next.allowDMsFromOthers;
 
         try {
-          const res = await api.put('/privacy-prefs', payload);
+          const res = await api.put('/api/notification-prefs', payload);
           const serverPrefs =
-            (res.data && (res.data.privacyPrefs || res.data)) || {};
+            (res.data && (res.data.notificationPrefs || res.data)) || {};
 
           // Merge back any canonical values from the server
           setPrefs((current) => ({
@@ -627,7 +627,7 @@ export default function SecurityAndPrivacyScreen() {
           </View>
         </View>
 
-        {/* Notification previews */}
+        {/* Notification previews (local-only) */}
         <View
           style={{
             backgroundColor: cardBg,
