@@ -65,6 +65,26 @@ const personSchema = new mongoose.Schema(
       index: true,
     },
 
+    // ✅ NEW: Per-user notification preferences (Discord-style)
+    notificationPrefs: {
+      pushEnabled: {
+        type: Boolean,
+        default: true, // master kill-switch for app push
+      },
+      dms: {
+        type: Boolean,
+        default: true, // direct messages & private threads
+      },
+      communities: {
+        type: Boolean,
+        default: true, // community posts / updates / announcements
+      },
+      mentions: {
+        type: Boolean,
+        default: true, // @mentions, replies
+      },
+    },
+
     /* ---------------------- Other Flags ---------------------- */
     nonEduEmail: { type: Boolean, default: false },
   },

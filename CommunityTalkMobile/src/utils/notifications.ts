@@ -3,12 +3,13 @@ import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { api } from '@/src/api/api';
+import { getAccessToken } from '../utils/storage'; // ✅ NEW: check auth before hitting backend
 
 // ✅ Configure notification handler (FIXED - removed shouldShowAlert)
 try {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowBanner: true,  // Show the notification banner at top
+      shouldShowBanner: true,  // Show the notification banner at top (iOS)
       shouldShowList: true,    // Include in notification center/list
       shouldPlaySound: true,   // Play notification sound
       shouldSetBadge: false,   // Update app icon badge (iOS only)
@@ -42,14 +43,12 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
-  // If not granted, ask the user
   if (existingStatus !== 'granted') {
     console.log('Permission not granted, asking user...');
     const { status } = await Notifications.requestPermissionsAsync();
     finalStatus = status;
   }
 
-  // Handle if permission is still not granted
   if (finalStatus !== 'granted') {
     console.warn('Push notification permission denied by user.');
     return null;
@@ -70,24 +69,32 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
     console.log(`Getting Expo push token using Project ID: ${projectId}`);
     token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     console.log('Expo Push Token received:', token);
-
   } catch (error) {
     console.error('Error getting Expo Push Token:', error);
     alert('Failed to get push token. Please try restarting the app.');
     return null;
   }
 
-  // --- 4. Send the token to your backend ---
+  // --- 4. Send the token to your backend (ONLY if logged in) ---
   if (token) {
     try {
+      // ✅ NEW: make sure we actually have a JWT before hitting /api/notifications/register
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        console.warn(
+          "[push] Skipping backend registration: no access token in storage yet (user not logged in?)."
+        );
+        return token;
+      }
+
       console.log(`Registering token with backend: ${token.substring(0, 20)}...`);
       await api.post('/api/notifications/register', { token });
       console.log('✅ Push token successfully registered with the backend.');
     } catch (error: any) {
       console.error('Failed to register push token with backend:');
-      console.error('Status:', error.response?.status);
-      console.error('Data:', error.response?.data);
-      console.error('Message:', error.message);
+      console.error('Status:', error?.response?.status);
+      console.error('Data:', error?.response?.data);
+      console.error('Message:', error?.message);
     }
   }
 

@@ -4,13 +4,12 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
-const crypto = require("crypto"); // We still need this
 
 const Person = require("../person");
 const Community = require("../models/Community");
 const Member = require("../models/Member");
 const authenticate = require("../middleware/authenticate");
-const { sendVerificationEmail } = require("../services/emailService"); // Import our new service
+const { sendVerificationEmail } = require("../services/emailService");
 
 require("dotenv").config();
 
@@ -21,7 +20,6 @@ if (!JWT_SECRET) {
 
 /* ----------------------------- helpers ---------------------------------- */
 
-// (Keep all your existing helper functions: normalizeEmail, validateRegisterByIds, signToken, upsertMembership)
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 
 function validateRegisterByIds({ fullName, email, password, collegeId, religionId }) {
@@ -62,6 +60,7 @@ const signToken = (user) =>
   );
 
 async function upsertMembership({ session, person, community }) {
+  // keep both status + memberStatus for backward compatibility
   const baseSet = {
     person: person._id,
     community: community._id,
@@ -69,7 +68,8 @@ async function upsertMembership({ session, person, community }) {
     fullName: person.fullName || person.email,
     email: person.email,
     avatar: person.avatar || "/default-avatar.png",
-    status: "active",
+    status: "active",        // legacy field
+    memberStatus: "active",  // new field used elsewhere
     role: "member",
   };
 
@@ -91,7 +91,7 @@ async function upsertMembership({ session, person, community }) {
         strict: false,
       }
     )
-      .select("_id person personId community communityId fullName email avatar status role")
+      .select("_id person personId community communityId fullName email avatar status memberStatus role")
       .lean();
 
     await Person.updateOne(
@@ -117,7 +117,7 @@ async function upsertMembership({ session, person, community }) {
         );
 
         const upgraded = await Member.findById(legacy._id)
-          .select("_id person personId community communityId fullName email avatar status role")
+          .select("_id person personId community communityId fullName email avatar status memberStatus role")
           .lean();
 
         await Person.updateOne(
@@ -133,59 +133,18 @@ async function upsertMembership({ session, person, community }) {
   }
 }
 
-/* ------------------------------ PUBLIC CATALOG --------------------------- */
-// (This route remains unchanged)
-router.get("/api/public/communities", async (req, res) => {
-  try {
-    const { q = "", type, paginated = "true", page = 1, limit = 1000 } = req.query;
-
-    const filter = { isPrivate: { $ne: true } };
-    if (type) filter.type = type; // "college" | "religion" | "custom"
-
-    if (q) {
-      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      filter.$or = [{ name: rx }, { key: rx }, { slug: rx }, { description: rx }];
-    }
-
-    const pg = Math.max(parseInt(page, 10) || 1, 1);
-    const lim = Math.min(Math.max(parseInt(limit, 10) || 1000, 1), 2000);
-
-    if (String(paginated) === "false") {
-      const items = await Community.find(filter)
-        .select("_id name type key tags")
-        .sort({ name: 1 })
-        .lean();
-      return res.json({ items });
-    }
-
-    const [items, total] = await Promise.all([
-      Community.find(filter)
-        .select("_id name type key tags")
-        .sort({ name: 1 })
-        .skip((pg - 1) * lim)
-        .limit(lim)
-        .lean(),
-      Community.countDocuments(filter),
-    ]);
-
-    return res.json({
-      items,
-      page: pg,
-      limit: lim,
-      total,
-      pages: Math.max(Math.ceil(total / lim), 1),
-    });
-  } catch (e) {
-    console.error("GET /api/public/communities", e);
-    return res.status(500).json({ error: "Server error" });
-  }
-});
+/* ------------- NOTE: public /api/public/communities lives in publicRoutes.js -------------
+ * We intentionally do NOT define GET /api/public/communities here anymore.
+ * That endpoint is handled by backend/routes/publicRoutes.js and mounted as:
+ *   app.use("/api/public", publicRoutes);
+ * in server.js.
+ * ---------------------------------------------------------------------- */
 
 /* -------------------------------- REGISTER ------------------------------- */
 /**
- * POST /register
- * --- UPDATED: Does NOT log in. Sends verification 6-digit code. ---
- * --- FIX: Correctly handles resending code to unverified users. ---
+ * POST /api/register
+ * Does NOT log in. Sends verification 6-digit code.
+ * Handles resending code to unverified users.
  */
 router.post("/register", async (req, res) => {
   const session = await mongoose.startSession();
@@ -203,8 +162,12 @@ router.post("/register", async (req, res) => {
     if (!ok) return res.status(400).json({ error: errors });
 
     const [college, religion] = await Promise.all([
-      Community.findOne({ _id: colId, type: "college", isPrivate: { $ne: true } }).select("_id name type key").lean(),
-      Community.findOne({ _id: relId, type: "religion", isPrivate: { $ne: true } }).select("_id name type key").lean(),
+      Community.findOne({ _id: colId, type: "college", isPrivate: { $ne: true } })
+        .select("_id name type key")
+        .lean(),
+      Community.findOne({ _id: relId, type: "religion", isPrivate: { $ne: true } })
+        .select("_id name type key")
+        .lean(),
     ]);
     if (!college) return res.status(400).json({ error: { collegeId: "College not found" } });
     if (!religion) return res.status(400).json({ error: { religionId: "Religion not found" } });
@@ -214,40 +177,45 @@ router.post("/register", async (req, res) => {
     let isResend = false;
 
     await session.withTransaction(async () => {
-      const exists = await Person.findOne({ email: em }).session(session).select("+verificationCode");
-      
+      const exists = await Person.findOne({ email: em })
+        .session(session)
+        .select("+verificationCode +verificationCodeExpires");
+
       if (exists) {
         if (!exists.emailVerified) {
-          // --- UNVERIFIED USER CASE ---
+          // Unverified user → regenerate code
           exists.verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
           exists.verificationCodeExpires = new Date(Date.now() + 3600000); // 1 hour
-          await exists.save();
-          
+          await exists.save({ session });
+
           userForEmail = exists;
           verificationCode = exists.verificationCode;
           isResend = true;
         } else {
-          // --- FULLY VERIFIED USER CASE ---
+          // Verified user already exists
           const err = new Error("User exists");
           err.code = "USER_EXISTS";
-          throw err; // This is a real error
+          throw err;
         }
       } else {
-        // --- NEW USER CASE ---
+        // New user
         const hash = await bcrypt.hash(password, 10);
         verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
         const verificationCodeExpires = new Date(Date.now() + 3600000);
 
         const created = await Person.create(
-          [{ 
-            fullName: fn, 
-            email: em, 
-            password: hash, 
-            role: "user", 
-            communityIds: [],
-            verificationCode,
-            verificationCodeExpires
-          }],
+          [
+            {
+              fullName: fn,
+              email: em,
+              password: hash,
+              role: "user",
+              communityIds: [],
+              verificationCode,
+              verificationCodeExpires,
+              emailVerified: false,
+            },
+          ],
           { session }
         );
         userForEmail = created[0];
@@ -257,36 +225,38 @@ router.post("/register", async (req, res) => {
           upsertMembership({ session, person: userForEmail, community: religion }),
         ]);
       }
-    }); // Transaction ends here
+    });
 
-    // --- Send Email (for BOTH new and unverified users) ---
+    // Send email (for both new + unverified / resend)
     if (userForEmail && verificationCode) {
       await sendVerificationEmail(userForEmail.email, verificationCode);
     } else {
-      // This shouldn't happen, but it's a good safeguard
       throw new Error("User or verification code was not set after transaction.");
     }
-    
-    // --- Return correct response ---
+
     if (isResend) {
-      return res.status(200).json({ message: "Verification code resent. Please check your inbox." });
+      return res
+        .status(200)
+        .json({ message: "Verification code resent. Please check your inbox." });
     } else {
       return res.status(201).json({
         message: "Registration successful. Please check your email for a 6-digit code.",
       });
     }
-
   } catch (error) {
-    // (This catch block now handles real errors)
     if (error?.code === "USER_EXISTS") {
-      return res.status(400).json({ error: { email: "An account with this email already exists" } });
+      return res
+        .status(400)
+        .json({ error: { email: "An account with this email already exists" } });
     }
     if (error?.code === 11000) {
       return res.status(400).json({ error: "Duplicate entry." });
     }
     console.error("POST /register error:", error);
     if (error.message === "Failed to send verification email.") {
-        return res.status(500).json({ error: "Failed to send verification email. Please try again." });
+      return res
+        .status(500)
+        .json({ error: "Failed to send verification email. Please try again." });
     }
     return res.status(400).json({ error: "Registration failed" });
   } finally {
@@ -296,8 +266,8 @@ router.post("/register", async (req, res) => {
 
 /* --------------------------------- LOGIN --------------------------------- */
 /**
- * POST /login
- * --- UPDATED: Checks for emailVerified flag. ---
+ * POST /api/login
+ * Checks emailVerified flag before issuing token.
  */
 router.post("/login", async (req, res) => {
   try {
@@ -314,47 +284,50 @@ router.post("/login", async (req, res) => {
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
 
-    // --- NEW: Verification Check ---
     if (!user.emailVerified) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: "Please verify your email to log in. Check your inbox for a 6-digit code.",
-        code: "EMAIL_NOT_VERIFIED" 
+        code: "EMAIL_NOT_VERIFIED",
       });
     }
-    // --- END: Verification Check ---
 
     const token = signToken(user);
-    
+
     let communities = [];
     if (Array.isArray(user.communityIds) && user.communityIds.length > 0) {
       communities = await Community.aggregate([
         { $match: { _id: { $in: user.communityIds } } },
         {
           $lookup: {
-            from: "messages", 
+            from: "messages",
             let: { communityId: "$_id" },
             pipeline: [
               { $match: { $expr: { $eq: ["$communityId", "$$communityId"] } } },
               { $sort: { createdAt: -1 } },
-              { $limit: 1 }
+              { $limit: 1 },
             ],
-            as: "latestMessageDocs"
-          }
+            as: "latestMessageDocs",
+          },
         },
         {
           $project: {
-            _id: 1, name: 1, type: 1, key: 1, createdAt: 1, updatedAt: 1,
+            _id: 1,
+            name: 1,
+            type: 1,
+            key: 1,
+            createdAt: 1,
+            updatedAt: 1,
             lastMessage: {
               $let: {
                 vars: { firstMessage: { $arrayElemAt: ["$latestMessageDocs", 0] } },
                 in: {
                   content: "$$firstMessage.content",
-                  timestamp: "$$firstMessage.createdAt"
-                }
-              }
-            }
-          }
-        }
+                  timestamp: "$$firstMessage.createdAt",
+                },
+              },
+            },
+          },
+        },
       ]);
     }
 
@@ -375,7 +348,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-/* -------------------------- NEW: VERIFY CODE -------------------------- */
+/* -------------------------- VERIFY CODE -------------------------- */
 /**
  * POST /api/verify-code
  * User submits the 6-digit code here.
@@ -389,16 +362,16 @@ router.post("/verify-code", async (req, res) => {
       return res.status(400).json({ error: "Email and code are required." });
     }
 
-    const user = await Person.findOne({ 
-      email: normalizedEmail
-    }).select("+verificationCode +verificationCodeExpires"); 
+    const user = await Person.findOne({
+      email: normalizedEmail,
+    }).select("+verificationCode +verificationCodeExpires");
 
     if (!user) {
       return res.status(404).json({ error: "User not found." });
     }
-    
+
     if (user.emailVerified) {
-        return res.status(400).json({ error: "Email is already verified." });
+      return res.status(400).json({ error: "Email is already verified." });
     }
 
     if (!user.verificationCode || user.verificationCode !== code) {
@@ -406,22 +379,18 @@ router.post("/verify-code", async (req, res) => {
     }
 
     if (user.verificationCodeExpires < new Date()) {
-      return res.status(400).json({ error: "Verification code has expired. Please register again to get a new one." });
+      return res.status(400).json({
+        error: "Verification code has expired. Please register again to get a new one.",
+      });
     }
 
-    // Verification successful!
     user.emailVerified = true;
     user.verificationCode = undefined;
     user.verificationCodeExpires = undefined;
     await user.save();
-    
-    // --- START OF SIMPLIFIED LOGIN LOGIC ---
-    
-    // 1. Sign a token for the now-verified user
+
     const token = signToken(user);
 
-    // 2. Return ONLY the token and basic user info.
-    // The frontend will now call /bootstrap to get communities.
     return res.status(200).json({
       message: "Login successful",
       token,
@@ -431,20 +400,21 @@ router.post("/verify-code", async (req, res) => {
         email: user.email,
         role: user.role || "user",
       },
-      communities: [], // Send empty array, /bootstrap will fetch the real list
+      communities: [], // frontend will call /api/bootstrap to load real list
     });
-    // --- END OF SIMPLIFIED LOGIN LOGIC ---
-
   } catch (err) {
-    console.error("POST /api/verify-code error:", err);
-    res.status(500).json({ error: "An error occurred during verification. Please try again later." });
+    console.error("POST /verify-code error:", err);
+    res
+      .status(500)
+      .json({ error: "An error occurred during verification. Please try again later." });
   }
 });
-// (This route remains unchanged)
+
+/* --------------------------- PROFILE (GET) --------------------------- */
 router.get("/profile", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
-      .select("_id fullName email communityIds role")
+      .select("_id fullName email communityIds role notificationPrefs")
       .lean();
 
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -466,12 +436,178 @@ router.get("/profile", authenticate, async (req, res) => {
   }
 });
 
+/* ------------------ PATCH /profile (update name) ------------------- */
+router.patch("/profile", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const updates = {};
+    const errors = {};
+
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "fullName")) {
+      const raw = String(req.body.fullName || "").trim();
+      if (!raw) {
+        errors.fullName = "Full name is required";
+      } else if (raw.length < 2) {
+        errors.fullName = "Full name must be at least 2 characters";
+      } else if (raw.length > 80) {
+        errors.fullName = "Full name must be at most 80 characters";
+      } else {
+        updates.fullName = raw;
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ error: errors });
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+
+    const user = await Person.findByIdAndUpdate(
+      userId,
+      { $set: updates },
+      { new: true }
+    )
+      .select("_id fullName email communityIds role")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (updates.fullName) {
+      await Member.updateMany(
+        { person: userId },
+        { $set: { fullName: updates.fullName, name: updates.fullName } }
+      );
+    }
+
+    const communities = await Community.find({
+      _id: { $in: user.communityIds || [] },
+    })
+      .select("_id name type key createdAt updatedAt")
+      .lean();
+
+    return res.status(200).json({
+      message: "Profile updated",
+      user,
+      communities,
+    });
+  } catch (err) {
+    console.error("PATCH /profile error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* ------------------ NOTIFICATION PREFERENCES (GET/PUT) ------------------ */
+
+router.get("/notification-prefs", authenticate, async (req, res) => {
+  try {
+    const user = await Person.findById(req.user.id)
+      .select("notificationPrefs")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const prefs = user.notificationPrefs || {
+      pushEnabled: true,
+      dms: true,
+      communities: true,
+      mentions: true,
+    };
+
+    return res.status(200).json({ notificationPrefs: prefs });
+  } catch (err) {
+    console.error("GET /notification-prefs error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put("/notification-prefs", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { pushEnabled, dms, communities, mentions } = req.body || {};
+
+    const updates = {};
+    const errors = {};
+
+    const assignIfBool = (key, value) => {
+      if (value === undefined) return;
+      if (typeof value !== "boolean") {
+        errors[key] = "Must be a boolean";
+      } else {
+        updates[key] = value;
+      }
+    };
+
+    assignIfBool("pushEnabled", pushEnabled);
+    assignIfBool("dms", dms);
+    assignIfBool("communities", communities);
+    assignIfBool("mentions", mentions);
+
+    if (Object.keys(errors).length > 0) {
+      return res.status(400).json({ error: errors });
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+
+    const existing = await Person.findById(userId)
+      .select("notificationPrefs")
+      .lean();
+
+    if (!existing) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const currentPrefs = existing.notificationPrefs || {
+      pushEnabled: true,
+      dms: true,
+      communities: true,
+      mentions: true,
+    };
+
+    const nextPrefs = {
+      ...currentPrefs,
+      ...updates,
+    };
+
+    const user = await Person.findByIdAndUpdate(
+      userId,
+      {
+        $set: {
+          notificationPrefs: nextPrefs,
+        },
+      },
+      { new: true }
+    )
+      .select("_id email notificationPrefs")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.status(200).json({
+      message: "Notification preferences updated",
+      notificationPrefs: user.notificationPrefs,
+    });
+  } catch (err) {
+    console.error("PUT /notification-prefs error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* ------------------------------- BOOTSTRAP ------------------------------- */
-// (This route remains unchanged and includes the lastMessage fix)
+
 router.get("/bootstrap", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
-      .select("_id fullName email communityIds role")
+      .select("_id fullName email communityIds role notificationPrefs")
       .lean();
 
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -489,25 +625,30 @@ router.get("/bootstrap", authenticate, async (req, res) => {
             pipeline: [
               { $match: { $expr: { $eq: ["$communityId", "$$communityId"] } } },
               { $sort: { createdAt: -1 } },
-              { $limit: 1 }
+              { $limit: 1 },
             ],
-            as: "latestMessageDocs"
-          }
+            as: "latestMessageDocs",
+          },
         },
         {
           $project: {
-            _id: 1, name: 1, type: 1, key: 1, createdAt: 1, updatedAt: 1,
+            _id: 1,
+            name: 1,
+            type: 1,
+            key: 1,
+            createdAt: 1,
+            updatedAt: 1,
             lastMessage: {
               $let: {
                 vars: { firstMessage: { $arrayElemAt: ["$latestMessageDocs", 0] } },
                 in: {
                   content: "$$firstMessage.content",
-                  timestamp: "$$firstMessage.createdAt"
-                }
-              }
-            }
-          }
-        }
+                  timestamp: "$$firstMessage.createdAt",
+                },
+              },
+            },
+          },
+        },
       ]);
     }
 
@@ -518,7 +659,8 @@ router.get("/bootstrap", authenticate, async (req, res) => {
   }
 });
 
-// (This route remains unchanged)
+/* ------------------------------- MY COMMUNITIES -------------------------- */
+
 router.get("/my/communities", authenticate, async (req, res) => {
   const user = await Person.findById(req.user.id).select("communityIds").lean();
   const items = await Community.find({ _id: { $in: user?.communityIds || [] } })
