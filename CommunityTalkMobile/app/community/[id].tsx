@@ -20,6 +20,7 @@ import {
   UIManager,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Image,
 } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -753,9 +754,20 @@ export default function CommunityScreen() {
     </View>
   );
 
-  const Avatar = ({ name, email, size = 48 }: { name?: string; email?: string; size?: number }) => {
+  const Avatar = ({ 
+    name, 
+    email, 
+    avatar,
+    size = 48 
+  }: { 
+    name?: string; 
+    email?: string; 
+    avatar?: string | null;
+    size?: number 
+  }) => {
     const label = initials(name, email);
     const bg = hueFrom(name || email || label);
+    
     return (
       <View
         style={{
@@ -769,13 +781,27 @@ export default function CommunityScreen() {
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.15,
           shadowRadius: 4,
+          overflow: 'hidden', // ✅ Important for image clipping
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "700", fontSize: size * 0.375 }}>{label}</Text>
+        {avatar ? (
+          <Image
+            source={{ uri: avatar }}
+            style={{
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+            }}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: size * 0.375 }}>
+            {label}
+          </Text>
+        )}
       </View>
     );
   };
-
   const MemberRowCard = ({ item }: { item: MemberRow }) => {
     const isOnline = item.status === "online";
     return (
@@ -795,7 +821,11 @@ export default function CommunityScreen() {
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View>
-            <Avatar name={item.fullName} email={item.email} />
+            <Avatar 
+              name={item.fullName} 
+              email={item.email} 
+              avatar={item.avatar} // ✅ Pass avatar
+            />
             {isOnline && (
               <View
                 style={{
@@ -812,6 +842,7 @@ export default function CommunityScreen() {
               />
             )}
           </View>
+          
           <View style={{ marginLeft: 14, flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
               <Text style={{ color: colors.text, fontWeight: "600", fontSize: 17 }}>{item.fullName}</Text>
@@ -934,19 +965,19 @@ export default function CommunityScreen() {
     const mine = myIds.includes(String(item.senderId || ""));
     const prev = messages[index - 1];
     const next = messages[index + 1];
-
+  
     const curDate = asDate(item.timestamp);
     const prevDate = prev ? asDate(prev.timestamp) : undefined;
     const showDateDivider = !prev || !prevDate || !isSameDay(curDate, prevDate);
-
+  
     const isFirstOfGroup = !prev || prev.senderId !== item.senderId || showGap15min(prev, item);
     const isLastOfGroup = !next || next.senderId !== item.senderId || showGap15min(item, next);
-
+  
     const deleted = item.isDeleted || item.status === "deleted";
-
-    // Find member info for avatar status
+  
+    // Find member info for avatar status AND avatar URL
     const memberInfo = members.find(m => String(m.person) === String(item.senderId));
-
+  
     return (
       <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
         {showDateDivider && (
@@ -967,7 +998,7 @@ export default function CommunityScreen() {
             </View>
           </View>
         )}
-
+  
         {/* Discord-style: Show avatar on left for others, gradient bubble on right for self */}
         {!mine ? (
           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
@@ -979,7 +1010,11 @@ export default function CommunityScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={{ position: "relative" }}>
-                    <Avatar name={item.sender} size={40} />
+                    <Avatar 
+                      name={item.sender} 
+                      avatar={memberInfo?.avatar} // ✅ Pass avatar URL
+                      size={40} 
+                    />
                     {/* Online indicator */}
                     {memberInfo?.status === "online" && (
                       <View
@@ -1000,7 +1035,7 @@ export default function CommunityScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
-
+  
             {/* Message content */}
             <View style={{ flex: 1, maxWidth: "75%" }}>
               {isFirstOfGroup && (

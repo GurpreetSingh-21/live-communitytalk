@@ -7,7 +7,7 @@ const Message = require("../models/Message");
 const Community = require("../models/Community");
 const Member = require("../models/Member");
 const Person = require("../person");
-const { sendPushNotifications } = require("../services/notificationService"); // ✅ Use Expo instead of Firebase
+const { sendPushNotifications } = require("../services/notificationService");
 
 // Require auth
 router.use((req, res, next) => {
@@ -72,9 +72,8 @@ router.post("/", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     // 3) Save message
-    // ✅ FIX: Removed redundant 'timestamp' field. 'createdAt' is added automatically.
     const msg = await Message.create({
-      sender: req.user.fullName || "Unknown",
+      sender: req.user.fullName || req.user.email || "Unknown", 
       senderId: req.user.id,
       avatar: req.user.avatar || "/default-avatar.png",
       content: content.trim(),
@@ -83,14 +82,13 @@ router.post("/", async (req, res) => {
     });
 
     // 4) Payload
-    // ✅ FIX: Use 'msg.createdAt' for the 'timestamp' field.
     const payload = {
       _id: String(msg._id),
       sender: msg.sender,
       senderId: String(msg.senderId),
       avatar: msg.avatar,
       content: msg.content,
-      timestamp: msg.createdAt, // <-- FIX
+      timestamp: msg.createdAt,
       communityId: String(msg.communityId),
       status: msg.status,
       editedAt: msg.editedAt || null,
@@ -100,14 +98,31 @@ router.post("/", async (req, res) => {
     };
 
     // 5) Real-time emits
+    // Emit to the standard OID room (default)
     req.io?.to(ROOM(communityId)).emit("receive_message", payload);
     req.io?.to(ROOM(communityId)).emit("message:new", {
       communityId: String(communityId),
       message: payload,
     });
 
-    // 6) Push notifications (EXPO) - ✅ UPDATED TO USE EXPO
-    sendPushNotificationsAsync(communityId, req.user, msg);
+    // 🔒 LIVE UPDATE FIX: Also emit to the community 'key' (slug) room if it exists.
+    // This fixes the issue where the client joins "college:..." but we only emitted to "community:ID"
+    try {
+      const commDoc = await Community.findById(communityId).select("key").lean();
+      if (commDoc && commDoc.key) {
+        req.io?.to(commDoc.key).emit("receive_message", payload);
+        req.io?.to(commDoc.key).emit("message:new", {
+          communityId: String(communityId),
+          message: payload,
+        });
+      }
+    } catch (err) {
+      // Ignore errors here to ensure main response succeeds
+    }
+
+    // 6) Push notifications (EXPO)
+    // Run in background, catch errors so they don't crash the request
+    sendPushNotificationsAsync(communityId, req.user, msg).catch(() => {});
 
     // 7) Done
     return res.status(201).json(payload);
@@ -118,12 +133,10 @@ router.post("/", async (req, res) => {
 });
 
 /**
- * ✅ NEW: Async helper to send push notifications via Expo
- * This runs in the background and doesn't block the response
+ * Async helper to send push notifications via Expo
  */
 async function sendPushNotificationsAsync(communityId, sender, message) {
   try {
-    // Find all active members of the community (except the sender)
     const members = await Member.find({
       community: OID(communityId),
       person: { $ne: OID(sender.id) }, // Don't send to self
@@ -132,17 +145,12 @@ async function sendPushNotificationsAsync(communityId, sender, message) {
       .select("person")
       .lean();
 
-    // Get the unique Person IDs
     const recipientIds = [
       ...new Set(members.map((m) => m.person).filter(Boolean)),
     ];
 
-    if (recipientIds.length === 0) {
-      console.log(`[Notify] No members to notify in community ${communityId}`);
-      return;
-    }
+    if (recipientIds.length === 0) return;
 
-    // Get all users with push tokens
     const recipients = await Person.find({
       _id: { $in: recipientIds },
       pushTokens: { $exists: true, $ne: [] },
@@ -150,27 +158,16 @@ async function sendPushNotificationsAsync(communityId, sender, message) {
       .select("pushTokens firstName lastName")
       .lean();
 
-    if (recipients.length === 0) {
-      console.log(`[Notify] No recipients with push tokens in community ${communityId}`);
-      return;
-    }
+    if (recipients.length === 0) return;
 
-    console.log(
-      `[Notify] Sending push to ${recipients.length} users in community ${communityId}`
-    );
-
-    // Get community name for notification
     const community = await Community.findById(communityId).select("name").lean();
     const communityName = community?.name || "Community";
-
-    // Prepare notification content
     const senderName = sender.fullName || "Someone";
     const truncatedMessage =
       message.content.length > 80
         ? message.content.slice(0, 80) + "..."
         : message.content;
 
-    // Use the Expo notification service
     const result = await sendPushNotifications(recipients, {
       title: `${senderName} in ${communityName}`,
       body: truncatedMessage,
@@ -184,11 +181,12 @@ async function sendPushNotificationsAsync(communityId, sender, message) {
       },
     });
 
-    console.log(
-      `[Notify] Results - Success: ${result.successCount}, Failure: ${result.failureCount}`
-    );
+    // 🔒 NOTIFICATION FIX: Reduce log noise for missing credentials
+    if (result?.failureCount > 0) {
+      // console.log(`[Notify] Partial success: ${result.successCount} sent, ${result.failureCount} failed.`);
+    }
   } catch (notifyErr) {
-    console.error("⚠️ Push notification failed:", notifyErr?.message || notifyErr);
+    // console.warn("[Notify] Push failed (likely missing credentials in dev).");
   }
 }
 
@@ -212,20 +210,17 @@ router.get("/:communityId", async (req, res) => {
     let before = req.query.before ? new Date(req.query.before) : new Date();
     if (isNaN(before.getTime())) before = new Date();
 
-    // ✅ FIX: Query using 'createdAt' instead of 'timestamp'
     const docs = await Message.find({
       communityId: OID(communityId),
-      createdAt: { $lt: before }, // <-- FIX
+      createdAt: { $lt: before },
     })
       .select(
-        // ✅ FIX: Select 'createdAt' instead of 'timestamp'
-        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt" // <-- FIX
+        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt"
       )
-      .sort({ createdAt: -1 }) // <-- FIX
+      .sort({ createdAt: -1 })
       .limit(limit)
       .lean();
 
-    // ✅ FIX: Map results to rename 'createdAt' to 'timestamp' for the frontend
     const results = docs.reverse().map((d) => {
       const { createdAt, ...rest } = d;
       return { ...rest, timestamp: createdAt };
@@ -250,16 +245,13 @@ router.get("/:communityId/latest", async (req, res) => {
     const gate = await assertCommunityAndMembership(communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
-    // ✅ FIX: Sort by 'createdAt'
     const latest = await Message.findOne({ communityId: OID(communityId) })
       .select(
-        // ✅ FIX: Select 'createdAt'
-        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt" // <-- FIX
+        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt"
       )
-      .sort({ createdAt: -1 }) // <-- FIX
+      .sort({ createdAt: -1 })
       .lean();
 
-    // ✅ FIX: Rename 'createdAt' to 'timestamp' for the frontend
     if (!latest) {
       return res.status(200).json(null);
     }

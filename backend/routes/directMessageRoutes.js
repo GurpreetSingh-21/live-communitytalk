@@ -68,7 +68,9 @@ router.get("/", async (req, res) => {
       {
         $project: {
           partnerId: "$_id",
-          fullName: "$partner.fullName",
+          // ✅ FIX: Fallback to email if fullName is missing, preventing "Unknown"
+          fullName: { $ifNull: ["$partner.fullName", "$partner.email", "Unknown"] },
+          email: "$partner.email", // Include email in payload just in case
           avatar: { $ifNull: ["$partner.avatar", "/default-avatar.png"] },
           lastMessage: 1,
           lastAttachments: 1,
@@ -85,6 +87,7 @@ router.get("/", async (req, res) => {
     const normalized = items.map((t) => ({
       partnerId: String(t.partnerId),
       fullName: t.fullName,
+      email: t.email,
       avatar: t.avatar,
       lastMessage: t.lastMessage,
       hasAttachment: Array.isArray(t.lastAttachments) && t.lastAttachments.length > 0,
@@ -146,6 +149,28 @@ router.post("/", async (req, res) => {
 
     if (!text && cleanAttachments.length === 0)
       return res.status(400).json({ error: "Message content or attachments required" });
+
+    // 🔒 RESTRICTION LOGIC: "One message until reply" policy
+    // 1. Check if the recipient has EVER replied to me (sent a message TO me)
+    const hasReplied = await DirectMessage.exists({
+      from: to,   // They are sender
+      to: from    // I am receiver
+    });
+
+    // 2. If they have NOT replied, check how many messages I have sent them
+    if (!hasReplied) {
+      const mySentCount = await DirectMessage.countDocuments({
+        from: from,
+        to: to
+      });
+
+      // 3. If I have sent 1 (or more) messages and they haven't replied, BLOCK.
+      if (mySentCount >= 1) {
+        return res.status(403).json({ 
+          error: "You cannot send another message until the user replies." 
+        });
+      }
+    }
 
     const dm = await DirectMessage.create({
       from,

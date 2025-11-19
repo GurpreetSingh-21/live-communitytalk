@@ -1,4 +1,5 @@
 // backend/server.js
+
 // 🌐 Core Modules
 const express = require("express");
 const http = require("http");
@@ -10,14 +11,20 @@ const jwt = require("jsonwebtoken");
 require("dotenv").config();
 const { Expo } = require("expo-server-sdk");
 
+// 🔒 SECURITY FIX (Flaw 3): Import DOMPurify for XSS protection
+const createDOMPurify = require("dompurify");
+const { JSDOM } = require("jsdom");
+const window = new JSDOM("").window;
+const DOMPurify = createDOMPurify(window);
+
 // 🔌 Redis & Socket.io Adapter
 const { createAdapter } = require("@socket.io/redis-adapter");
-const Redis = require("ioredis"); // Using 'ioredis' for presence & pub/sub
+const Redis = require("ioredis");
 
 // 🔌 Database
 const { connectDB } = require("./db");
 
-// 👥 Presence Tracker (This will be our new Redis-backed version)
+// 👥 Presence Tracker (Redis-backed)
 const presence = require("./presence");
 
 // 🧰 Routes & Middleware
@@ -32,6 +39,8 @@ const publicRoutes = require("./routes/publicRoutes");
 const eventRoutes = require("./routes/events");
 const registerEventSockets = require("./sockets/events");
 const notificationRoutes = require("./routes/notificationRoutes");
+const datingRoutes = require("./routes/datingRoutes"); // Dating feature
+const userRoutes = require("./routes/userRoutes"); // ✅ User routes (avatar upload)
 
 // 📦 Models
 const Person = require("./person");
@@ -43,24 +52,34 @@ const app = express();
 const server = http.createServer(app);
 
 // ───────────────────────── Configuration ─────────────────────────
-const ORIGIN_ENV = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+const ORIGIN_ENV =
+  process.env.CLIENT_ORIGIN ||
+  [
+    "http://localhost:5173",
+    "http://localhost:3001",
+  ].join(",");
+
 const ORIGIN = ORIGIN_ENV.split(",").map((o) => o.trim());
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.MY_SECRET_KEY;
-if (!JWT_SECRET) console.warn("⚠️ Missing MY_SECRET_KEY — JWT auth will fail.");
 
-// NEW: Redis Configuration
+// 🔥 CRITICAL SECURITY FIX: Fail fast if JWT secret is missing
+if (!JWT_SECRET) {
+  console.error("❌ FATAL ERROR: Missing MY_SECRET_KEY environment variable. Cannot start server.");
+  process.exit(1);
+}
+
+// Redis Configuration
 const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 if (!process.env.REDIS_URL) {
   console.warn(
     "⚠️ Missing REDIS_URL. Using fallback. This is required for scaling."
   );
 }
-// We just need an empty object. Render's internal network does not use TLS.
 const redisOptions = {};
 
 // ───────────────────────── Redis & Presence Init ─────────────────────────
-// Create one client for our new presence module
+// Client for presence
 const redisClient = new Redis(REDIS_URL, redisOptions);
 
 redisClient.on("connect", () =>
@@ -70,10 +89,10 @@ redisClient.on("error", (err) =>
   console.error("❌ Redis Presence error:", err)
 );
 
-// Pass the client to our new presence module
+// Pass the client to our presence module
 presence.init(redisClient);
 
-// Create Pub/Sub clients for the Socket.io adapter
+// Pub/Sub clients for the Socket.io adapter
 const pubClient = new Redis(REDIS_URL, redisOptions);
 const subClient = pubClient.duplicate();
 
@@ -89,6 +108,7 @@ app.use(
     contentSecurityPolicy: false,
   })
 );
+
 app.use(
   cors({
     origin: ORIGIN,
@@ -97,20 +117,23 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-app.use(express.json({ limit: "1mb" }));
+
+app.use(express.json({ limit: "50mb" })); // ✅ Increased limit for image uploads
 app.use(morgan("dev"));
+
+// Admin + public routes that don't depend on req.io
 app.use("/api/admin", adminRoutes);
 app.use("/api/public", publicRoutes);
 
-// Attach io + presence to req
+// Attach io + presence to req (for routes/middleware)
 let io;
 app.use((req, _res, next) => {
   req.io = io;
-  req.presence = presence; // Now req.presence is Redis-backed
+  req.presence = presence; // Redis-backed presence
   next();
 });
 
-// Health route
+// Health routes
 app.get("/", (_req, res) => res.json({ ok: true, service: "community-talk" }));
 app.get("/health", (_req, res) =>
   res.status(200).json({ ok: true, uptime: process.uptime() })
@@ -124,39 +147,55 @@ io = new Server(server, {
   pingInterval: 20000,
 });
 
-// 🔥 THIS IS THE KEY FOR SCALING SOCKET.IO 🔥
+// 🔥 Scaling Socket.IO with Redis adapter
 io.adapter(createAdapter(pubClient, subClient));
 
-registerEventSockets(io /*, presence */);
+registerEventSockets(io);
 
 const communityRoom = (id) => `community:${id}`;
 
-// (From friend) Token endpoints
+// Token helper endpoints
 app.use("/api", require("./routes/tokenRoutes"));
 
-// Authenticate socket
+// Authenticate socket connections
 io.use(async (socket, next) => {
   try {
     const token =
       socket.handshake.auth?.token ||
       (socket.handshake.headers?.authorization || "").split(" ")[1];
+
     console.log(
-      "🔑 [Socket Auth] Handshake token received:",
+      "🔑 [Socket Auth] Handshake token:",
       token ? token.slice(0, 15) + "..." : "❌ None"
     );
+
     if (!token) return next(new Error("No token provided"));
 
-    const decoded = jwt.verify(token, JWT_SECRET);
-    console.log("✅ [Socket Auth] Token verified:", decoded);
+    let decoded;
+    try {
+      // Mirror authenticate.js options as closely as possible
+      decoded = jwt.verify(token, JWT_SECRET, {
+        algorithms: ["HS256"],
+        clockTolerance: 5,
+      });
+    } catch (err) {
+      console.error("💥 Socket JWT verify error:", err.message);
+      return next(new Error("Invalid token"));
+    }
+
+    console.log("✅ [Socket Auth] Token decoded:", decoded);
 
     const user = await Person.findById(decoded.id).lean();
     if (!user) return next(new Error("User not found"));
 
-    // ✅ use Member.memberStatus (not `status`)
+    // ✅ Use Member.memberStatus + role (not legacy `status`)
     const memberships = await Member.find({
       person: user._id,
-      memberStatus: { $in: ["active", "owner"] },
-    }).select("community");
+      memberStatus: "active",
+    })
+      .select("community")
+      .lean();
+
     const communityIds = memberships.map((m) => String(m.community));
 
     socket.user = {
@@ -165,10 +204,10 @@ io.use(async (socket, next) => {
       email: user.email,
       communityIds,
     };
+
     next();
   } catch (err) {
-    // Catch the error object
-    console.error("💥 Socket Auth Error:", err.message);
+    console.error("💥 Socket Auth Error:", err.message || err);
     next(new Error("Invalid token"));
   }
 });
@@ -177,131 +216,139 @@ io.use(async (socket, next) => {
 io.on("connection", async (socket) => {
   const uid = socket.user?.id;
   const communities = socket.user?.communityIds || [];
-  if (!uid) return; // Defensive check
+  if (!uid) return;
 
   console.log(`🔌 ${uid} connected (${socket.id})`);
 
-  // Track online presence (MODIFIED)
-  // We no longer pass socket.id, just the user ID.
+  // Track online presence (Redis-backed)
   const { isFirstConnection } = await presence.connect(uid);
 
+  // Join personal + community rooms
   socket.join(uid);
   for (const cid of communities) {
     socket.join(communityRoom(cid));
-    await presence.joinCommunity(uid, cid); // Also track community presence
+    await presence.joinCommunity(uid, cid);
   }
 
-  // Notify UI
+  // Initial room info for client
   socket.emit("rooms:init", {
     userId: uid,
     communities,
   });
 
-  // (MODIFIED) Only emit 'online' if this is their *first* connection
+  // Only emit "online" once per logical user
   if (isFirstConnection) {
     io.emit("presence:update", { userId: uid, status: "online" });
   }
 
-  // Manual room join (MODIFIED)
+  // Manual community join/leave
   socket.on("community:join", async (cid) => {
     socket.join(communityRoom(cid));
     await presence.joinCommunity(uid, cid);
   });
+
   socket.on("community:leave", async (cid) => {
     socket.leave(communityRoom(cid));
     await presence.leaveCommunity(uid, cid);
   });
 
-  // ----------------------------------------------------
-  // ✅ THIS IS THE HANDLER THAT WAS MISSING
-  // ----------------------------------------------------
-  // 🔥 Receive new message directly (with security patch)
+  // 🔥 Secure message handler with XSS protection
   socket.on("message:send", async (msg) => {
-    // Get the clientMessageId *outside* the try block
     const clientMessageId = msg?.clientMessageId;
 
     try {
       const { communityId, content } = msg;
-      // const uid = socket.user?.id; // Already defined above
 
       if (!content || !communityId) {
-        console.warn(`[SECURITY] User ${uid} sent empty message.`);
-        return; // Don't reply, just ignore
+        console.warn(`[SECURITY] User ${uid} sent empty/invalid message.`);
+        return;
       }
 
-      // ----------------------------------------------------
-      // ✅ SECURITY FIX (OWASP A01)
-      // Check if the user is *actually* a member of this community.
-      // ----------------------------------------------------
+      // 🔒 SECURITY FIX: Sanitize content to prevent XSS
+      const sanitizedContent = DOMPurify.sanitize(content);
+      if (!sanitizedContent) {
+        console.warn(`[SECURITY] User ${uid} sent purely malicious content.`);
+        return;
+      }
+
+      // ✅ SECURITY: Ensure user is actually a member of this community
       const isMember = socket.user.communityIds.includes(communityId);
       if (!isMember) {
-        // The user is an attacker.
         console.warn(
           `[SECURITY] User ${uid} tried to post to community ${communityId} WITHOUT membership.`
         );
         socket.emit("message:error", {
-          clientMessageId: clientMessageId, // Send the ID back
+          clientMessageId,
           error: "Unauthorized",
         });
-        return; // Stop processing.
+        return;
       }
-      // ----------------------------------------------------
 
-      // Save message in DB (Only "Good Users" get here)
+      // Save message (trusted path)
       const saved = await Message.create({
         communityId,
-        content,
+        content: sanitizedContent,
         senderId: uid,
         sender: socket.user.fullName || socket.user.email,
         timestamp: new Date(),
         clientMessageId,
       });
 
-      // Broadcast to community instantly
       const payload = {
         ...saved.toObject(),
         clientMessageId,
       };
+
+      // Broadcast to community
       io.to(communityRoom(communityId)).emit("receive_message", payload);
 
-      // Confirm to sender (so UI replaces pending bubble)
-      socket.emit("message:ack", { clientMessageId, serverId: saved._id });
+      // Ack to sender (swap pending bubble)
+      socket.emit("message:ack", {
+        clientMessageId,
+        serverId: saved._id,
+      });
     } catch (err) {
       console.error("💥 Socket message send error:", err);
-      // Now our catch block can safely send the ID back
-      socket.emit("message:error", { clientMessageId: clientMessageId });
+      socket.emit("message:error", { clientMessageId });
     }
   });
 
-  // Handle disconnect (MODIFIED)
+  // Handle disconnect
   socket.on("disconnect", async () => {
-    // This logic is now robust for multiple instances
-    // We just pass uid, not socket.id
-    if (!uid) return; // Handle cases where auth might have failed
+    if (!uid) return;
 
     const { isLastConnection } = await presence.disconnect(uid);
 
-    // If this was their *very last* socket across all instances
     if (isLastConnection) {
       io.emit("presence:update", { userId: uid, status: "offline" });
 
-      // Clean up their community presence
+      // Clean up community-level presence
       const userCommunities = await presence.listCommunitiesForUser(uid);
       await presence.leaveCommunities(uid, userCommunities);
     }
+
     console.log(`❌ ${uid} disconnected (${socket.id})`);
   });
 });
 
 // ───────────────────────── Routes ─────────────────────────
-app.use("/api", personRoutes); // login/registration under /api (your original)
+// Auth / registration
+app.use("/api", personRoutes);
+
+// ✅ User routes (avatar upload) - MUST come before dating routes
+app.use("/api/user", userRoutes);
+
+// Dating routes (secured by authenticate + per-route checks inside)
+app.use("/api/dating", authenticate, datingRoutes);
+
+// Core app routes
 app.use("/api/communities", authenticate, communityRoutes);
 app.use("/api/members", authenticate, memberRoutes);
 app.use("/api/messages", authenticate, messageRoutes);
 app.use("/api/direct-messages", authenticate, directMessageRoutes);
 app.use("/api/notifications", authenticate, notificationRoutes);
 
-// 🔎 Pre-auth header logger for /api/events
+// Events routes with pre-auth logging
 app.use("/api/events", (req, _res, next) => {
   console.log("🧭 [/api/events pre-auth]");
   console.log("→ originalUrl:", req.originalUrl);
@@ -313,20 +360,21 @@ app.use("/api/events", (req, _res, next) => {
 });
 app.use("/api/events", authenticate, eventRoutes);
 
-app.post("/api/test-push", async (req, res) => {
+// 🔒 SECURITY FIX: Test push endpoint now requires authentication
+app.post("/api/test-push", authenticate, async (req, res) => {
   try {
-    const { Expo } = require("expo-server-sdk");
     const expo = new Expo();
-
     const { expoPushToken } = req.body;
-    if (!expoPushToken)
+
+    if (!expoPushToken) {
       return res.status(400).json({ error: "Missing expoPushToken" });
+    }
 
     const messages = [
       {
         to: expoPushToken,
         sound: "default",
-        body: "🚀 Test push working (no auth)",
+        body: "🚀 Test push working (now requires auth)",
       },
     ];
 
@@ -338,8 +386,9 @@ app.post("/api/test-push", async (req, res) => {
   }
 });
 
-// 404
+// 404 fallback
 app.use((req, res) => res.status(404).json({ error: "Not Found" }));
+
 // Error handler
 app.use((err, _req, res, _next) => {
   console.error("💥 Error:", err);
@@ -349,20 +398,20 @@ app.use((err, _req, res, _next) => {
 // ───────────────────────── Startup ─────────────────────────
 const os = require("os");
 
-/** Best guess of a LAN IPv4 address to show in logs */
+/** Best guess of a LAN IPv4 address for logs */
 function getLanIPv4() {
   const ifaces = os.networkInterfaces();
   for (const name of Object.keys(ifaces)) {
     for (const iface of ifaces[name] || []) {
       if (iface && iface.family === "IPv4" && !iface.internal) {
-        return iface.address; // e.g. 192.168.x.x
+        return iface.address;
       }
     }
   }
   return "localhost";
 }
 
-// Helpful process-level guards in dev/prod
+// Process-level guards
 process.on("uncaughtException", (err) => {
   console.error("💥 Uncaught exception:", err);
 });
@@ -373,17 +422,14 @@ process.on("unhandledRejection", (reason) => {
 (async () => {
   try {
     await connectDB();
-    // Note: ioredis clients connect automatically,
-    // so we don't need an explicit 'await pubClient.connect()' block
-    // unless we were using 'node-redis' v4.
 
-    const HOST = "0.0.0.0"; // bind to all interfaces
+    const HOST = "0.0.0.0";
     const lanIp = getLanIPv4();
 
     server.listen(PORT, HOST, () => {
       const localUrl = `http://localhost:${PORT}`;
       const lanUrl = `http://${lanIp}:${PORT}`;
-      // 🚀 MODIFIED to show the port
+
       console.log(`✅ Server is up on port ${PORT}!`);
       console.log(`   • Local:  ${localUrl}`);
       console.log(`   • LAN:    ${lanUrl}`);
@@ -396,7 +442,8 @@ process.on("unhandledRejection", (reason) => {
     // Graceful shutdown
     const shutdown = (signal) => {
       console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
-      // NEW: Close Redis connections
+
+      // Close Redis connections
       redisClient.quit();
       pubClient.quit();
       subClient.quit();
@@ -409,6 +456,7 @@ process.on("unhandledRejection", (reason) => {
         console.log("✅ Server closed.");
         process.exit(0);
       });
+
       // Force exit after 5s
       setTimeout(() => {
         console.warn("⚠️ Forcing shutdown after 5s.");

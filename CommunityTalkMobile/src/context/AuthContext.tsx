@@ -8,11 +8,10 @@ import React, {
   useState,
 } from "react";
 import * as SplashScreen from "expo-splash-screen";
-// *** We MUST import the new 'RegisterResponse' type ***
 import {
   login as apiLogin,
   register as apiRegister,
-  RegisterResponse, // <-- IMPORT THIS
+  RegisterResponse,
 } from "../api/auth";
 import { api } from "../api/api";
 import {
@@ -38,13 +37,12 @@ type AuthState = {
   user: any | null;
   communities: any[];
   signIn: (email: string, password: string) => Promise<void>;
-  // *** This function will now return the server message ***
-  register: (input: RegisterInput) => Promise<RegisterResponse>; // <-- UPDATED TYPE
+  register: (input: RegisterInput) => Promise<RegisterResponse>;
   signOut: () => Promise<void>;
   refreshBootstrap: () => Promise<void>;
-  /** Back-compat shims used by your UI in a few places */
   setToken?: (token: string) => Promise<void>;
   bootstrap?: () => Promise<void>;
+  updateAvatar?: (newUrl: string) => void; // Add to type definition
 };
 
 export const AuthContext = createContext<AuthState>({
@@ -53,19 +51,17 @@ export const AuthContext = createContext<AuthState>({
   user: null,
   communities: [],
   signIn: async () => {},
-  register: async () => ({ message: "" }), // <-- UPDATED DEFAULT
+  register: async () => ({ message: "" }),
   signOut: async () => {},
   refreshBootstrap: async () => {},
   setToken: async () => {},
   bootstrap: async () => {},
+  updateAvatar: () => {}, // Default no-op
 });
 
-// Keep the splash until we hydrate once
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-/** Derive collegeSlug / religionKey from communities when missing on user */
 function deriveScope(user: any | null, communities: any[]) {
-  // ... (This function is correct, no changes needed)
   if (!user) return user;
 
   const hasCollege = !!user.collegeSlug;
@@ -114,29 +110,14 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const clearingRef = useRef(false);
 
   const applyAuthState = useCallback((u: any | null, cs: any[]) => {
-    // ... (This function is correct, no changes needed)
     if (!mountedRef.current) return;
     const safeCommunities = Array.isArray(cs) ? cs : [];
     const augmentedUser = deriveScope(u, safeCommunities);
     setUser(augmentedUser);
     setCommunities(safeCommunities);
-
-    if (__DEV__) {
-      console.log("[Auth] applyAuthState", {
-        userHasScope: !!augmentedUser?.collegeSlug && !!augmentedUser?.religionKey,
-        collegeSlug: augmentedUser?.collegeSlug ?? null,
-        religionKey: augmentedUser?.religionKey ?? null,
-        communities: safeCommunities.map((c: any) => ({
-          id: c?._id,
-          type: c?.type,
-          key: c?.key,
-        })),
-      });
-    }
   }, []);
 
   const clearAuthState = useCallback(async () => {
-    // ... (This function is correct, no changes needed)
     if (clearingRef.current) return;
     clearingRef.current = true;
     try {
@@ -150,18 +131,15 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
   const triedLegacyOnce = useRef(false);
   const refreshBootstrap = useCallback(async () => {
-    // ... (This function is correct, no changes needed)
     const tryPath = async (path: string) => {
       const { data } = await api.get(path);
       return data;
     };
 
     try {
-      // Preferred modern path
       const data = await tryPath("/api/bootstrap");
       applyAuthState(data?.user || null, data?.communities || []);
     } catch (err: any) {
-      // If server is older and only has /bootstrap without /api prefix, do a one-time fallback
       const status = err?.response?.status;
       if (status === 404 && !triedLegacyOnce.current) {
         triedLegacyOnce.current = true;
@@ -169,8 +147,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         applyAuthState(data?.user || null, data?.communities || []);
         return;
       }
-
-      // Token problems → clear and stop
       if (err?.response?.status === 401) {
         await clearAuthState();
         return;
@@ -180,15 +156,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [applyAuthState, clearAuthState]);
 
   const initialLoad = useCallback(async () => {
-    // ... (This function is correct, no changes needed)
     try {
       const token = await getAccessToken();
       if (token) {
-        console.log('[AuthContext] Found token, attempting bootstrap and push registration...');
         await refreshSocketAuth(token);
         await refreshBootstrap();
         await registerForPushNotificationsAsync();
-        console.log('[AuthContext] Initial push registration attempt finished.');
       } else {
         applyAuthState(null, []);
       }
@@ -203,33 +176,27 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [applyAuthState, clearAuthState, refreshBootstrap]);
 
   useEffect(() => {
-    // ... (This function is correct, no changes needed)
     setUnauthorizedHandler(async () => {
       await clearAuthState();
     });
   }, [clearAuthState]);
 
   useEffect(() => {
-    // ... (This function is correct, no changes needed)
     initialLoad();
   }, [initialLoad]);
 
   const completeLoginFromToken = useCallback(
     async (token: string) => {
-      // ... (This function is correct, no changes needed)
       await setAccessToken(token);
       await refreshSocketAuth(token);
       await refreshBootstrap();
-      console.log('[AuthContext] Bootstrap complete, now registering for push notifications...');
       await registerForPushNotificationsAsync();
-      console.log('[AuthContext] Push notification registration attempt finished.');
     },
     [refreshBootstrap]
   );
 
   const signIn = useCallback(
     async (email: string, password: string) => {
-      // ... (This function is correct, no changes needed)
       const res = await apiLogin(email, password);
       if (!res?.token) throw new Error("No token received from server");
       await completeLoginFromToken(res.token);
@@ -237,24 +204,18 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     [completeLoginFromToken]
   );
 
-  // --- THIS IS THE FIX (PART 1) ---
   const doRegister = useCallback(
     async (input: RegisterInput): Promise<RegisterResponse> => {
-      // This function now just calls apiRegister and returns the response.
-      // It DOES NOT log the user in.
       const res = await apiRegister(input);
-      return res; // Returns { message: "..." }
+      return res;
     },
-    [] // No dependencies
+    []
   );
-  // --- END OF FIX (PART 1) ---
 
   const signOut = useCallback(async () => {
-    // ... (This function is correct, no changes needed)
     await clearAuthState();
   }, [clearAuthState]);
 
-  // Back-compat shims
   const setTokenCompat = useCallback(async (token: string) => {
       await completeLoginFromToken(token);
     }, [completeLoginFromToken]);
@@ -263,15 +224,21 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       await refreshBootstrap();
     }, [refreshBootstrap]);
   
-  // --- THIS IS THE FIX (PART 2) ---
-  // We update this adapter to return the response from doRegister
   const registerCompat = useCallback(
     async (input: RegisterInput): Promise<RegisterResponse> => {
-      return doRegister(input); // <-- It now returns the response
+      return doRegister(input);
     },
     [doRegister]
   );
-  // --- END OF FIX (PART 2) ---
+
+  // ✅ FIXED: Ensure deep clone of user object to trigger re-render
+  const updateAvatar = useCallback((newAvatarUrl: string) => {
+    setUser((prev: any) => {
+      if (!prev) return null;
+      // Return a brand new object reference
+      return { ...prev, avatar: newAvatarUrl };
+    });
+  }, []);
 
   const value = useMemo<AuthState>(
     () => ({
@@ -280,11 +247,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       user,
       communities,
       signIn,
-      register: registerCompat, // <-- This now correctly returns { message: "..." }
+      register: registerCompat,
       signOut,
       refreshBootstrap,
       setToken: setTokenCompat,
       bootstrap: bootstrapCompat,
+      updateAvatar, // ✅ Now included correctly
     }),
     [
       isLoading,
@@ -296,6 +264,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       refreshBootstrap,
       setTokenCompat,
       bootstrapCompat,
+      updateAvatar,
     ]
   );
 

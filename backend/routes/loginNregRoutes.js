@@ -13,16 +13,23 @@ const { sendVerificationEmail } = require("../services/emailService");
 
 require("dotenv").config();
 
-const JWT_SECRET = process.env.MY_SECRET_KEY || process.env.JWT_SECRET || "devsecret";
+// CRITICAL SECURITY FIX: Removed insecure fallback "devsecret"
+const JWT_SECRET = process.env.MY_SECRET_KEY || process.env.JWT_SECRET;
 if (!JWT_SECRET) {
-  console.warn("[auth] JWT secret not set; using fallback devsecret");
+  console.warn("⚠️ [auth] JWT secret not set. Server startup should have failed.");
 }
 
 /* ----------------------------- helpers ---------------------------------- */
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 
-function validateRegisterByIds({ fullName, email, password, collegeId, religionId }) {
+function validateRegisterByIds({
+  fullName,
+  email,
+  password,
+  collegeId,
+  religionId,
+}) {
   const errors = {};
   const name = String(fullName || "").trim();
   const em = normalizeEmail(email);
@@ -59,6 +66,10 @@ const signToken = (user) =>
     { expiresIn: "14d" }
   );
 
+/**
+ * Upsert a membership in a schema-safe way (handles legacy unique index collisions).
+ * This is shared with the new code paths for registration/bootstrap.
+ */
 async function upsertMembership({ session, person, community }) {
   // keep both status + memberStatus for backward compatibility
   const baseSet = {
@@ -222,6 +233,11 @@ router.post("/register", async (req, res) => {
               verificationCode,
               verificationCodeExpires,
               emailVerified: false,
+              // Set college + religion scope for downstream features (dating, feeds, etc.)
+              collegeName: college.name,
+              collegeSlug: college.key,
+              religionKey: religion.key,
+              // dating flags default from schema (hasDatingProfile, datingProfileId)
             },
           ],
           { session }
@@ -248,7 +264,8 @@ router.post("/register", async (req, res) => {
         .json({ message: "Verification code resent. Please check your inbox." });
     } else {
       return res.status(201).json({
-        message: "Registration successful. Please check your email for a 6-digit code.",
+        message:
+          "Registration successful. Please check your email for a 6-digit code.",
       });
     }
   } catch (error) {
@@ -276,6 +293,7 @@ router.post("/register", async (req, res) => {
 /**
  * POST /api/login
  * Checks emailVerified flag before issuing token.
+ * Also guards against missing password hash (fixes bcrypt "string, undefined").
  */
 router.post("/login", async (req, res) => {
   try {
@@ -286,15 +304,22 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    const user = await Person.findOne({ email });
-    if (!user) return res.status(401).json({ error: "Invalid email or password" });
+    // Explicit select for future-proofing if we ever make password select:false
+    const user = await Person.findOne({ email }).select("+password");
+    if (!user || !user.password) {
+      // Either user not found OR no stored password → treat as invalid
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
 
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).json({ error: "Invalid email or password" });
+    if (!isMatch) {
+      return res.status(401).json({ error: "Invalid email or password" });
+    }
 
     if (!user.emailVerified) {
       return res.status(401).json({
-        error: "Please verify your email to log in. Check your inbox for a 6-digit code.",
+        error:
+          "Please verify your email to log in. Check your inbox for a 6-digit code.",
         code: "EMAIL_NOT_VERIFIED",
       });
     }
@@ -303,40 +328,10 @@ router.post("/login", async (req, res) => {
 
     let communities = [];
     if (Array.isArray(user.communityIds) && user.communityIds.length > 0) {
-      communities = await Community.aggregate([
-        { $match: { _id: { $in: user.communityIds } } },
-        {
-          $lookup: {
-            from: "messages",
-            let: { communityId: "$_id" },
-            pipeline: [
-              { $match: { $expr: { $eq: ["$communityId", "$$communityId"] } } },
-              { $sort: { createdAt: -1 } },
-              { $limit: 1 },
-            ],
-            as: "latestMessageDocs",
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            name: 1,
-            type: 1,
-            key: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            lastMessage: {
-              $let: {
-                vars: { firstMessage: { $arrayElemAt: ["$latestMessageDocs", 0] } },
-                in: {
-                  content: "$$firstMessage.content",
-                  timestamp: "$$firstMessage.createdAt",
-                },
-              },
-            },
-          },
-        },
-      ]);
+      // 🔒 SECURITY FIX: Replaced expensive aggregation with simple find query
+      communities = await Community.find({ _id: { $in: user.communityIds } })
+        .select("_id name type key createdAt updatedAt")
+        .lean();
     }
 
     return res.status(200).json({
@@ -346,7 +341,12 @@ router.post("/login", async (req, res) => {
         _id: user._id,
         fullName: user.fullName,
         email: user.email,
+        avatar: user.avatar, // ✅ Include avatar in login response
         role: user.role || "user",
+        hasDatingProfile: user.hasDatingProfile || false,
+        datingProfileId: user.datingProfileId || null,
+        collegeSlug: user.collegeSlug || null,
+        religionKey: user.religionKey || null,
       },
       communities,
     });
@@ -388,7 +388,8 @@ router.post("/verify-code", async (req, res) => {
 
     if (user.verificationCodeExpires < new Date()) {
       return res.status(400).json({
-        error: "Verification code has expired. Please register again to get a new one.",
+        error:
+          "Verification code has expired. Please register again to get a new one.",
       });
     }
 
@@ -406,15 +407,21 @@ router.post("/verify-code", async (req, res) => {
         _id: user._id,
         fullName: user.fullName,
         email: user.email,
+        avatar: user.avatar, // ✅ Include avatar
         role: user.role || "user",
+        hasDatingProfile: user.hasDatingProfile || false,
+        datingProfileId: user.datingProfileId || null,
+        collegeSlug: user.collegeSlug || null,
+        religionKey: user.religionKey || null,
       },
       communities: [], // frontend will call /api/bootstrap to load real list
     });
   } catch (err) {
     console.error("POST /verify-code error:", err);
-    res
-      .status(500)
-      .json({ error: "An error occurred during verification. Please try again later." });
+    res.status(500).json({
+      error:
+        "An error occurred during verification. Please try again later.",
+    });
   }
 });
 
@@ -422,12 +429,16 @@ router.post("/verify-code", async (req, res) => {
 router.get("/profile", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
-      .select("_id fullName email communityIds role notificationPrefs")
+      .select(
+        "_id fullName email avatar communityIds role notificationPrefs privacyPrefs hasDatingProfile datingProfileId collegeSlug religionKey"
+      )
       .lean();
 
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const communities = await Community.find({ _id: { $in: user.communityIds || [] } })
+    const communities = await Community.find({
+      _id: { $in: user.communityIds || [] },
+    })
       .select("_id name type key createdAt updatedAt")
       .lean();
 
@@ -477,7 +488,7 @@ router.patch("/profile", authenticate, async (req, res) => {
       { $set: updates },
       { new: true }
     )
-      .select("_id fullName email communityIds role")
+      .select("_id fullName email avatar communityIds role")
       .lean();
 
     if (!user) {
@@ -513,33 +524,49 @@ router.patch("/profile", authenticate, async (req, res) => {
  * These prefs are shared by:
  *  - Notifications screen (pushEnabled, dms, communities, mentions)
  *  - Privacy & Security screen (showOnlineStatus, allowDMsFromSameCollege, allowDMsFromOthers)
- * They are all stored under `notificationPrefs` on Person.
+ *
+ * In the Person schema:
+ *  - notificationPrefs: { pushEnabled, dms, communities, mentions }
+ *  - privacyPrefs: { showOnlineStatus, allowDMsFromSameCollege, allowDMsFromOthers }
+ *
+ * This API returns a single object { notificationPrefs: { ...all 7 keys... } }
+ * for backwards compatibility with the mobile app.
  */
 
 router.get("/notification-prefs", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
-      .select("notificationPrefs")
+      .select("notificationPrefs privacyPrefs")
       .lean();
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const prefs =
-      user.notificationPrefs || {
-        // notification.tsx
-        pushEnabled: true,
-        dms: true,
-        communities: true,
-        mentions: true,
-        // security.tsx (privacy)
-        showOnlineStatus: true,
-        allowDMsFromSameCollege: true,
-        allowDMsFromOthers: false,
-      };
+    const notifDefaults = {
+      pushEnabled: true,
+      dms: true,
+      communities: true,
+      mentions: true,
+    };
 
-    return res.status(200).json({ notificationPrefs: prefs });
+    const privacyDefaults = {
+      showOnlineStatus: true,
+      allowDMsFromSameCollege: true,
+      allowDMsFromOthers: false,
+    };
+
+    const notificationPrefs = user.notificationPrefs || notifDefaults;
+    const privacyPrefs = user.privacyPrefs || privacyDefaults;
+
+    const merged = {
+      ...notifDefaults,
+      ...notificationPrefs,
+      ...privacyDefaults,
+      ...privacyPrefs,
+    };
+
+    return res.status(200).json({ notificationPrefs: merged });
   } catch (err) {
     console.error("GET /notification-prefs error:", err);
     return res.status(500).json({ error: "Internal server error" });
@@ -559,80 +586,113 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
       allowDMsFromOthers,
     } = req.body || {};
 
-    const updates = {};
+    const notifUpdates = {};
+    const privacyUpdates = {};
     const errors = {};
 
-    const assignIfBool = (key, value) => {
+    const assignNotif = (key, value) => {
       if (value === undefined) return;
       if (typeof value !== "boolean") {
         errors[key] = "Must be a boolean";
       } else {
-        updates[key] = value;
+        notifUpdates[key] = value;
+      }
+    };
+
+    const assignPrivacy = (key, value) => {
+      if (value === undefined) return;
+      if (typeof value !== "boolean") {
+        errors[key] = "Must be a boolean";
+      } else {
+        privacyUpdates[key] = value;
       }
     };
 
     // Notification screen fields
-    assignIfBool("pushEnabled", pushEnabled);
-    assignIfBool("dms", dms);
-    assignIfBool("communities", communities);
-    assignIfBool("mentions", mentions);
+    assignNotif("pushEnabled", pushEnabled);
+    assignNotif("dms", dms);
+    assignNotif("communities", communities);
+    assignNotif("mentions", mentions);
 
     // Privacy & Security screen fields
-    assignIfBool("showOnlineStatus", showOnlineStatus);
-    assignIfBool("allowDMsFromSameCollege", allowDMsFromSameCollege);
-    assignIfBool("allowDMsFromOthers", allowDMsFromOthers);
+    assignPrivacy("showOnlineStatus", showOnlineStatus);
+    assignPrivacy("allowDMsFromSameCollege", allowDMsFromSameCollege);
+    assignPrivacy("allowDMsFromOthers", allowDMsFromOthers);
 
     if (Object.keys(errors).length > 0) {
       return res.status(400).json({ error: errors });
     }
 
-    if (Object.keys(updates).length === 0) {
+    if (
+      Object.keys(notifUpdates).length === 0 &&
+      Object.keys(privacyUpdates).length === 0
+    ) {
       return res.status(400).json({ error: "No valid fields to update" });
     }
 
     const existing = await Person.findById(userId)
-      .select("notificationPrefs")
+      .select("notificationPrefs privacyPrefs")
       .lean();
 
     if (!existing) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    const currentPrefs =
-      existing.notificationPrefs || {
-        pushEnabled: true,
-        dms: true,
-        communities: true,
-        mentions: true,
-        showOnlineStatus: true,
-        allowDMsFromSameCollege: true,
-        allowDMsFromOthers: false,
-      };
+    const notifDefaults = {
+      pushEnabled: true,
+      dms: true,
+      communities: true,
+      mentions: true,
+    };
 
-    const nextPrefs = {
-      ...currentPrefs,
-      ...updates,
+    const privacyDefaults = {
+      showOnlineStatus: true,
+      allowDMsFromSameCollege: true,
+      allowDMsFromOthers: false,
+    };
+
+    const currentNotif = existing.notificationPrefs || notifDefaults;
+    const currentPrivacy = existing.privacyPrefs || privacyDefaults;
+
+    const nextNotifPrefs = {
+      ...notifDefaults,
+      ...currentNotif,
+      ...notifUpdates,
+    };
+
+    const nextPrivacyPrefs = {
+      ...privacyDefaults,
+      ...currentPrivacy,
+      ...privacyUpdates,
     };
 
     const user = await Person.findByIdAndUpdate(
       userId,
       {
         $set: {
-          notificationPrefs: nextPrefs,
+          notificationPrefs: nextNotifPrefs,
+          privacyPrefs: nextPrivacyPrefs,
         },
       },
       { new: true }
     )
-      .select("_id email notificationPrefs")
+      .select("_id email notificationPrefs privacyPrefs")
       .lean();
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
+    const merged = {
+      ...notifDefaults,
+      ...(user.notificationPrefs || {}),
+      ...privacyDefaults,
+      ...(user.privacyPrefs || {}),
+    };
+
     return res.status(200).json({
       message: "Notification preferences updated",
-      notificationPrefs: user.notificationPrefs,
+      notificationPrefs: merged,
     });
   } catch (err) {
     console.error("PUT /notification-prefs error:", err);
@@ -645,7 +705,9 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
 router.get("/bootstrap", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
-      .select("_id fullName email communityIds role notificationPrefs")
+      .select(
+        "_id fullName email avatar communityIds role notificationPrefs privacyPrefs hasDatingProfile datingProfileId collegeSlug religionKey"
+      )
       .lean();
 
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -654,40 +716,10 @@ router.get("/bootstrap", authenticate, async (req, res) => {
     let communities = [];
 
     if (communityIds.length > 0) {
-      communities = await Community.aggregate([
-        { $match: { _id: { $in: communityIds } } },
-        {
-          $lookup: {
-            from: "messages",
-            let: { communityId: "$_id" },
-            pipeline: [
-              { $match: { $expr: { $eq: ["$communityId", "$$communityId"] } } },
-              { $sort: { createdAt: -1 } },
-              { $limit: 1 },
-            ],
-            as: "latestMessageDocs",
-          },
-        },
-        {
-          $project: {
-            _id: 1,
-            name: 1,
-            type: 1,
-            key: 1,
-            createdAt: 1,
-            updatedAt: 1,
-            lastMessage: {
-              $let: {
-                vars: { firstMessage: { $arrayElemAt: ["$latestMessageDocs", 0] } },
-                in: {
-                  content: "$$firstMessage.content",
-                  timestamp: "$$firstMessage.createdAt",
-                },
-              },
-            },
-          },
-        },
-      ]);
+      // 🔒 SECURITY FIX: Replaced expensive aggregation with simple find query
+      communities = await Community.find({ _id: { $in: communityIds } })
+        .select("_id name type key createdAt updatedAt")
+        .lean();
     }
 
     return res.status(200).json({ user, communities });

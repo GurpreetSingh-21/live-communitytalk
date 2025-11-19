@@ -35,10 +35,13 @@ function getTokenFromRequest(req) {
     if (c) return c;
   }
 
-  // (Optional) query param ?token=... for quick testing
+  // 🔒 SECURITY FIX (Flaw 4): Removed token retrieval from query param (?token=...).
+  // This prevents token leakage in logs and browser history.
+  /*
   if (req.query && typeof req.query.token === "string" && req.query.token.trim()) {
     return req.query.token.trim();
   }
+  */
 
   return null;
 }

@@ -4,7 +4,12 @@ const mongoose = require("mongoose");
 const memberSchema = new mongoose.Schema(
   {
     // Pointer to the Person collection (preferred)
-    person: { type: mongoose.Schema.Types.ObjectId, ref: "Person", default: null, index: true },
+    person: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Person",
+      default: null,
+      index: true,
+    },
 
     // Primary display name for UI (denormalized for speed)
     name: { type: String, default: "", trim: true },
@@ -20,11 +25,35 @@ const memberSchema = new mongoose.Schema(
     fcmToken: { type: String, default: null, index: true },
 
     // Community this membership belongs to
-    community: { type: mongoose.Schema.Types.ObjectId, ref: "Community", required: true, index: true },
+    community: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Community",
+      required: true,
+      index: true,
+    },
 
-    // Authorization & lifecycle
-    role: { type: String, enum: ["member", "admin", "owner"], default: "member", index: true },
-    memberStatus: { type: String, enum: ["active", "invited", "banned"], default: "active", index: true },
+    // Authorization role within the community
+    // - "member"  -> normal user
+    // - "admin"   -> elevated permissions
+    // - "owner"   -> creator / full control
+    role: {
+      type: String,
+      enum: ["member", "admin", "owner"],
+      default: "member",
+      index: true,
+    },
+
+    // ✅ MERGED SOLUTION: Use memberStatus as the primary field name
+    // This matches what most of your codebase expects (server.js, memberRoutes.js, etc.)
+    memberStatus: {
+      type: String,
+      enum: ["active", "invited", "banned", "online", "owner"],
+      default: "active",
+      index: true,
+    },
+
+    // ✅ Legacy 'status' field kept as virtual for backwards compatibility
+    // Some older code may still reference 'status' instead of 'memberStatus'
   },
   { timestamps: true }
 );
@@ -38,13 +67,19 @@ memberSchema.index(
   { community: 1, person: 1 },
   { unique: true, partialFilterExpression: { person: { $type: "objectId" } } }
 );
+
 memberSchema.index(
   { community: 1, emailLower: 1 },
   {
     unique: true,
-    partialFilterExpression: { emailLower: { $exists: true, $type: "string", $ne: "" } },
+    partialFilterExpression: {
+      emailLower: { $exists: true, $type: "string", $ne: "" },
+    },
   }
 );
+
+// Helpful for "who's active here" queries
+memberSchema.index({ community: 1, memberStatus: 1 });
 
 /* ───────────────────── Normalization Helpers ───────────────────── */
 function normalizeObj(obj) {
@@ -69,9 +104,11 @@ memberSchema.pre("findOneAndUpdate", function (next) {
   next();
 });
 
-/* ───────────────────── Back-compat: fullName virtual ─────────────────────
- * Some existing code may still read/write 'fullName'. Map it to 'name'.
+/* ───────────────────── Back-compat Virtuals ─────────────────────
+ * Some existing code may still read/write these fields. Map them for compatibility.
  */
+
+// Virtual: fullName → name
 memberSchema
   .virtual("fullName")
   .get(function () {
@@ -79,6 +116,16 @@ memberSchema
   })
   .set(function (v) {
     this.name = typeof v === "string" ? v.trim() : v;
+  });
+
+// ✅ Virtual: status → memberStatus (for backwards compatibility)
+memberSchema
+  .virtual("status")
+  .get(function () {
+    return this.memberStatus;
+  })
+  .set(function (v) {
+    this.memberStatus = v;
   });
 
 /* ───────────────────── Serialization Cleanup ───────────────────── */
