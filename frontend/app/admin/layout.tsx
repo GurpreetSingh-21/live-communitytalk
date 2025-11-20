@@ -12,6 +12,7 @@ import {
   Users2,
   LayoutDashboard,
   Layers,
+  ShieldAlert, // ⭐ NEW: Import for Reports Icon
 } from "lucide-react";
 
 type NavItem = {
@@ -22,6 +23,13 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  // ⭐ NEW: Reports Section Added
+  {
+    href: "/admin/reports",
+    label: "Reports",
+    description: "Review and manage user blocks/reports & high-risk accounts",
+    icon: ShieldAlert, 
+  },
   {
     href: "/admin/dating",
     label: "Dating Review",
@@ -43,6 +51,10 @@ const navItems: NavItem[] = [
 ];
 
 function getPageSubtitle(pathname: string): string {
+  // ⭐ NEW: Subtitle for Reports Page
+  if (pathname.startsWith("/admin/reports")) {
+    return "Investigate multi-reported users and handle auto-deletion risk accounts.";
+  }
   if (pathname.startsWith("/admin/dating")) {
     return "Moderate student dating profiles and keep the space safe.";
   }

@@ -35,22 +35,32 @@ import {
   Mail,
   School,
   Sparkles,
+  Trash2,
+  Ban,
+  UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
+// 🚨 UPDATED TYPE: Added moderation fields
 type AdminUser = {
   _id: string;
   fullName: string;
   email: string;
   role: "user" | "mod" | "admin";
-  isActive?: boolean;
+  isActive: boolean; // Changed to required boolean for simplicity
   collegeSlug?: string | null;
   religionKey?: string | null;
   hasDatingProfile?: boolean;
   datingProfileId?: string | null;
   createdAt?: string;
   communitiesCount?: number;
+  // ⭐ NEW MODERATION FIELDS
+  reportsReceivedCount?: number;
+  isPermanentlyDeleted?: boolean;
 };
+
+// --- CONSTANTS ---
+const AUTO_DELETE_THRESHOLD = 7;
 
 export default function AdminUsersPage() {
   const router = useRouter();
@@ -58,6 +68,7 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<AdminUser | null>(null);
   const [search, setSearch] = useState("");
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [roleFilter, setRoleFilter] = useState<"all" | "user" | "mod" | "admin">(
     "all"
   );
@@ -78,7 +89,9 @@ export default function AdminUsersPage() {
       const { data } = await adminApi.get<{ items: AdminUser[] }>(
         "/api/admin/users"
       );
-      setUsers(Array.isArray(data.items) ? data.items : []);
+      // Ensure isActive is set for the frontend logic
+      const loadedUsers: AdminUser[] = Array.isArray(data.items) ? data.items.map(u => ({...u, isActive: u.isActive !== false})) : [];
+      setUsers(loadedUsers);
     } catch (err: any) {
       console.error("[admin-users] load error", err);
       const msg =
@@ -96,6 +109,9 @@ export default function AdminUsersPage() {
   const filteredUsers = useMemo(() => {
     const q = search.trim().toLowerCase();
     return users.filter((u) => {
+      // 🚨 Ensure filtering handles the new isActive status correctly
+      // if (u.isPermanentlyDeleted) return false; // Optionally filter out banned users by default
+
       if (roleFilter !== "all" && u.role !== roleFilter) return false;
       if (datingFilter === "with" && !u.hasDatingProfile) return false;
       if (datingFilter === "without" && u.hasDatingProfile) return false;
@@ -135,10 +151,117 @@ export default function AdminUsersPage() {
     });
   };
 
+  // ----------------------------------------------------------------------
+  // ⭐ MODERATION ACTIONS
+  // ----------------------------------------------------------------------
+  const handleUserAction = async (userId: string, action: 'ban' | 'deactivate' | 'unban') => {
+    const verb = action === 'ban' ? 'permanently ban' : action === 'deactivate' ? 'mute/deactivate' : 'unban/reactivate';
+    if (!window.confirm(`Are you sure you want to ${verb} user ${userId}?`)) return;
+
+    setActionLoadingId(userId);
+    try {
+      const endpoint = `/api/admin/people/${userId}/${action}`;
+      await adminApi.patch(endpoint);
+      
+      toast.success(`User successfully ${verb}d.`);
+      await loadUsers(); // Refresh the entire list
+      setSelected(null); // Close the dialog
+    } catch (err: any) {
+      console.error(`[admin-users] ${action} error`, err);
+      toast.error(err?.response?.data?.error || `Failed to ${verb} user.`);
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // ----------------------------------------------------------------------
+  // ⭐ UI HELPERS (for dynamic button rendering)
+  // ----------------------------------------------------------------------
+
+  const renderStatusBadge = (user: AdminUser) => {
+    const reportsCount = user.reportsReceivedCount || 0;
+    const isHighRisk = reportsCount >= AUTO_DELETE_THRESHOLD;
+
+    if (user.isPermanentlyDeleted) {
+      return <Badge variant="destructive" className="text-[10px] font-bold">BANNED</Badge>;
+    }
+    if (!user.isActive) {
+      return <Badge className="bg-amber-500/10 text-amber-700 border-amber-300 text-[10px]">MUTED</Badge>;
+    }
+    if (isHighRisk) {
+      return <Badge className="bg-red-500 text-white text-[10px] hover:bg-red-600">HIGH REPORTS ({reportsCount})</Badge>;
+    }
+    return <Badge variant="secondary" className="text-[10px]">Active</Badge>;
+  };
+
+  const renderActionButtons = (user: AdminUser) => {
+    const isWorking = actionLoadingId === user._id;
+
+    if (user.isPermanentlyDeleted) {
+        return (
+            <Button
+                size="sm"
+                variant="default"
+                className="text-[11px] h-8 bg-emerald-500 text-white hover:bg-emerald-600"
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'unban'); }}
+                disabled={isWorking}
+            >
+                {isWorking ? 'WORKING...' : 'UNBAN'}
+            </Button>
+        );
+    }
+    
+    if (!user.isActive) {
+        return (
+            <Button
+                size="sm"
+                variant="default"
+                className="text-[11px] h-8"
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'unban'); }}
+                disabled={isWorking}
+            >
+                {isWorking ? 'WORKING...' : 'ACTIVATE'}
+            </Button>
+        );
+    }
+
+    return (
+        <div className="flex justify-end gap-2">
+            {/* Mute/Deactivate */}
+            <Button
+                size="sm"
+                variant="outline"
+                className="text-[11px] h-8 border-amber-300 text-amber-700 hover:bg-amber-50"
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'deactivate'); }}
+                disabled={isWorking}
+            >
+                <Ban className="h-3.5 w-3.5 mr-1" />
+                Mute
+            </Button>
+            {/* Permanent Ban */}
+            <Button
+                size="sm"
+                variant="destructive"
+                className="text-[11px] h-8"
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'ban'); }}
+                disabled={isWorking}
+            >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Ban
+            </Button>
+        </div>
+    );
+  };
+  
+  // ----------------------------------------------------------------------
+  // ⭐ MAIN RENDER
+  // ----------------------------------------------------------------------
+
   return (
     <div className="space-y-6">
       {/* Bento overview row */}
       <div className="grid gap-4 lg:grid-cols-4">
+        {/* ... (existing total cards remain here, no functional change) ... */}
         <Card className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50/90 px-4 py-4 shadow-[0_18px_45px_rgba(15,23,42,0.04)]">
           <div className="pointer-events-none absolute -right-10 -top-10 h-24 w-24 rounded-full bg-slate-200/40" />
           <CardHeader className="p-0 space-y-2">
@@ -452,22 +575,21 @@ export default function AdminUsersPage() {
                             Dating enabled
                           </Badge>
                         )}
+                        {/* Display Reports Risk */}
+                        {u.reportsReceivedCount && u.reportsReceivedCount > 0 ? (
+                           <Badge 
+                             variant="outline"
+                             className={`text-[10px] ${u.reportsReceivedCount >= AUTO_DELETE_THRESHOLD ? 'border-red-500 bg-red-100 text-red-700' : 'border-amber-300 bg-amber-50 text-amber-700'}`}
+                           >
+                            Reports: {u.reportsReceivedCount}
+                           </Badge>
+                        ) : null}
                       </div>
                     </TableCell>
 
                     {/* Actions */}
                     <TableCell className="align-top text-right">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="border-slate-200 bg-white text-[11px] text-slate-700 hover:bg-slate-100"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelected(u);
-                        }}
-                      >
-                        View details
-                      </Button>
+                      {renderActionButtons(u)} 
                     </TableCell>
                   </TableRow>
                 ))}
@@ -510,9 +632,8 @@ export default function AdminUsersPage() {
                     <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
                       Status
                     </p>
-                    <p className="mt-0.5">
-                      {selected.isActive === false ? "Inactive" : "Active"}
-                    </p>
+                    {/* Status badges in dialog */}
+                    <div className="mt-0.5">{renderStatusBadge(selected)}</div>
                   </div>
                   <div>
                     <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
@@ -524,10 +645,10 @@ export default function AdminUsersPage() {
                   </div>
                   <div>
                     <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">
-                      Religion key
+                      Reports
                     </p>
-                    <p className="mt-0.5">
-                      {selected.religionKey || "None / not set"}
+                    <p className="mt-0.5 font-medium text-slate-900">
+                      {selected.reportsReceivedCount || 0} lifetime
                     </p>
                   </div>
                 </div>
@@ -557,6 +678,7 @@ export default function AdminUsersPage() {
                   </Badge>
                 </div>
 
+                {/* ⭐ NEW: Action Buttons in Dialog */}
                 <div className="flex justify-end gap-2 pt-2">
                   <Button
                     size="sm"
@@ -566,6 +688,7 @@ export default function AdminUsersPage() {
                   >
                     Close
                   </Button>
+                  {renderActionButtons(selected)}
                 </div>
               </div>
             </>

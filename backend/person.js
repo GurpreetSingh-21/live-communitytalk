@@ -54,6 +54,20 @@ const personSchema = new mongoose.Schema(
     verificationCode: { type: String, select: false },
     verificationCodeExpires: { type: Date, select: false },
 
+    // ⭐ NEW: Moderation Fields (for report/block tracking)
+    reportsReceivedCount: {
+      type: Number,
+      default: 0,
+      required: true,
+      index: true, // Index for easy lookups in admin panel
+    },
+    isPermanentlyDeleted: {
+      type: Boolean,
+      default: false,
+      required: true,
+      index: true, // Index for quickly filtering banned users
+    },
+
     /* ---------------- Dating Integration ---------------- */
     hasDatingProfile: { type: Boolean, default: false },
     datingProfileId: {
@@ -118,8 +132,9 @@ const personSchema = new mongoose.Schema(
 
 /* ------------------------- Indexes -------------------------- */
 
-// NOTE: Email uniqueness is already defined by `unique: true` on the field above.
-// No need to duplicate the index here.
+// Moderation
+personSchema.index({ reportsReceivedCount: 1 });
+personSchema.index({ isPermanentlyDeleted: 1 });
 
 // Scope & lookups
 personSchema.index({ collegeSlug: 1, religionKey: 1 });
