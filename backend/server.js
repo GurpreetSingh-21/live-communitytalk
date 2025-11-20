@@ -41,6 +41,7 @@ const registerEventSockets = require("./sockets/events");
 const notificationRoutes = require("./routes/notificationRoutes");
 const datingRoutes = require("./routes/datingRoutes"); // Dating feature
 const userRoutes = require("./routes/userRoutes"); // ✅ User routes (avatar upload)
+const userReportRoutes = require("./routes/userReportRoutes");
 
 // 📦 Models
 const Person = require("./person");
@@ -347,7 +348,8 @@ app.use("/api/members", authenticate, memberRoutes);
 app.use("/api/messages", authenticate, messageRoutes);
 app.use("/api/direct-messages", authenticate, directMessageRoutes);
 app.use("/api/notifications", authenticate, notificationRoutes);
-
+// ⭐ NEW: User Reporting Route (Authenticated)
+app.use("/api/reports", authenticate, userReportRoutes);
 // Events routes with pre-auth logging
 app.use("/api/events", (req, _res, next) => {
   console.log("🧭 [/api/events pre-auth]");

@@ -35,12 +35,12 @@ import {
   AlertTriangle,
   Mail,
   RefreshCw,
-  Ban, // New Icon for Mute/Freeze
-  // UserCheck, // Not explicitly used but kept for context
+  Ban, 
+  CheckCircle, // New icon for resolution
 } from "lucide-react";
 import { toast } from "sonner";
 
-// 🚨 UPDATED: Added 'isActive' to reportedUser type
+// 🚨 TYPE DEFINITIONS (Correctly placed outside the component export)
 type ReportedUser = {
     _id: string;
     fullName: string;
@@ -48,7 +48,7 @@ type ReportedUser = {
     role: "user" | "mod" | "admin";
     reportsReceivedCount: number;
     isPermanentlyDeleted: boolean;
-    isActive: boolean; // ⭐ NEW: Added isActive status
+    isActive: boolean;
 };
 
 type ReportItem = {
@@ -59,15 +59,6 @@ type ReportItem = {
     lastReportedAt: string;
 };
 
-
-// ----------------------------------------------------------------------
-// ⭐ RENDER LOGIC HELPERS (Defined outside the component)
-// ----------------------------------------------------------------------
-
-// Need access to the threshold and the action runner, so we wrap them in a factory function
-// or pass them down via props if they were in a separate component. Since they rely on
-// state (AUTO_DELETE_THRESHOLD, actionLoadingId, handleUserAction), we MUST define them 
-// inside the main functional component.
 
 export default function AdminReportsPage() {
   const router = useRouter();
@@ -96,8 +87,6 @@ export default function AdminReportsPage() {
       const { data } = await adminApi.get<{ items: ReportItem[] }>(
         "/api/admin/reports"
       );
-      // NOTE: isActive is missing from the backend response in the provided log, 
-      // but is assumed to be present for the following logic.
       setReports(Array.isArray(data.items) ? data.items : []);
     } catch (err: any) {
       console.error("[admin-reports] load error", err);
@@ -114,18 +103,17 @@ export default function AdminReportsPage() {
   }, []);
 
   const handleUserAction = async (userId: string, action: 'ban' | 'deactivate' | 'unban') => {
-    const verb = action === 'ban' ? 'permanently delete' : action === 'deactivate' ? 'mute/deactivate' : 'unban/reactivate';
+    const verb = action === 'ban' ? 'permanently ban' : action === 'deactivate' ? 'mute/deactivate' : 'unban/reactivate';
     if (!window.confirm(`Are you sure you want to ${verb} user ${userId}?`)) return;
 
     setActionLoadingId(userId);
     try {
-      // Use the new PATCH endpoints defined in the backend
       const endpoint = `/api/admin/people/${userId}/${action}`;
       await adminApi.patch(endpoint);
       
       toast.success(`User successfully ${verb}d.`);
       await loadReports();
-      setSelectedReport(null);
+      // No need to close the dialog if the user is still in the queue after a ban
     } catch (err: any) {
       console.error(`[admin-reports] ${action} error`, err);
       toast.error(err?.response?.data?.error || `Failed to ${verb} user.`);
@@ -133,6 +121,28 @@ export default function AdminReportsPage() {
       setActionLoadingId(null);
     }
   };
+
+  // ⭐ NEW: Action to mark reports as resolved and clear the queue entry
+  const handleResolveReports = async (userId: string) => {
+    if (!window.confirm("Mark ALL pending reports for this user as RESOLVED and remove them from the queue?")) return;
+
+    setActionLoadingId(userId);
+    try {
+      // Calls the new resolution route
+      const endpoint = `/api/reports/admin/${userId}/resolve`; 
+      await adminApi.patch(endpoint);
+      
+      toast.success("Reports marked as resolved. Queue refreshing...");
+      await loadReports();
+      setSelectedReport(null); // Close the dialog after successful resolution
+    } catch (err: any) {
+      console.error("[admin-reports] resolve error", err);
+      toast.error(err?.response?.data?.error || "Failed to resolve reports.");
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
 
   const filteredReports = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -183,27 +193,14 @@ export default function AdminReportsPage() {
 
   const renderActionButtons = (user: ReportedUser) => {
     const isWorking = actionLoadingId === user._id;
+    const canUnban = user.isPermanentlyDeleted || !user.isActive;
 
-    if (user.isPermanentlyDeleted) {
+    if (canUnban) {
         return (
             <Button
                 size="sm"
                 variant="default"
-                className="text-[11px] h-8 bg-emerald-500 text-white hover:bg-emerald-600"
-                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'unban'); }}
-                disabled={isWorking}
-            >
-                {isWorking ? 'WORKING...' : 'UNBAN'}
-            </Button>
-        );
-    }
-
-    if (!user.isActive) {
-        return (
-            <Button
-                size="sm"
-                variant="default"
-                className="text-[11px] h-8"
+                className="text-[11px] h-8 bg-sky-500 text-white hover:bg-sky-600"
                 onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'unban'); }}
                 disabled={isWorking}
             >
@@ -214,7 +211,7 @@ export default function AdminReportsPage() {
 
     // Default state: User is active and not permanently banned
     return (
-        <>
+        <div className="flex justify-end gap-2">
             {/* Mute/Deactivate */}
             <Button
                 size="sm"
@@ -237,7 +234,7 @@ export default function AdminReportsPage() {
                 <Trash2 className="h-3.5 w-3.5 mr-1" />
                 Ban
             </Button>
-        </>
+        </div>
     );
   }
 
@@ -489,14 +486,18 @@ export default function AdminReportsPage() {
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2">
+                    {/* Resolve button needs to be here */}
                     <Button
                         size="sm"
-                        variant="outline"
-                        className="text-xs"
-                        onClick={() => setSelectedReport(null)}
+                        variant="default"
+                        className="text-xs bg-emerald-500 text-white hover:bg-emerald-600"
+                        onClick={() => handleResolveReports(selectedReport.reportedUser._id)}
+                        disabled={actionLoadingId === selectedReport.reportedUser._id}
                     >
-                        Close
+                        <CheckCircle className="h-3.5 w-3.5 mr-1" />
+                        Resolve Reports
                     </Button>
+                    
                     {/* Manual Actions in Detail Dialog */}
                     {renderActionButtons(selectedReport.reportedUser)}
                 </div>

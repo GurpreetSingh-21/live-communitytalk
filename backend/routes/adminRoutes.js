@@ -12,9 +12,9 @@ const Community = require("../models/Community");
 const Member = require("../models/Member");
 const DatingProfile = require("../models/DatingProfile"); // ⬅️ NEW: for dating admin
 
-const Report = require("../models/Report");
+const Report = require("../models/Report"); // ⬅️ IMPORTED
 
-const AUTO_DELETE_THRESHOLD = 7;
+const AUTO_DELETE_THRESHOLD = 7; // ⬅️ DEFINED
 
 const ROOM = (id) => `community:${id}`;
 const slugify = (s = "") =>
@@ -100,7 +100,6 @@ router.post("/login", async (req, res) => {
                 em
             );
             console.log("[/api/admin/login] Expected hash:", user.password);
-            console.log("[/api/admin/login] Provided password:", password);
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
@@ -459,9 +458,8 @@ router.get("/reports", async (req, res) => {
 
         // 1. Aggregate reports: Group by reportedUser and count unique reports/reasons
         const reportsData = await Report.aggregate([
-            // Optionally, add filtering for 'q' by reportedUser details here if needed.
-            // For now, we aggregate and filter based on count.
-            { $match: {} },
+            // ⭐ FIX 1: Only process reports that are still pending review.
+            { $match: { status: 'pending' } }, 
             {
                 $group: {
                     _id: "$reportedUser",
@@ -471,8 +469,8 @@ router.get("/reports", async (req, res) => {
                     reasons: { $push: "$reason" },
                 }
             },
-            // Filter to only include users with 2 or more reports (to keep queue manageable)
-            { $match: { reportCount: { $gte: 2 } } },
+            // Filter to only include users with 1 or more reports (to keep queue manageable)
+            { $match: { reportCount: { $gte: 1 } } },
             { $sort: { reportCount: -1, lastReportedAt: -1 } },
             // Pagination is done after aggregation
             { $skip: (pg - 1) * lim },
@@ -483,7 +481,7 @@ router.get("/reports", async (req, res) => {
         // We need the new reportsReceivedCount and isPermanentlyDeleted fields
         const reportedUserIds = reportsData.map(r => r._id);
         const users = await Person.find({ _id: { $in: reportedUserIds } })
-            .select("_id fullName email role reportsReceivedCount isPermanentlyDeleted")
+            .select("_id fullName email role isActive reportsReceivedCount isPermanentlyDeleted") // ⬅️ Includes new status fields
             .lean();
 
         const userMap = new Map(users.map(u => [String(u._id), u]));
@@ -509,15 +507,18 @@ router.get("/reports", async (req, res) => {
                         role: user.role || 'user',
                         reportsReceivedCount: user.reportsReceivedCount || 0,
                         isPermanentlyDeleted: !!user.isPermanentlyDeleted,
+                        isActive: user.isActive !== false, // ⬅️ Fetch isActive
                     }
                 };
             })
-            .filter(Boolean); // Filter out nulls
+            .filter(Boolean); // Filter out nulls (deleted/banned users)
 
         // 4. Get total count for pagination (for the header metrics)
         const totalResult = await Report.aggregate([
+            // ⭐ FIX 2: Match only pending reports here as well
+            { $match: { status: 'pending' } }, 
             { $group: { _id: "$reportedUser", reportCount: { $sum: 1 } } },
-            { $match: { reportCount: { $gte: 2 } } },
+            { $match: { reportCount: { $gte: 1 } } },
             { $count: "total" }
         ]);
         const total = totalResult[0]?.total || 0;
@@ -584,6 +585,8 @@ router.get("/users", async (req, res) => {
             hasDatingProfile: !!p.hasDatingProfile,
             datingProfileId: p.datingProfileId || null,
             createdAt: p.createdAt,
+            reportsReceivedCount: p.reportsReceivedCount || 0, // ⬅️ NEW
+            isPermanentlyDeleted: !!p.isPermanentlyDeleted, // ⬅️ NEW
             communitiesCount: Array.isArray(p.communityIds)
                 ? p.communityIds.length
                 : 0,
@@ -694,7 +697,6 @@ router.patch("/people/:id", async (req, res) => {
     }
 });
 
-
 // PATCH /api/admin/people/:id/ban - Permanent deletion / Ban
 router.patch("/people/:id/ban", async (req, res) => {
     console.log("📡 [PATCH /api/admin/people/:id/ban] Params:", req.params);
@@ -751,26 +753,31 @@ router.patch("/people/:id/unban", async (req, res) => {
         }
 
         // 1. Reset ban flag and reactivate the account
+        // This is an atomic $set operation, guaranteeing the flags are updated.
         const saved = await Person.findByIdAndUpdate(
             id,
             {
                 $set: {
-                    isActive: true,
-                    isPermanentlyDeleted: false // Remove the definitive ban flag
+                    isActive: true, // ⭐ Sets the user as ACTIVE
+                    isPermanentlyDeleted: false // ⭐ Clears the permanent ban flag
                 }
             },
             { new: true }
         )
-            .select("_id fullName email role isActive isPermanentlyDeleted")
+            // Ensure the response includes the fields the frontend uses to update the table row
+            .select("_id fullName email role isActive isPermanentlyDeleted reportsReceivedCount") 
             .lean();
 
         if (!saved) {
             return res.status(404).json({ error: "User not found" });
         }
 
+        // 2. Notify the admin panel and other connected clients
         req.io?.emit("admin:userChanged", { action: "unban", user: saved });
 
-        console.log(`[PATCH /people/:id/unban] Reactivated user: ${id}`);
+        console.log(`[PATCH /people/:id/unban] Reactivated user: ${id}. New isActive: true`);
+        
+        // Return the updated user object
         res.json({ message: "User account reactivated.", user: saved });
 
     } catch (e) {
