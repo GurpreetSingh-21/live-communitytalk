@@ -26,6 +26,14 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
+// ✅ TYPE UPDATE: Includes emailDomains from the new College schema
+type CollegeType = {
+  _id: string;
+  name: string;
+  key: string;
+  emailDomains: string[];
+};
+
 type CommunityLite = {
   _id: string;
   name: string;
@@ -35,7 +43,7 @@ type CommunityLite = {
 };
 
 export default function RegisterScreen() {
-  const { setToken, bootstrap, register } = (React.useContext(AuthContext) as any) ?? {};
+  const { register } = (React.useContext(AuthContext) as any) ?? {};
   const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === "dark";
 
@@ -45,7 +53,7 @@ export default function RegisterScreen() {
   const [showPw, setShowPw] = useState(false);
 
   // selections
-  const [colleges, setColleges] = useState<CommunityLite[]>([]);
+  const [colleges, setColleges] = useState<CollegeType[]>([]);
   const [religions, setReligions] = useState<CommunityLite[]>([]);
   const [collegeId, setCollegeId] = useState<string>("");
   const [religionId, setReligionId] = useState<string>("");
@@ -66,22 +74,21 @@ export default function RegisterScreen() {
     pw.length === 0 ? null : pw.length < 6 ? "weak" : pw.length < 10 ? "medium" : "strong";
   const strengthColors = { weak: "#EF4444", medium: "#F59E0B", strong: "#10B981" } as const;
 
-  /* ---------------- Fetch lists (unchanged logic) ---------------- */
+  /* ---------------- Fetch lists ---------------- */
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         setLoadingLists(true);
         const [colRes, relRes] = await Promise.all([
-          api.get(`/api/public/communities?type=college&paginated=false`),
+          // ✅ FIX: Fetch from the new specialized /colleges endpoint
+          api.get(`/api/public/colleges`), 
           api.get(`/api/public/communities?type=religion&paginated=false`),
         ]);
 
-        const colItems: CommunityLite[] = Array.isArray(colRes.data)
-          ? colRes.data
-          : Array.isArray(colRes.data?.items)
-          ? colRes.data.items
-          : [];
+        // The new endpoint returns an array directly
+        const colItems: CollegeType[] = Array.isArray(colRes.data) ? colRes.data : [];
+        
         const relItems: CommunityLite[] = Array.isArray(relRes.data)
           ? relRes.data
           : Array.isArray(relRes.data?.items)
@@ -91,8 +98,8 @@ export default function RegisterScreen() {
         if (!mounted) return;
         setColleges(colItems);
         setReligions(relItems);
-      } catch {
-        // silent
+      } catch (e) {
+        console.log("Failed to load lists", e);
       } finally {
         if (mounted) setLoadingLists(false);
       }
@@ -102,7 +109,38 @@ export default function RegisterScreen() {
     };
   }, []);
 
-  /* ---------------- Validation (unchanged logic) ---------------- */
+  /* ---------------- Auto-Detect College (Dynamic) ---------------- */
+  useEffect(() => {
+    const lowerEmail = email.trim().toLowerCase();
+    const domain = lowerEmail.split('@')[1]; 
+
+    if (domain && colleges.length > 0) {
+      // ✅ Logic: Search the 'emailDomains' array of every college
+      const matchedCollege = colleges.find((c) => 
+        Array.isArray(c.emailDomains) && c.emailDomains.includes(domain)
+      );
+
+      if (matchedCollege) {
+        setCollegeId(matchedCollege._id);
+        setErrCollege(null);
+      }
+    }
+  }, [email, colleges]);
+
+  // ✅ Derived state to toggle UI
+  const autoDetectedCollege = useMemo(() => {
+     if (!collegeId) return null;
+     const c = colleges.find(c => c._id === collegeId);
+     // Only show "Auto-detected" UI if the email actually matches
+     const domain = email.split('@')[1]?.toLowerCase();
+     if (c && domain && c.emailDomains?.includes(domain)) {
+       return c;
+     }
+     return null;
+  }, [collegeId, email, colleges]);
+
+
+  /* ---------------- Validation ---------------- */
   const validate = () => {
     let ok = true;
     setErrName(null);
@@ -143,7 +181,7 @@ export default function RegisterScreen() {
     return ok;
   };
 
-  /* ---------------- Submit (unchanged logic) ---------------- */
+  /* ---------------- Submit ---------------- */
   const handleRegister = async () => {
     if (submitting) return;
     if (!validate()) return;
@@ -158,22 +196,14 @@ export default function RegisterScreen() {
         religionId,
       };
       
-      // Use the 'register' function from AuthContext
-      // It no longer throws an error, it returns a message
       const data = await register(body);
 
-      // --- START FIX ---
-      // Do NOT log the user in.
-      // Send them to the new code verification screen.
       router.replace({
         pathname: "/verify-email",
-        // Pass the email and the server message to the next screen
         params: { email: body.email, message: data.message }
       });
-      // --- END FIX ---
 
     } catch (err: any) {
-      // (This catch block will now catch errors like "User already exists")
       const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
       if (typeof e === "string") {
         setServerError(e);
@@ -191,6 +221,7 @@ export default function RegisterScreen() {
       setSubmitting(false);
     }
   };
+
   /* ---------------- Modern UI Components ---------------- */
   const Pill = ({
     active,
@@ -273,7 +304,6 @@ export default function RegisterScreen() {
   const labelColor = isDark ? "#D1D5DB" : "#374155";
   const inputBg = isDark ? "#1F2937" : "#F9FAFB";
   const inputBorder = isDark ? "#374151" : "#E5E7EB";
-  const inputFocusBorder = isDark ? "#6366F1" : "#6366F1";
   const placeholder = isDark ? "#6B7280" : "#9CA3AF";
   const textColor = isDark ? "#F3F4F6" : "#111827";
 
@@ -647,26 +677,64 @@ export default function RegisterScreen() {
             <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
               Select College
             </Text>
-            {loadingLists ? (
-              <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 16 }}>
-                <ActivityIndicator size="small" color="#6366F1" />
-                <Text style={{ marginLeft: 10, color: placeholder, fontSize: 14 }}>
-                  Loading colleges...
-                </Text>
+
+            {/* ✅ NEW: Dynamic UI for ANY detected college */}
+            {autoDetectedCollege ? (
+              <View style={{ 
+                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ECFDF5', 
+                borderRadius: 16, 
+                padding: 16, 
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
+                flexDirection: 'row',
+                alignItems: 'center'
+              }}>
+                <View style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 20,
+                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 12
+                }}>
+                   <Ionicons name="school" size={20} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? '#fff' : '#065F46' }}>
+                    {autoDetectedCollege.name}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: '#10B981', fontWeight: '600' }}>
+                    Auto-detected via email
+                  </Text>
+                </View>
+                <Ionicons name="checkmark-circle" size={24} color="#10B981" />
               </View>
             ) : (
-              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                {colleges.map((c) => (
-                  <Pill
-                    key={c._id}
-                    label={c.name}
-                    active={collegeId === c._id}
-                    onPress={() => setCollegeId(c._id)}
-                  />
-                ))}
-              </View>
+              /* Normal Selection List */
+              loadingLists ? (
+                <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 16 }}>
+                  <ActivityIndicator size="small" color="#6366F1" />
+                  <Text style={{ marginLeft: 10, color: placeholder, fontSize: 14 }}>
+                    Loading colleges...
+                  </Text>
+                </View>
+              ) : (
+                <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
+                  {colleges.map((c) => (
+                    <Pill
+                      key={c._id}
+                      label={c.name}
+                      active={collegeId === c._id}
+                      onPress={() => setCollegeId(c._id)}
+                    />
+                  ))}
+                </View>
+              )
             )}
-            {!!errCollege && (
+
+            {/* Show error only if NOT auto-detected */}
+            {!!errCollege && !autoDetectedCollege && (
               <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
                 <Ionicons name="alert-circle" size={14} color="#EF4444" />
                 <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>

@@ -2,18 +2,40 @@
 const express = require("express");
 const router = express.Router();
 const Community = require("../models/Community");
+const College = require("../models/College"); // ✅ Import new model
 
 /**
- * Mount this router at: app.use("/api/public", publicRoutes)
- *
+ * GET /api/public/colleges
+ * Returns list of colleges for registration dropdown (Auto-detection)
+ * Fetches from the new College collection which has emailDomains.
+ */
+router.get("/colleges", async (req, res) => {
+  try {
+    // Fetch all colleges with their domains and linked community IDs
+    const colleges = await College.find({})
+      .select("_id name key emailDomains communityId")
+      .sort({ name: 1 })
+      .lean();
+    
+    return res.json(colleges);
+  } catch (e) {
+    console.error("GET /api/public/colleges error", e);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
  * GET /api/public/communities
- *   q=                string (search by name/key/slug/description; regex, escaped)
- *   type=             string | string[] (e.g., type=college or type=college&type=religion)
- *   tags=             string | string[] (exact tag match; can repeat)
- *   sort=             "name" | "-name" | "createdAt" | "-createdAt" (default: name)
- *   paginated=        "true" | "false"  (default: "true")
- *   page=             number (1+)
- *   limit=            number (1..200)
+ * General search for communities (Colleges, Religions, Custom groups)
+ *
+ * Query Params:
+ * q=                string (search by name/key/slug/description; regex, escaped)
+ * type=             string | string[] (e.g., type=college or type=college&type=religion)
+ * tags=             string | string[] (exact tag match; can repeat)
+ * sort=             "name" | "-name" | "createdAt" | "-createdAt" (default: name)
+ * paginated=        "true" | "false"  (default: "true")
+ * page=             number (1+)
+ * limit=            number (1..200)
  *
  * NOTE: Returns ONLY public communities (isPrivate !== true)
  */
@@ -80,6 +102,7 @@ router.get("/communities", async (req, res) => {
 
     // -------- projection & sort --------
     // Keep fields minimal for public endpoint
+    // NOTE: We DO NOT need emailDomains here anymore because that lives in the College model.
     const PROJECTION = "_id name type key tags isPrivate createdAt";
 
     const allowedSorts = new Set([

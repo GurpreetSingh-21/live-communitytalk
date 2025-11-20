@@ -333,46 +333,69 @@ export default function CommunitiesScreen(): React.JSX.Element {
 
   /* ------------------- Fetch Communities ------------------- */
 
-  const fetchCommunityThreads = useCallback(async (signal?: AbortSignal) => {
-    if (!isAuthed) return [] as CommunityThread[];
-    const mine = Array.isArray(myCommunities) ? myCommunities : [];
+/* ------------------- Fetch Communities ------------------- */
 
-    const results = await Promise.all(
-      mine.map(async (c: any) => {
-        const cId = String(c?._id || c?.id || '');
-        if (!cId) return null;
-        try {
-          const { data } = await api.get(`/api/messages/${cId}`, {
-            params: { limit: 1, order: 'desc' },
-            signal,
-          });
-          const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-          const last = list[0];
-          if (!last) return null;
+const fetchCommunityThreads = useCallback(async (signal?: AbortSignal) => {
+  if (!isAuthed) return [] as CommunityThread[];
+  const mine = Array.isArray(myCommunities) ? myCommunities : [];
 
-          const type = last?.type === 'photo' ? 'photo' : last?.type === 'voice' ? 'voice' : 'text';
-          const content = type === 'text' ? String(last?.content ?? '') : type === 'photo' ? 'Photo' : 'Voice Memo';
-          const lastAt = Number(new Date(last?.createdAt ?? last?.timestamp ?? Date.now()).getTime());
+  const results = await Promise.all(
+    mine.map(async (c: any) => {
+      const cId = String(c?._id || c?.id || '');
+      if (!cId) return null;
+      try {
+        const { data } = await api.get(`/api/messages/${cId}`, {
+          params: { limit: 1, order: 'desc' },
+          signal,
+        });
+        const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+        const last = list[0];
+        
+        // ✅ FIX: Don't return null if no messages. Use fallback values.
+        // if (!last) return null; <--- THIS WAS THE BUG
 
-          const th: CommunityThread = {
-            id: cId,
-            name: String(c?.name || 'Community'),
-            avatar: '🏛️',
-            lastMsg: { type, content },
-            lastAt,
-            unread: 0,
-            pinned: !!c?.pinned,
-            memberCount: c?.memberCount || 0,
-          };
-          return th;
-        } catch {
-          return null;
-        }
-      })
-    );
+        const type = last?.type === 'photo' ? 'photo' : last?.type === 'voice' ? 'voice' : 'text';
+        
+        // Show real message content OR "No messages yet"
+        const content = last 
+          ? (type === 'text' ? String(last.content ?? '') : type === 'photo' ? 'Photo' : 'Voice Memo')
+          : 'No messages yet';
 
-    return results.filter(Boolean) as CommunityThread[];
-  }, [isAuthed, myCommunities]);
+        // Use message time OR community join/create time
+        const lastAt = last 
+          ? Number(new Date(last.createdAt ?? last.timestamp ?? Date.now()).getTime())
+          : Number(new Date(c.createdAt || c.updatedAt || Date.now()).getTime());
+
+        const th: CommunityThread = {
+          id: cId,
+          name: String(c?.name || 'Community'),
+          avatar: '🏛️',
+          lastMsg: { type: last ? type : 'text', content },
+          lastAt,
+          unread: 0,
+          pinned: !!c?.pinned,
+          memberCount: c?.memberCount || 0,
+        };
+        return th;
+      } catch (err) {
+        // ✅ Fallback: If API fails (e.g. 404), still show the community so it's clickable
+        console.log(`[Community] Failed to load thread ${cId}`, err);
+        return {
+          id: cId,
+          name: String(c?.name || 'Community'),
+          avatar: '🏛️',
+          lastMsg: { type: 'text', content: 'Tap to start chatting' },
+          lastAt: Number(new Date(c.createdAt || Date.now()).getTime()),
+          unread: 0,
+          pinned: !!c?.pinned,
+          memberCount: c?.memberCount || 0,
+        };
+      }
+    })
+  );
+
+  return results.filter(Boolean) as CommunityThread[];
+}, [isAuthed, myCommunities]);
 
   // Initial load
   useEffect(() => {

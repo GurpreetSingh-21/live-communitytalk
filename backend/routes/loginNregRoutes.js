@@ -7,14 +7,15 @@ const mongoose = require("mongoose");
 
 const Person = require("../person");
 const Community = require("../models/Community");
+const College = require("../models/College"); // ✅ Import College model
 const Member = require("../models/Member");
 const authenticate = require("../middleware/authenticate");
 const { sendVerificationEmail } = require("../services/emailService");
 
 require("dotenv").config();
 
-// CRITICAL SECURITY FIX: Removed insecure fallback "devsecret"
 const JWT_SECRET = process.env.MY_SECRET_KEY || process.env.JWT_SECRET;
+
 if (!JWT_SECRET) {
   console.warn("⚠️ [auth] JWT secret not set. Server startup should have failed.");
 }
@@ -22,6 +23,50 @@ if (!JWT_SECRET) {
 /* ----------------------------- helpers ---------------------------------- */
 
 const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
+
+const signToken = (user) =>
+  jwt.sign(
+    { id: String(user._id), email: user.email, fullName: user.fullName },
+    JWT_SECRET,
+    { expiresIn: "14d" }
+  );
+
+async function upsertMembership({ session, person, community }) {
+  const baseSet = {
+    person: person._id,
+    community: community._id,
+    name: person.fullName || person.email,
+    fullName: person.fullName || person.email,
+    email: person.email,
+    avatar: person.avatar || "/default-avatar.png",
+    memberStatus: "active",
+    role: "member",
+  };
+
+  await Member.findOneAndUpdate(
+    { person: person._id, community: community._id },
+    {
+      $set: baseSet,
+      $setOnInsert: {
+        personId: person._id,
+        communityId: community._id,
+      },
+    },
+    {
+      new: true,
+      upsert: true,
+      session,
+      setDefaultsOnInsert: true,
+      strict: false,
+    }
+  );
+
+  await Person.updateOne(
+    { _id: person._id },
+    { $addToSet: { communityIds: community._id } },
+    { session }
+  );
+}
 
 function validateRegisterByIds({
   fullName,
@@ -33,6 +78,7 @@ function validateRegisterByIds({
   const errors = {};
   const name = String(fullName || "").trim();
   const em = normalizeEmail(email);
+  // collegeId is now an ID from the College collection
   const colId = String(collegeId || "").trim();
   const relId = String(religionId || "").trim();
 
@@ -59,144 +105,57 @@ function validateRegisterByIds({
   };
 }
 
-const signToken = (user) =>
-  jwt.sign(
-    { id: String(user._id), email: user.email, fullName: user.fullName },
-    JWT_SECRET,
-    { expiresIn: "14d" }
-  );
-
-/**
- * Upsert a membership in a schema-safe way (handles legacy unique index collisions).
- * This is shared with the new code paths for registration/bootstrap.
- */
-async function upsertMembership({ session, person, community }) {
-  // keep both status + memberStatus for backward compatibility
-  const baseSet = {
-    person: person._id,
-    community: community._id,
-    name: person.fullName || person.email,
-    fullName: person.fullName || person.email,
-    email: person.email,
-    avatar: person.avatar || "/default-avatar.png",
-    status: "active", // legacy field
-    memberStatus: "active", // new field used elsewhere
-    role: "member",
-  };
-
-  try {
-    const m = await Member.findOneAndUpdate(
-      { person: person._id, community: community._id },
-      {
-        $set: baseSet,
-        $setOnInsert: {
-          personId: person._id,
-          communityId: community._id,
-        },
-      },
-      {
-        new: true,
-        upsert: true,
-        session,
-        setDefaultsOnInsert: true,
-        strict: false,
-      }
-    )
-      .select(
-        "_id person personId community communityId fullName email avatar status memberStatus role"
-      )
-      .lean();
-
-    await Person.updateOne(
-      { _id: person._id },
-      { $addToSet: { communityIds: community._id } },
-      { session }
-    );
-
-    return m;
-  } catch (err) {
-    if (err?.code === 11000) {
-      const legacy = await Member.findOne(
-        { personId: person._id, communityId: community._id }
-      )
-        .setOptions({ strictQuery: false, session })
-        .lean();
-
-      if (legacy?._id) {
-        await Member.updateOne(
-          { _id: legacy._id },
-          { $set: baseSet },
-          { session, strict: false }
-        );
-
-        const upgraded = await Member.findById(legacy._id)
-          .select(
-            "_id person personId community communityId fullName email avatar status memberStatus role"
-          )
-          .lean();
-
-        await Person.updateOne(
-          { _id: person._id },
-          { $addToSet: { communityIds: community._id } },
-          { session }
-        );
-
-        return upgraded;
-      }
-    }
-    throw err;
-  }
-}
-
-/* ------------- NOTE: public /api/public/communities lives in publicRoutes.js -------------
- * We intentionally do NOT define GET /api/public/communities here anymore.
- * That endpoint is handled by backend/routes/publicRoutes.js and mounted as:
- *   app.use("/api/public", publicRoutes);
- * in server.js.
- * ---------------------------------------------------------------------- */
-
 /* -------------------------------- REGISTER ------------------------------- */
-/**
- * POST /api/register
- * Does NOT log in. Sends verification 6-digit code.
- * Handles resending code to unverified users.
- */
 router.post("/register", async (req, res) => {
   const session = await mongoose.startSession();
   try {
     const { fullName, email, password, collegeId, religionId } = req.body || {};
-    const {
-      ok,
-      errors,
-      fullName: fn,
-      email: em,
-      collegeId: colId,
-      religionId: relId,
-    } = validateRegisterByIds({ fullName, email, password, collegeId, religionId });
+    
+    // Basic validation
+    const { ok, errors } = validateRegisterByIds({
+      fullName,
+      email,
+      password,
+      collegeId,
+      religionId,
+    });
 
     if (!ok) return res.status(400).json({ error: errors });
 
-    const [college, religion] = await Promise.all([
-      Community.findOne({ _id: colId, type: "college", isPrivate: { $ne: true } })
-        .select("_id name type key")
-        .lean(),
-      Community.findOne({ _id: relId, type: "religion", isPrivate: { $ne: true } })
-        .select("_id name type key")
-        .lean(),
+    // 1. Resolve College ID -> Community ID
+    // The frontend sends a `collegeId` which is an _id from the College collection.
+    // We need to find the College doc to get the linked `communityId`.
+    const collegeDoc = await College.findById(collegeId).lean();
+    
+    if (!collegeDoc) {
+       return res.status(400).json({ error: { collegeId: "College not found" } });
+    }
+    
+    if (!collegeDoc.communityId) {
+      return res.status(400).json({ error: { collegeId: "Invalid college data: no linked community" } });
+    }
+
+    // 2. Find the actual Community documents
+    // collegeCommunity is the chat group for the college
+    // religionCommunity is the chat group for the religion
+    const [collegeCommunity, religionCommunity] = await Promise.all([
+      Community.findById(collegeDoc.communityId).select("_id name type key").lean(),
+      Community.findOne({ _id: religionId, type: "religion" }).select("_id name type key").lean(),
     ]);
-    if (!college)
-      return res.status(400).json({ error: { collegeId: "College not found" } });
-    if (!religion)
-      return res.status(400).json({ error: { religionId: "Religion not found" } });
+
+    if (!collegeCommunity) {
+        return res.status(400).json({ error: { collegeId: "College community chat not found" } });
+    }
+    if (!religionCommunity) {
+        return res.status(400).json({ error: { religionId: "Religion not found" } });
+    }
 
     let userForEmail;
     let verificationCode;
     let isResend = false;
 
     await session.withTransaction(async () => {
-      const exists = await Person.findOne({ email: em })
-        .session(session)
-        .select("+verificationCode +verificationCodeExpires");
+      const exists = await Person.findOne({ email: normalizeEmail(email) }).session(session);
 
       if (exists) {
         if (!exists.emailVerified) {
@@ -222,40 +181,39 @@ router.post("/register", async (req, res) => {
         verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
         const verificationCodeExpires = new Date(Date.now() + 3600000);
 
-        const created = await Person.create(
+        const [created] = await Person.create(
           [
             {
-              fullName: fn,
-              email: em,
+              fullName,
+              email: normalizeEmail(email),
               password: hash,
               role: "user",
               communityIds: [],
               verificationCode,
               verificationCodeExpires,
               emailVerified: false,
-              // Set college + religion scope for downstream features (dating, feeds, etc.)
-              collegeName: college.name,
-              collegeSlug: college.key,
-              religionKey: religion.key,
-              // dating flags default from schema (hasDatingProfile, datingProfileId)
+              // Store College Name/Slug from the College metadata doc
+              collegeName: collegeDoc.name,
+              collegeSlug: collegeDoc.key,
+              religionKey: religionCommunity.key,
+              // dating flags default from schema
             },
           ],
           { session }
         );
-        userForEmail = created[0];
+        userForEmail = created;
 
+        // Join both communities
         await Promise.all([
-          upsertMembership({ session, person: userForEmail, community: college }),
-          upsertMembership({ session, person: userForEmail, community: religion }),
+          upsertMembership({ session, person: userForEmail, community: collegeCommunity }),
+          upsertMembership({ session, person: userForEmail, community: religionCommunity }),
         ]);
       }
     });
 
-    // Send email (for both new + unverified / resend)
+    // Send email
     if (userForEmail && verificationCode) {
       await sendVerificationEmail(userForEmail.email, verificationCode);
-    } else {
-      throw new Error("User or verification code was not set after transaction.");
     }
 
     if (isResend) {
@@ -278,23 +236,13 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: "Duplicate entry." });
     }
     console.error("POST /register error:", error);
-    if (error.message === "Failed to send verification email.") {
-      return res
-        .status(500)
-        .json({ error: "Failed to send verification email. Please try again." });
-    }
-    return res.status(400).json({ error: "Registration failed" });
+    return res.status(500).json({ error: "Server Error" });
   } finally {
     session.endSession();
   }
 });
 
 /* --------------------------------- LOGIN --------------------------------- */
-/**
- * POST /api/login
- * Checks emailVerified flag before issuing token.
- * Also guards against missing password hash (fixes bcrypt "string, undefined").
- */
 router.post("/login", async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
@@ -304,10 +252,8 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    // Explicit select for future-proofing if we ever make password select:false
     const user = await Person.findOne({ email }).select("+password");
     if (!user || !user.password) {
-      // Either user not found OR no stored password → treat as invalid
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
@@ -328,7 +274,6 @@ router.post("/login", async (req, res) => {
 
     let communities = [];
     if (Array.isArray(user.communityIds) && user.communityIds.length > 0) {
-      // 🔒 SECURITY FIX: Replaced expensive aggregation with simple find query
       communities = await Community.find({ _id: { $in: user.communityIds } })
         .select("_id name type key createdAt updatedAt")
         .lean();
@@ -341,7 +286,7 @@ router.post("/login", async (req, res) => {
         _id: user._id,
         fullName: user.fullName,
         email: user.email,
-        avatar: user.avatar, // ✅ Include avatar in login response
+        avatar: user.avatar,
         role: user.role || "user",
         hasDatingProfile: user.hasDatingProfile || false,
         datingProfileId: user.datingProfileId || null,
@@ -357,10 +302,6 @@ router.post("/login", async (req, res) => {
 });
 
 /* -------------------------- VERIFY CODE -------------------------- */
-/**
- * POST /api/verify-code
- * User submits the 6-digit code here.
- */
 router.post("/verify-code", async (req, res) => {
   try {
     const { email, code } = req.body;
@@ -407,14 +348,14 @@ router.post("/verify-code", async (req, res) => {
         _id: user._id,
         fullName: user.fullName,
         email: user.email,
-        avatar: user.avatar, // ✅ Include avatar
+        avatar: user.avatar,
         role: user.role || "user",
         hasDatingProfile: user.hasDatingProfile || false,
         datingProfileId: user.datingProfileId || null,
         collegeSlug: user.collegeSlug || null,
         religionKey: user.religionKey || null,
       },
-      communities: [], // frontend will call /api/bootstrap to load real list
+      communities: [],
     });
   } catch (err) {
     console.error("POST /verify-code error:", err);
@@ -520,19 +461,6 @@ router.patch("/profile", authenticate, async (req, res) => {
 });
 
 /* ------------------ NOTIFICATION / PRIVACY PREFS (GET/PUT) ------------------ */
-/**
- * These prefs are shared by:
- *  - Notifications screen (pushEnabled, dms, communities, mentions)
- *  - Privacy & Security screen (showOnlineStatus, allowDMsFromSameCollege, allowDMsFromOthers)
- *
- * In the Person schema:
- *  - notificationPrefs: { pushEnabled, dms, communities, mentions }
- *  - privacyPrefs: { showOnlineStatus, allowDMsFromSameCollege, allowDMsFromOthers }
- *
- * This API returns a single object { notificationPrefs: { ...all 7 keys... } }
- * for backwards compatibility with the mobile app.
- */
-
 router.get("/notification-prefs", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
@@ -608,13 +536,11 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
       }
     };
 
-    // Notification screen fields
     assignNotif("pushEnabled", pushEnabled);
     assignNotif("dms", dms);
     assignNotif("communities", communities);
     assignNotif("mentions", mentions);
 
-    // Privacy & Security screen fields
     assignPrivacy("showOnlineStatus", showOnlineStatus);
     assignPrivacy("allowDMsFromSameCollege", allowDMsFromSameCollege);
     assignPrivacy("allowDMsFromOthers", allowDMsFromOthers);
@@ -701,7 +627,6 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
 });
 
 /* ------------------------------- BOOTSTRAP ------------------------------- */
-
 router.get("/bootstrap", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
@@ -716,7 +641,6 @@ router.get("/bootstrap", authenticate, async (req, res) => {
     let communities = [];
 
     if (communityIds.length > 0) {
-      // 🔒 SECURITY FIX: Replaced expensive aggregation with simple find query
       communities = await Community.find({ _id: { $in: communityIds } })
         .select("_id name type key createdAt updatedAt")
         .lean();
@@ -730,7 +654,6 @@ router.get("/bootstrap", authenticate, async (req, res) => {
 });
 
 /* ------------------------------- MY COMMUNITIES -------------------------- */
-
 router.get("/my/communities", authenticate, async (req, res) => {
   const user = await Person.findById(req.user.id).select("communityIds").lean();
   const items = await Community.find({ _id: { $in: user?.communityIds || [] } })
