@@ -11,7 +11,6 @@ router.use(authenticate);
 
 const OID = (id) => new mongoose.Types.ObjectId(String(id));
 const isValidId = (id) => mongoose.isValidObjectId(String(id));
-const ensureAuthor = (doc, me) => String(doc.from) === String(me);
 
 // ───────────────────────── GET threads (inbox) ─────────────────────────
 router.get("/", async (req, res) => {
@@ -21,12 +20,26 @@ router.get("/", async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 100);
 
     const items = await DirectMessage.aggregate([
+      // 1. Match messages for 'me'
       { $match: { $or: [{ from: me }, { to: me }] } },
+      
+      // 2. Sort by newest first
       { $sort: { createdAt: -1 } },
-      { $addFields: { partnerId: { $cond: [{ $eq: ["$from", me] }, "$to", "$from"] } } },
+      
+      // 3. Identify Partner ID (Raw)
+      { $addFields: { partnerIdRaw: { $cond: [{ $eq: ["$from", me] }, "$to", "$from"] } } },
+      
+      // 4. ⭐ FIX: Convert Partner ID to ObjectId safely
+      // This fixes the "Deleted User" bug caused by String vs ObjectId mismatch
+      { $addFields: { 
+          partnerIdObj: { $toObjectId: "$partnerIdRaw" } 
+      }},
+
+      // 5. Group by the standardized ObjectId
       {
         $group: {
-          _id: "$partnerId",
+          _id: "$partnerIdObj",
+          partnerIdRaw: { $first: "$partnerIdRaw" }, // Keep raw ID for reference
           lastMessage: { $first: "$content" },
           lastAttachments: { $first: "$attachments" },
           lastStatus: { $first: "$status" },
@@ -34,20 +47,39 @@ router.get("/", async (req, res) => {
           lastTimestamp: { $first: "$createdAt" },
         },
       },
+      
+      // 6. Lookup Partner details
       {
         $lookup: {
           from: "people",
-          localField: "_id",
+          localField: "_id", // Now matching ObjectId to ObjectId
           foreignField: "_id",
           as: "partner",
         },
       },
-      { $unwind: "$partner" },
-      ...(q ? [{ $match: { "partner.fullName": { $regex: new RegExp(q, "i") } } }] : []),
+      
+      // 7. Unwind safely (keep chat even if user missing)
+      { 
+        $unwind: {
+          path: "$partner",
+          preserveNullAndEmptyArrays: true 
+        } 
+      },
+
+      // 8. Search Filter
+      ...(q ? [{ $match: { 
+          $or: [
+             { "partner.fullName": { $regex: new RegExp(q, "i") } },
+             { "partner.firstName": { $regex: new RegExp(q, "i") } },
+             { "partner.lastName": { $regex: new RegExp(q, "i") } }
+          ]
+      } }] : []),
+      
+      // 9. Count Unread
       {
         $lookup: {
           from: "directmessages",
-          let: { pid: "$_id" },
+          let: { pid: "$partnerIdRaw" }, // Use raw ID to match message document format
           pipeline: [
             {
               $match: {
@@ -65,13 +97,31 @@ router.get("/", async (req, res) => {
           as: "unread",
         },
       },
+      
+      // 10. ⭐ FIX: Smart Project for Name & Avatar
       {
         $project: {
           partnerId: "$_id",
-          // ✅ FIX: Fallback to email if fullName is missing, preventing "Unknown"
-          fullName: { $ifNull: ["$partner.fullName", "$partner.email", "Unknown"] },
-          email: "$partner.email", // Include email in payload just in case
-          avatar: { $ifNull: ["$partner.avatar", "/default-avatar.png"] },
+          
+          // Try 'fullName', then 'name', then combine 'firstName + lastName'
+          fullName: { 
+            $ifNull: [
+              "$partner.fullName", 
+              "$partner.name", 
+              { 
+                $trim: { 
+                  input: { $concat: [{ $ifNull: ["$partner.firstName", ""] }, " ", { $ifNull: ["$partner.lastName", ""] }] } 
+                } 
+              }, 
+              "Unknown User"
+            ] 
+          },
+          
+          email: { $ifNull: ["$partner.email", ""] },
+          
+          // Check all possible avatar fields
+          avatar: { $ifNull: ["$partner.avatar", "$partner.photoUrl", "$partner.image", "/default-avatar.png"] },
+          
           lastMessage: 1,
           lastAttachments: 1,
           lastStatus: 1,
@@ -80,6 +130,7 @@ router.get("/", async (req, res) => {
           unread: { $ifNull: [{ $arrayElemAt: ["$unread.c", 0] }, 0] },
         },
       },
+      
       { $sort: { lastTimestamp: -1 } },
       { $limit: limit },
     ]);
@@ -109,14 +160,20 @@ router.get("/:memberId", async (req, res) => {
   try {
     const me = OID(req.user.id);
     const themRaw = req.params.memberId;
+    
     if (!isValidId(themRaw)) return res.status(400).json({ error: "Invalid memberId" });
+    
     const them = OID(themRaw);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
 
+    // Match messages regardless of which ID type (String/ObjectId) was saved
     const filter = {
       $or: [
         { from: me, to: them },
         { from: them, to: me },
+        // Fallback for string-saved IDs if any exist
+        { from: String(me), to: String(them) },
+        { from: String(them), to: String(me) },
       ],
     };
 
@@ -137,8 +194,10 @@ router.post("/", async (req, res) => {
   try {
     const from = OID(req.user.id);
     const { to: toRaw, content = "", attachments = [] } = req.body || {};
+    
     if (!isValidId(toRaw)) return res.status(400).json({ error: "Invalid recipient id" });
     const to = OID(toRaw);
+    
     if (String(to) === String(from))
       return res.status(400).json({ error: "Cannot message yourself" });
 
@@ -150,21 +209,12 @@ router.post("/", async (req, res) => {
     if (!text && cleanAttachments.length === 0)
       return res.status(400).json({ error: "Message content or attachments required" });
 
-    // 🔒 RESTRICTION LOGIC: "One message until reply" policy
-    // 1. Check if the recipient has EVER replied to me (sent a message TO me)
-    const hasReplied = await DirectMessage.exists({
-      from: to,   // They are sender
-      to: from    // I am receiver
-    });
+    // 1. Check if they ever replied (ObjectId check)
+    const hasReplied = await DirectMessage.exists({ from: to, to: from });
 
-    // 2. If they have NOT replied, check how many messages I have sent them
     if (!hasReplied) {
-      const mySentCount = await DirectMessage.countDocuments({
-        from: from,
-        to: to
-      });
-
-      // 3. If I have sent 1 (or more) messages and they haven't replied, BLOCK.
+      const mySentCount = await DirectMessage.countDocuments({ from: from, to: to });
+      // Anti-spam: Block if 1 message sent with no reply
       if (mySentCount >= 1) {
         return res.status(403).json({ 
           error: "You cannot send another message until the user replies." 
@@ -173,8 +223,8 @@ router.post("/", async (req, res) => {
     }
 
     const dm = await DirectMessage.create({
-      from,
-      to,
+      from, // Saved as ObjectId
+      to,   // Saved as ObjectId
       content: text,
       attachments: cleanAttachments,
       status: "sent",
@@ -190,7 +240,6 @@ router.post("/", async (req, res) => {
       status: dm.status,
     };
 
-    // ✅ emit both events for universal support
     req.io?.to(String(to)).emit("receive_direct_message", payload);
     req.io?.to(String(to)).emit("dm:message", payload);
     req.io?.to(String(from)).emit("dm:message", payload);
@@ -207,10 +256,19 @@ router.patch("/:memberId/read", async (req, res) => {
   try {
     const me = OID(req.user.id);
     const them = OID(req.params.memberId);
+    
+    // Update matches both ObjectId and String formats to be safe
     const result = await DirectMessage.updateMany(
-      { from: them, to: me, status: { $in: ["sent", "edited"] } },
+      { 
+        $or: [
+            { from: them, to: me },
+            { from: String(them), to: String(me) }
+        ],
+        status: { $in: ["sent", "edited"] } 
+      },
       { $set: { status: "read", readAt: new Date() } }
     );
+    
     req.io?.to(String(them)).emit("dm_read", { by: String(me) });
     return res.json({ updated: result.modifiedCount || 0 });
   } catch (err) {

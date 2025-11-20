@@ -68,7 +68,7 @@ export default function DMHeader({
           onPress={onPressProfile}
           style={{ marginRight: 12 }}
         >
-          {avatar ? (
+          {avatar && avatar.startsWith("http") ? (
             <Image
               source={{ uri: avatar }}
               style={{ width: 40, height: 40, borderRadius: 20 }}
@@ -84,9 +84,14 @@ export default function DMHeader({
                 justifyContent: "center",
               }}
             >
-              <Text style={{ fontSize: 13, fontWeight: "700", color: dark ? "#F5F5F5" : "#111827" }}>
-                {initials}
-              </Text>
+              {/* If it's an emoji-like avatar, render as text, otherwise initials */}
+              {avatar && avatar.length <= 4 ? (
+                <Text style={{ fontSize: 20 }}>{avatar}</Text>
+              ) : (
+                <Text style={{ fontSize: 13, fontWeight: "700", color: dark ? "#F5F5F5" : "#111827" }}>
+                  {initials}
+                </Text>
+              )}
             </View>
           )}
 

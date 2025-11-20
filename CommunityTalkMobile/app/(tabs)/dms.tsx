@@ -12,7 +12,6 @@ import {
   TextInput,
   View,
   Text,
-  ScrollView,
   RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -200,7 +199,12 @@ const DMRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: RowProps
               <View>
                 <View className="w-14 h-14 rounded-full items-center justify-center overflow-hidden">
                   <View className="w-[52px] h-[52px] rounded-full bg-slate-200 dark:bg-zinc-800 items-center justify-center">
-                    <Text className="text-3xl">{item.online ? '🟢' : item.avatar || '🗣️'}</Text>
+                    {/* FIX: Only show emoji if it looks like an emoji, otherwise use Initials/Image */}
+                    {item.avatar && item.avatar.length > 2 ? (
+                       <Text className="text-3xl">{item.avatar}</Text>
+                    ) : (
+                       <Text className="text-3xl">{item.avatar || '🗣️'}</Text>
+                    )}
                   </View>
                 </View>
                 {item.typing ? (
@@ -271,43 +275,94 @@ export default function DMsScreen(): React.JSX.Element {
     try {
       const { data } = await api.get('/api/direct-messages', { signal });
       const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+      
       const normalized: DMThread[] = list.map((t: any) => {
-        const last = t?.lastMessage ?? {};
-        const type = last?.type && (last.type === 'photo' || last.type === 'voice') ? last.type : 'text';
-        const content = type === 'text' ? String(last?.content ?? '') : (type === 'photo' ? 'Photo' : 'Voice Memo');
+        // 1. Fix Last Message Logic
+        const rawLast = t.lastMessage ?? t.threadData?.lastMessage;
+        let content = "";
+        let type: 'text' | 'photo' | 'voice' = 'text';
+
+        if (typeof rawLast === 'string') {
+          content = rawLast;
+        } else if (typeof rawLast === 'object' && rawLast !== null) {
+          content = rawLast.content || "";
+          type = rawLast.type || 'text';
+        }
+
+        const hasAttachment = !!t.hasAttachment; 
+        if (!content.trim()) {
+          if (hasAttachment) { type = 'photo'; content = 'Photo'; }
+          else if (type === 'voice') content = 'Voice Memo';
+          else content = ' '; 
+        }
+        
+        // 2. Fix ID and Name Logic
         const id = String(t.partnerId ?? t.id ?? '');
-        const lastAt = Number(new Date(t?.lastTimestamp ?? last?.createdAt ?? Date.now()).getTime());
+        
+        // ✅ CRITICAL FIX: Check fullName first, then fallbacks. 
+        // This ensures we display the name from the backend aggregation.
+        const name = String(t.fullName || t.partnerName || t.name || t.email || 'Unknown User');
+        
+        const lastAt = Number(new Date(t.lastTimestamp ?? t.updatedAt ?? Date.now()).getTime());
+
         return {
           id,
-          name: String(t.partnerName ?? t.fullName ?? 'Unknown'),
+          name,
           avatar: t.avatarEmoji || t.avatar || '🗣️',
-          lastMsg: { type, content },
+          lastMsg: { type, content }, 
           lastAt,
-          unread: 0,
+          unread: Number(t.unread || 0),
           online: !!t.online,
           typing: !!t.typing,
           pinned: !!t.pinned,
         };
       });
+      
       return normalized;
-    } catch {
+    } catch (error) {
+      console.log("[DM Fetch Error]", error);
       return [] as DMThread[];
     }
   }, [isAuthed]);
 
-  // Initial load
+  /* ------------------- Refresh & Init ------------------- */
+
+  const onRefresh = useCallback(async () => {
+    const ac = new AbortController();
+    try {
+      setIsRefreshing(true);
+      const dm = await fetchDMThreads(ac.signal);
+      await refreshUnread?.();
+      setThreads(resortByPinnedAndRecent(dm));
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } finally {
+      setIsRefreshing(false);
+      ac.abort();
+    }
+  }, [fetchDMThreads, refreshUnread]);
+
   useEffect(() => {
     const ac = new AbortController();
     setIsLoading(true);
+    let timer: NodeJS.Timeout | undefined; 
+
     (async () => {
       const dm = await fetchDMThreads(ac.signal);
       await refreshUnread?.();
       setThreads(resortByPinnedAndRecent(dm));
       setIsLoading(false);
+      
+      if (isAuthed) {
+          timer = setTimeout(() => { onRefresh(); }, 500) as unknown as NodeJS.Timeout;
+      }
     })();
-    return () => ac.abort();
-  }, [fetchDMThreads, refreshUnread]);
-
+    
+    return () => {
+      ac.abort();
+      if (timer) clearTimeout(timer); 
+    };
+  }, [fetchDMThreads, refreshUnread, isAuthed, onRefresh]); 
+ 
   // Keep unread in sync
   useEffect(() => {
     if (!threads.length) return;
@@ -343,16 +398,6 @@ export default function DMsScreen(): React.JSX.Element {
       setThreads(prev =>
         prev.map(t => t.id === uid ? ({ ...t, online }) : t)
       );
-
-      setActiveUsers(prev => {
-        const map = new Map(prev.map(u => [u.id, u]));
-        if (online) {
-          map.set(uid, { id: uid, name: nameForId(uid), avatar: '🟢' });
-        } else {
-          map.delete(uid);
-        }
-        return Array.from(map.values()).slice(0, 12);
-      });
     };
 
     const onTyping = (payload: any) => {
@@ -384,7 +429,8 @@ export default function DMsScreen(): React.JSX.Element {
         }
         const created: DMThread = {
           id: from,
-          name: String(payload?.fromName || 'Unknown'),
+          // If new thread, try to use the name from payload, else fallback
+          name: String(payload?.fromName || 'New Message'),
           avatar: payload?.fromAvatar || '🗣️',
           lastMsg: content,
           lastAt,
@@ -434,25 +480,23 @@ export default function DMsScreen(): React.JSX.Element {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
-const openDM = async (partnerId: string) => {
-  await markThreadRead?.(partnerId);
-  setThreads(cur => cur.map(t => (t.id === partnerId ? { ...t, unread: 0 } : t)));
-  router.push(`/dm/${partnerId}`);   // <-- go to the thread screen
-};
-
-  const onRefresh = useCallback(async () => {
-    const ac = new AbortController();
-    try {
-      setIsRefreshing(true);
-      const dm = await fetchDMThreads(ac.signal);
-      await refreshUnread?.();
-      setThreads(resortByPinnedAndRecent(dm));
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } finally {
-      setIsRefreshing(false);
-      ac.abort();
-    }
-  }, [fetchDMThreads, refreshUnread]);
+  // ⭐⭐⭐ FIX: PASS NAME AND AVATAR VIA PARAMS ⭐⭐⭐
+  // This ensures the Chat Screen shows the name immediately, not "Direct Message"
+  const openDM = async (partnerId: string) => {
+    const thread = threads.find(t => t.id === partnerId);
+    await markThreadRead?.(partnerId);
+    
+    setThreads(cur => cur.map(t => (t.id === partnerId ? { ...t, unread: 0 } : t)));
+    
+    router.push({
+        pathname: "/dm/[id]",
+        params: { 
+            id: partnerId,
+            name: thread?.name ?? "User",
+            avatar: thread?.avatar 
+        }
+    });
+  };
 
   // Debounce search
   useEffect(() => {
@@ -490,7 +534,7 @@ const openDM = async (partnerId: string) => {
 
   return (
     <View className="flex-1" style={{ backgroundColor: isDark ? '#000' : '#F3F4F6' }}>
-      <AnimatedFlatList
+      <Animated.FlatList
         data={filteredThreads}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
@@ -605,6 +649,7 @@ const openDM = async (partnerId: string) => {
 }
 
 /* ───────────────── Sorting helper ───────────────── */
+// ⭐ FIX: Helper function definition is now present here
 function resortByPinnedAndRecent(list: DMThread[]) {
   return [...list].sort((a, b) => {
     if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;

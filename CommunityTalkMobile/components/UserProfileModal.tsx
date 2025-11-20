@@ -8,9 +8,8 @@ import {
   Pressable,
   ActivityIndicator,
   Alert,
-  Platform, // Added Platform for potential styling needs
+  Platform, 
 } from "react-native";
-// ⭐ FIX: Corrected Ionicons import path
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
@@ -18,6 +17,7 @@ import { router } from "expo-router";
 import { getOrCreateDMThread } from "@/src/api/dm";
 import { api } from "@/src/api/api"; 
 
+// --- Component Types ---
 type UserProfileModalProps = {
   visible: boolean;
   onClose: () => void;
@@ -33,6 +33,24 @@ type UserProfileModalProps = {
   currentUserId?: string;
 };
 
+// --- Helper Functions ---
+
+// Generate avatar color (HSL based on user ID/name)
+const hueFrom = (s: string) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return `hsl(${h} 85% 55%)`; 
+};
+
+// Generate initials
+const initials = (name?: string, fallback?: string) => {
+  const base = (name || fallback || "").trim();
+  const parts = base.split(/\s+/).filter(Boolean);
+  const s = (parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] || "" : "");
+  return (s || "U").toUpperCase();
+};
+
+// --- Modal Component ---
 const UserProfileModal: React.FC<UserProfileModalProps> = ({
   visible,
   onClose,
@@ -47,40 +65,36 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   const isCurrentUser = String(user.id) === String(currentUserId);
   const isOnline = user.status === "online";
+  const userColor = hueFrom(user.name || user.email || "U");
 
-  // Generate avatar color (HSL based on user ID/name)
-  const hueFrom = (s: string) => {
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-    // Increased saturation/lightness for better contrast
-    return `hsl(${h} 85% 55%)`; 
-  };
 
-  // Generate initials
-  const initials = (name?: string, fallback?: string) => {
-    const base = (name || fallback || "").trim();
-    const parts = base.split(/\s+/).filter(Boolean);
-    const s = (parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] || "" : "");
-    return (s || "U").toUpperCase();
-  };
-
-  const handleSendDM = async () => {
+const handleSendDM = async () => {
     if (isCurrentUser) return;
 
     setLoading(true);
     try {
-      const thread = await getOrCreateDMThread(user.id);
-      
-      const partnerId =
-        (thread as any)?.partnerId ||
-        (thread as any)?.partner?.id ||
-        (Array.isArray((thread as any)?.participants)
-          ? (thread as any).participants.find((p: string) => String(p) !== String(currentUserId))
-          : null) ||
-        user.id;
+        const thread = await getOrCreateDMThread(user.id);
+        
+        const partnerId =
+            (thread as any)?.partnerId ||
+            (thread as any)?.partner?.id ||
+            (Array.isArray((thread as any)?.participants)
+            ? (thread as any).participants.find((p: string) => String(p) !== String(currentUserId))
+            : null) ||
+            user.id;
 
-      onClose();
-      router.push(`/dm/${partnerId}`);
+        onClose();
+        
+        // ⭐ FIX APPLIED HERE: Use the correct dynamic route syntax
+        router.push({ 
+            pathname: `/dm/[id]`,  // Use the bracketed slug name
+            params: { 
+                id: partnerId,     // Pass the actual ID as a param
+                name: user.name, 
+                avatar: user.avatar 
+            } 
+        });
+
     } catch (error: any) {
       console.error("Failed to create DM thread:", error);
       Alert.alert(
@@ -105,10 +119,9 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 onPress: async () => {
                     setLoading(true);
                     try {
-                        // Call the backend endpoint to create the Report document
                         await api.post("/api/reports/user", { 
                             reportedUserId: user.id,
-                            reason: "Block initiated from user profile modal." // Default reason
+                            reason: "Block initiated from user profile modal." 
                         });
                         
                         Alert.alert("Success", `${user.name} has been blocked and reported.`);
@@ -130,6 +143,78 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     );
   };
 
+  // --- Reusable Button Component for Cleanliness ---
+  const ActionButton = ({
+    label,
+    iconName,
+    onPress,
+    isPrimary = false,
+    isDestructive = false,
+  }: {
+    label: string;
+    iconName: keyof typeof Ionicons.glyphMap;
+    onPress: () => void;
+    isPrimary?: boolean;
+    isDestructive?: boolean;
+  }) => {
+    const defaultTextColor = isDestructive ? colors.danger : colors.textSecondary;
+    const defaultBgColor = isDestructive ? colors.dangerBg : colors.surface;
+    const defaultBorderColor = isDestructive ? colors.dangerBorder : colors.border;
+    
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        disabled={loading}
+        style={{
+          borderRadius: 14,
+          paddingVertical: 14,
+          paddingHorizontal: 16,
+          backgroundColor: isPrimary ? 'transparent' : defaultBgColor,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          borderWidth: 1,
+          borderColor: isPrimary ? 'transparent' : defaultBorderColor,
+          overflow: 'hidden',
+          shadowColor: isPrimary ? colors.primary : 'transparent',
+          shadowOffset: isPrimary ? { width: 0, height: 4 } : { width: 0, height: 0 },
+          shadowOpacity: isPrimary ? 0.3 : 0,
+          shadowRadius: isPrimary ? 8 : 0,
+          elevation: isPrimary ? 8 : 0,
+        }}
+      >
+        {isPrimary ? (
+            <LinearGradient
+                colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{
+                    ...StyleSheet.absoluteFillObject,
+                    borderRadius: 14,
+                    zIndex: -1,
+                }}
+            />
+        ) : null}
+        
+        <Ionicons name={iconName} size={22} color={isPrimary ? '#fff' : defaultTextColor} />
+        <Text 
+            style={{ 
+                color: isPrimary ? '#fff' : defaultTextColor, 
+                fontWeight: isPrimary ? '800' : '600', 
+                fontSize: 16,
+                flex: 1,
+            }}
+        >
+          {label}
+        </Text>
+        {loading && <ActivityIndicator color={isPrimary ? '#fff' : defaultTextColor} />}
+      </TouchableOpacity>
+    );
+  };
+  
+  // Define StyleSheet here for absoluteFillObject fix
+  const StyleSheet = require('react-native').StyleSheet;
+
   return (
     <Modal
       visible={visible}
@@ -140,7 +225,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       <Pressable
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.8)", // Darker backdrop
+          backgroundColor: "rgba(0,0,0,0.8)",
           justifyContent: "center",
           alignItems: "center",
         }}
@@ -161,232 +246,138 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
               overflow: "hidden",
               borderWidth: 1,
               borderColor: isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.1)",
-              shadowColor: colors.shadow,
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: isDark ? 0.6 : 0.2,
-              shadowRadius: 20,
-              elevation: 15,
             }}
           >
-            {/* Header with Avatar */}
-            <View
-              style={{
-                paddingTop: 36, // Increased padding
-                paddingBottom: 28, // Increased padding
-                alignItems: "center",
-                borderBottomWidth: 1,
-                borderBottomColor: colors.border,
-                backgroundColor: isDark ? colors.surface : colors.surfaceElevated, // Ensure background is visible under blur
-              }}
-            >
-              {/* Large Avatar */}
-              <View
-                style={{
-                  position: "relative",
-                  marginBottom: 16,
-                }}
-              >
-                <View
-                  style={{
-                    width: 96,
-                    height: 96,
-                    borderRadius: 48,
-                    backgroundColor: hueFrom(user.name || user.email || "U"),
-                    alignItems: "center",
-                    justifyContent: "center",
-                    // Removed redundant shadow style here to rely on container's elevation
-                  }}
+            {/* 1. DISCORD-STYLE BANNER & AVATAR BLOCK */}
+            <View style={{ position: 'relative' }}>
+                {/* Banner Area */}
+                <View 
+                    style={{ 
+                        height: 70, 
+                        backgroundColor: userColor, 
+                        borderBottomWidth: 1, 
+                        borderBottomColor: colors.border 
+                    }} 
+                />
+
+                {/* Main Content Area (Below Banner) */}
+                <View 
+                    style={{ 
+                        padding: 24,
+                        paddingTop: 64, // Space for the floating avatar
+                        backgroundColor: isDark ? colors.surface : colors.surfaceElevated,
+                        minHeight: 180,
+                    }}
                 >
-                  <Text style={{ color: "#fff", fontWeight: "800", fontSize: 38 }}>
-                    {initials(user.name, user.email)}
-                  </Text>
+                    {/* Name, Email & Status */}
+                    <Text
+                        style={{
+                            color: colors.text,
+                            fontSize: 22,
+                            fontWeight: "800",
+                            marginBottom: 4,
+                        }}
+                    >
+                        {user.name}
+                    </Text>
+
+                    {user.email && (
+                        <Text
+                            style={{
+                                color: colors.textSecondary,
+                                fontSize: 14,
+                                marginBottom: 16,
+                            }}
+                        >
+                            {user.email}
+                        </Text>
+                    )}
+                    
+                    {/* Placeholder for Profile Info (optional - can be added here) */}
+                    <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 16 }}>
+                        Joined: November 20, 2025
+                    </Text>
+
+
+                    {/* Action Buttons */}
+                    <View style={{ paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border, gap: 10 }}>
+                        {!isCurrentUser && (
+                            <>
+                                {/* Primary Action: Send Message */}
+                                <ActionButton
+                                    label="Send Message"
+                                    iconName="chatbubble-outline"
+                                    onPress={handleSendDM}
+                                    isPrimary={true}
+                                />
+
+                                {/* Secondary Action: View Full Profile */}
+                                <ActionButton
+                                    label="View Full Profile"
+                                    iconName="person-outline"
+                                    onPress={() => Alert.alert("Coming Soon", "Full profile view will be available soon!")}
+                                />
+                            </>
+                        )}
+                        
+                        {/* Tertiary Actions (Destructive/Utility) */}
+                        <View style={{ marginTop: 8, gap: 10 }}>
+                            {/* Report & Block Button */}
+                            {!isCurrentUser && (
+                                <ActionButton
+                                    label="Report & Block User"
+                                    iconName="flag-outline"
+                                    onPress={handleReport}
+                                    isDestructive={true}
+                                />
+                            )}
+                            
+                            {/* Cancel Button */}
+                            <ActionButton
+                                label={isCurrentUser ? "Close" : "Cancel"}
+                                iconName="close-circle-outline"
+                                onPress={onClose}
+                            />
+                        </View>
+                    </View>
                 </View>
 
-                {/* Online status indicator */}
-                {isOnline && (
-                  <View
+                {/* Floating Avatar (positioned absolutely over the banner/content break) */}
+                <View
                     style={{
-                      position: "absolute",
-                      bottom: 4,
-                      right: 4,
-                      width: 24,
-                      height: 24,
-                      borderRadius: 12,
-                      backgroundColor: colors.success,
-                      borderWidth: 4,
-                      borderColor: isDark ? colors.surface : "#FFFFFF", // Match modal surface color
-                    }}
-                  />
-                )}
-              </View>
-
-              {/* Name */}
-              <Text
-                style={{
-                  color: colors.text,
-                  fontSize: 24,
-                  fontWeight: "800", // Bolder name
-                  marginBottom: 4,
-                  textAlign: 'center',
-                  paddingHorizontal: 10,
-                }}
-              >
-                {user.name}
-              </Text>
-
-              {/* Email */}
-              {user.email && (
-                <Text
-                  style={{
-                    color: colors.textSecondary,
-                    fontSize: 14,
-                    marginBottom: 12,
-                    textAlign: 'center',
-                    paddingHorizontal: 10,
-                  }}
-                >
-                  {user.email}
-                </Text>
-              )}
-
-              {/* Status Badge */}
-              <View
-                style={{
-                  backgroundColor: isOnline ? colors.onlineBg : colors.offlineBg,
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  borderRadius: 16, // Larger rounding
-                  minWidth: 100,
-                  alignItems: 'center',
-                }}
-              >
-                <Text
-                  style={{
-                    color: isOnline ? colors.onlineText : colors.offlineText,
-                    fontSize: 13, // Slightly larger font
-                    fontWeight: "800",
-                    letterSpacing: 0.8,
-                  }}
-                >
-                  {isOnline ? "ONLINE" : "OFFLINE"}
-                </Text>
-              </View>
-            </View>
-
-            {/* Action Buttons */}
-            <View style={{ padding: 20, gap: 12 }}>
-              {!isCurrentUser && (
-                <>
-                  {/* Send Message Button (Primary) */}
-                  <TouchableOpacity
-                    onPress={handleSendDM}
-                    disabled={loading}
-                    style={{
-                      borderRadius: 14,
-                      overflow: "hidden",
-                      shadowColor: colors.primary,
-                      shadowOffset: { width: 0, height: 6 }, // Stronger shadow
-                      shadowOpacity: 0.4,
-                      shadowRadius: 10,
-                      elevation: 10,
-                    }}
-                  >
-                    <LinearGradient
-                      colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 1 }}
-                      style={{
-                        paddingVertical: 16, // Increased padding
-                        paddingHorizontal: 24,
-                        flexDirection: "row",
+                        position: 'absolute',
+                        top: 24,
+                        left: 24,
+                        width: 80,
+                        height: 80,
+                        borderRadius: 40,
+                        borderWidth: 6,
+                        borderColor: isDark ? colors.surface : colors.surfaceElevated,
+                        backgroundColor: userColor,
                         alignItems: "center",
                         justifyContent: "center",
-                        gap: 10, // Increased gap
-                      }}
-                    >
-                      {loading ? (
-                        <ActivityIndicator color="#FFFFFF" />
-                      ) : (
-                        <>
-                          <Ionicons name="chatbubble-outline" size={22} color="#FFFFFF" />
-                          <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 17 }}>
-                            Send Message
-                          </Text>
-                        </>
-                      )}
-                    </LinearGradient>
-                  </TouchableOpacity>
-
-                  {/* View Profile Button (Secondary) */}
-                  <TouchableOpacity
-                    style={{
-                      borderRadius: 14,
-                      paddingVertical: 16,
-                      paddingHorizontal: 24,
-                      backgroundColor: colors.surface,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 10,
-                      borderWidth: 1,
-                      borderColor: colors.border,
+                        zIndex: 10,
                     }}
-                    onPress={() => {
-                      onClose();
-                      Alert.alert("Coming Soon", "Full profile view will be available soon!");
-                    }}
-                  >
-                    <Ionicons name="person-outline" size={22} color={colors.text} />
-                    <Text style={{ color: colors.text, fontWeight: "700", fontSize: 17 }}>
-                      View Full Profile
-                    </Text>
-                  </TouchableOpacity>
-                  
-                  {/* ⭐ Report & Block Button (Destructive) */}
-                  <TouchableOpacity
-                    onPress={handleReport}
-                    disabled={loading}
-                    style={{
-                      marginTop: 10,
-                      paddingVertical: 10,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexDirection: 'row',
-                      gap: 8,
-                    }}
-                  >
-                    <Ionicons name="flag-outline" size={18} color={colors.danger} />
-                    <Text style={{ color: colors.danger, fontWeight: "700", fontSize: 14 }}>
-                      Report & Block User
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {/* Close Button (Tertiary) */}
-              <TouchableOpacity
-                onPress={onClose}
-                disabled={loading}
-                style={{
-                  borderRadius: 14,
-                  paddingVertical: 14,
-                  paddingHorizontal: 24,
-                  backgroundColor: isDark ? colors.surfaceElevated : colors.border,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  marginTop: isCurrentUser ? 10 : 0, // Add spacing if it's the current user
-                }}
-              >
-                <Text
-                  style={{
-                    color: isDark ? colors.text : colors.textSecondary,
-                    fontWeight: "700",
-                    fontSize: 16,
-                  }}
                 >
-                  {isCurrentUser ? "Close" : "Cancel"}
-                </Text>
-              </TouchableOpacity>
+                    <Text style={{ color: "#fff", fontWeight: "800", fontSize: 36 }}>
+                        {initials(user.name, user.email)}
+                    </Text>
+
+                    {/* Status Indicator */}
+                    <View
+                        style={{
+                            position: "absolute",
+                            bottom: 0,
+                            right: 0,
+                            width: 20,
+                            height: 20,
+                            borderRadius: 10,
+                            backgroundColor: isOnline ? colors.success : colors.offlineText, // Using offlineText for offline status color
+                            borderWidth: 4,
+                            borderColor: isDark ? colors.surface : colors.surfaceElevated,
+                        }}
+                    />
+                </View>
             </View>
           </BlurView>
         </Pressable>

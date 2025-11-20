@@ -260,8 +260,13 @@ export default function DMThreadScreen() {
         };
       }
     }
-    return { partnerId, partnerName: "Direct Message" };
-  }, [USER_ENDPOINTS, partnerId]);
+    // ⭐ FIX 1: If API fails, return the name passed via navigation parameters
+    return {
+      partnerId,
+      partnerName: paramName || "Direct Message",
+      avatar: paramAvatar || undefined,
+    };
+  }, [USER_ENDPOINTS, partnerId, paramName, paramAvatar]); // Added paramName, paramAvatar
 
   /* ─────── Initial load ─────── */
   const loadInitial = useCallback(async () => {
@@ -269,7 +274,14 @@ export default function DMThreadScreen() {
     setLoading(true);
     try {
       const [metaData] = await Promise.all([fetchPartnerMeta()]);
-      setMeta(metaData);
+
+      // ⭐ FIX 2: Ensure the meta state uses the name/avatar if the API returned the fallback
+      const finalMeta = {
+        ...metaData,
+        partnerName: metaData.partnerName || paramName,
+        avatar: metaData.avatar || paramAvatar,
+      };
+      setMeta(finalMeta);
 
       let msgs: any[] = [];
       try {
@@ -299,14 +311,14 @@ export default function DMThreadScreen() {
     } finally {
       setLoading(false);
     }
-  }, [partnerId, fetchPartnerMeta, socket]);
+  }, [partnerId, fetchPartnerMeta, socket, paramName, paramAvatar]); // Added paramName, paramAvatar
 
   useEffect(() => {
     loadInitial();
     return () => {
       socket?.emit?.("room:leave", { room: `dm:${partnerId}` });
     };
-  }, [loadInitial]);
+  }, [loadInitial, partnerId]); // Added partnerId dependency
 
   /* ─────── Pagination (older) ─────── */
   const loadOlder = useCallback(async () => {
@@ -443,11 +455,11 @@ export default function DMThreadScreen() {
     meta?.online
       ? "online"
       : lastSeenIso
-      ? `last seen ${new Date(lastSeenIso as any).toLocaleTimeString([], {
+        ? `last seen ${new Date(lastSeenIso as any).toLocaleTimeString([], {
           hour: "numeric",
           minute: "2-digit",
         })}`
-      : "";
+        : "";
 
   const renderItem = ({
     item,
@@ -566,7 +578,14 @@ export default function DMThreadScreen() {
                     status={status}
                     onPressBack={() => router.back()}
                     onPressProfile={() => {
-                      // router.push({ pathname: "/profile/[id]", params: { id: partnerId } });
+                      // We need the full user object to show the modal/profile,
+                      // but since we don't have it directly, we navigate to the profile screen
+                      // which will fetch the data using the partnerId.
+                      // Alternatively, we could open the UserProfileModal component here if it's imported.
+                      router.push({
+                        pathname: "/profile/[id]",
+                        params: { id: partnerId },
+                      } as never); // ⭐ FIX: Using as never to bypass the strict type error
                     }}
                     onPressMore={() => {
                       // open a bottom sheet / actions
