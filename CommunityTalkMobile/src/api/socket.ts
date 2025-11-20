@@ -3,28 +3,39 @@ import { io, Socket } from "socket.io-client";
 import { API_BASE_URL } from "../utils/config";
 import { getAccessToken } from "../utils/storage";
 
+/* ============================================================
+   INTERNAL STATE
+   ============================================================ */
 let socket: Socket | null = null;
+let tokenLoaded = false;
 
-/** Normalize base URL (strip trailing slashes) */
+/** Called by AuthContext when token finished loading */
+export function markSocketTokenLoaded() {
+  tokenLoaded = true;
+}
+
+/* ============================================================
+   HELPERS
+   ============================================================ */
 function normalizeBase(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-/** Build the Socket.IO endpoint from API_BASE_URL */
 function getSocketBase(): string {
-  
   return normalizeBase(API_BASE_URL);
 }
 
-/**
- * Create (or re-create) a connected socket.
- * Will resolve when "connect" fires, or reject on initial connect_error.
- */
+/* ============================================================
+   CREATE + CONNECT SOCKET
+   ============================================================ */
 export async function connectSocket(providedToken?: string): Promise<Socket> {
   const token = providedToken ?? (await getAccessToken());
-  if (!token) throw new Error("No token for socket connection");
 
-  // If an old socket exists, clean it up first
+  if (!token) {
+    throw new Error("No token available for socket connection");
+  }
+
+  // Clean up existing socket
   if (socket) {
     try {
       socket.removeAllListeners();
@@ -33,40 +44,47 @@ export async function connectSocket(providedToken?: string): Promise<Socket> {
     socket = null;
   }
 
-  socket = io(getSocketBase(), {
-    // IMPORTANT for React Native
+  const base = getSocketBase();
+  if (__DEV__) {
+    console.log("[socket] Connecting to:", base);
+  }
+
+  socket = io(base, {
     transports: ["websocket"],
     path: "/socket.io",
-    // Auth header for server handshake
     auth: { token },
     extraHeaders: { Authorization: `Bearer ${token}` },
 
-    // Reconnect policy
+    // Reconnect settings
     reconnection: true,
     reconnectionAttempts: Infinity,
-    reconnectionDelay: 500,       // start backoff at 0.5s
-    reconnectionDelayMax: 8000,   // cap backoff
-    timeout: 20000,               // 20s connect timeout
+    reconnectionDelay: 500,
+    reconnectionDelayMax: 8000,
+    timeout: 20000,
 
-    // Create a fresh Manager for this socket (avoids stale state across logouts)
+    // A fresh Manager instance every time → avoids stale state across logins
     forceNew: true,
     autoConnect: true,
   });
 
-  // Return a promise that settles on first connect or error
+  // Return a promise for initial connection
   return new Promise<Socket>((resolve, reject) => {
-    const onConnect = () => {
-      cleanup();
-      resolve(socket!);
-    };
-    const onError = (err: any) => {
-      cleanup();
-      reject(err);
-    };
     const cleanup = () => {
       socket?.off("connect", onConnect);
       socket?.off("connect_error", onError);
       socket?.off("error", onError);
+    };
+
+    const onConnect = () => {
+      cleanup();
+      if (__DEV__) console.log("[socket] Connected.");
+      resolve(socket!);
+    };
+
+    const onError = (err: any) => {
+      cleanup();
+      console.error("[socket] Initial connect error:", err?.message || err);
+      reject(err);
     };
 
     socket?.once("connect", onConnect);
@@ -75,58 +93,76 @@ export async function connectSocket(providedToken?: string): Promise<Socket> {
   });
 }
 
-/** Update the auth token and (re)connect without rebuilding listeners. */
+/* ============================================================
+   REFRESH TOKEN (called after login or token refresh)
+   ============================================================ */
 export async function refreshSocketAuth(newToken?: string): Promise<void> {
   const token = newToken ?? (await getAccessToken());
   if (!token) return;
 
-  // If socket exists, set new auth and reconnect
-  if (socket) {
-
-    socket.auth = { token };
-    try {
-      // Also update extraHeaders for RN environments
-
-      socket.io.opts.extraHeaders = { Authorization: `Bearer ${token}` };
-    } catch {}
-    if (!socket.connected) socket.connect();
-  } else {
-    // If no socket yet, just connect fresh
+  // If no socket yet, create new one
+  if (!socket) {
     await connectSocket(token);
+    return;
+  }
+
+  // Update auth for reconnect
+  socket.auth = { token };
+
+  try {
+    (socket.io.opts as any).extraHeaders = {
+      Authorization: `Bearer ${token}`,
+    };
+  } catch {}
+
+  if (__DEV__) {
+    console.log("[socket] Auth refreshed.");
+  }
+
+  // Reconnect if not connected
+  if (!socket.connected) {
+    try {
+      socket.connect();
+    } catch {}
   }
 }
 
-/** Safe getter: returns the current socket instance or null. */
+/* ============================================================
+   SAFE GETTERS
+   ============================================================ */
 export function getSocket(): Socket | null {
   return socket;
 }
 
-/** Quick boolean for guards/UI. */
 export function isSocketConnected(): boolean {
-  return !!socket && socket.connected === true;
+  return !!socket && socket.connected;
 }
 
-/** Disconnect and drop the singleton. */
+/* ============================================================
+   DISCONNECT CLEANLY
+   ============================================================ */
 export function disconnectSocket(): void {
+  if (__DEV__) console.log("[socket] Disconnecting…");
+
   try {
     socket?.removeAllListeners();
     socket?.disconnect();
-  } finally {
-    socket = null;
-  }
+  } catch {}
+
+  socket = null;
 }
 
-/**
- * Small helper if you need to await a connected socket in a screen:
- * - waits up to `ms` (default 10s)
- * - resolves immediately if already connected
- */
+/* ============================================================
+   WAIT FOR CONNECTION
+   ============================================================ */
 export async function waitForConnection(ms = 10000): Promise<Socket> {
   if (socket?.connected) return socket;
 
   return new Promise<Socket>((resolve, reject) => {
     const s = socket;
-    if (!s) return reject(new Error("Socket not created"));
+    if (!s) {
+      return reject(new Error("Socket not created"));
+    }
 
     const timer = setTimeout(() => {
       cleanup();
@@ -137,10 +173,12 @@ export async function waitForConnection(ms = 10000): Promise<Socket> {
       cleanup();
       resolve(s);
     };
+
     const onError = (err: any) => {
       cleanup();
       reject(err);
     };
+
     const cleanup = () => {
       clearTimeout(timer);
       s.off("connect", onConnect);
@@ -151,6 +189,11 @@ export async function waitForConnection(ms = 10000): Promise<Socket> {
     s.once("connect", onConnect);
     s.once("connect_error", onError);
     s.once("error", onError);
-    if (!s.connected) s.connect();
+
+    if (!s.connected) {
+      try {
+        s.connect();
+      } catch {}
+    }
   });
 }

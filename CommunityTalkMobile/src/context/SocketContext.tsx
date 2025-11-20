@@ -1,5 +1,11 @@
 // CommunityTalkMobile/src/context/SocketContext.tsx
-import React, { createContext, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  createContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { AppState, type AppStateStatus } from "react-native";
 import { connectSocket, disconnectSocket, getSocket } from "../api/socket";
 import { AuthContext } from "./AuthContext";
@@ -27,32 +33,50 @@ const defaultValue: SocketContextValue = {
   markThreadRead: async () => {},
 };
 
-export const SocketContext = createContext<SocketContextValue>(defaultValue);
+export const SocketContext = createContext(defaultValue);
+
 export const useSocket = () => React.useContext(SocketContext);
 
-export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
-  const { isAuthed, user, communities } = React.useContext(AuthContext) as any;
+/* -------------------------------------------------------------------------- */
+/*                          MAIN PROVIDER (PATCHED)                           */
+/* -------------------------------------------------------------------------- */
+
+export const SocketProvider: React.FC<React.PropsWithChildren> = ({
+  children,
+}) => {
+  const { isAuthed, user, communities } =
+    React.useContext(AuthContext) as any;
 
   const [ready, setReady] = useState(false);
-  const [unreadThreads, setUnreadThreads] = useState<Record<string, number>>({});
-  const [communityUnreads, setCommunityUnreads] = useState<Record<string, number>>({});
+  const [unreadThreads, setUnreadThreads] =
+    useState<Record<string, number>>({});
+  const [communityUnreads, setCommunityUnreads] =
+    useState<Record<string, number>>({});
+
   const userIdRef = useRef<string | null>(null);
   const appState = useRef<AppStateStatus>(AppState.currentState);
 
   userIdRef.current = user?._id ? String(user._id) : null;
 
-  // Get user's community IDs as a Set for fast lookup
+  /* ------------------------- Build Community ID Set ------------------------ */
   const myCommunityIds = useMemo(() => {
-    const ids = Array.isArray(communities) 
-      ? communities.map((c: any) => String(c?._id || c?.id || ''))
-      : Array.isArray(user?.communityIds)
-      ? user.communityIds.map((id: any) => String(id))
-      : [];
-    return new Set(ids.filter(Boolean));
+    if (Array.isArray(communities)) {
+      return new Set(
+        communities
+          .map((c: any) => String(c?._id || c?.id || ""))
+          .filter(Boolean)
+      );
+    }
+
+    if (Array.isArray(user?.communityIds)) {
+      return new Set(user.communityIds.map((id: any) => String(id)));
+    }
+
+    return new Set<string>();
   }, [communities, user?.communityIds]);
 
-  /* ----------------------- Derived counts ----------------------- */
-  // DMs: count unread from threads that are NOT in community IDs
+  /* --------------------------- Derived counts ------------------------------ */
+
   const unreadDMs = useMemo(() => {
     return Object.entries(unreadThreads).reduce((acc, [threadId, count]) => {
       if (!myCommunityIds.has(threadId)) {
@@ -62,7 +86,6 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     }, 0);
   }, [unreadThreads, myCommunityIds]);
 
-  // Communities: sum all community unreads
   const unreadCommunities = useMemo(() => {
     return Object.values(communityUnreads).reduce(
       (a, b) => a + (Number.isFinite(b) ? b : 0),
@@ -70,109 +93,117 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
     );
   }, [communityUnreads]);
 
-  /* ----------------------- API Helpers ----------------------- */
-  
-  // Refresh DM unreads
+  /* -------------------------------------------------------------------------- */
+  /*                              API: UNREAD FETCHES                           */
+  /* -------------------------------------------------------------------------- */
+
   const refreshDMUnread = React.useCallback(async () => {
     if (!isAuthed) {
       setUnreadThreads({});
       return;
     }
+
     try {
       const { data } = await api.get("/api/direct-messages");
-      const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+      const list =
+        Array.isArray(data) || Array.isArray(data?.items)
+          ? data?.items || data
+          : [];
+
       const next: Record<string, number> = {};
       for (const t of list) {
-        const pid = String(t.partnerId || "");
-        const cnt = Number(t.unread || 0);
-        if (pid) next[pid] = cnt;
+        const partnerId = String(t.partnerId || "");
+        const count = Number(t.unread || 0);
+        if (partnerId) next[partnerId] = count;
       }
+
       setUnreadThreads(next);
-    } catch {
+    } catch (err) {
       setUnreadThreads({});
     }
   }, [isAuthed]);
 
-  // Refresh community unreads
   const refreshCommunityUnread = React.useCallback(async () => {
     if (!isAuthed || !myCommunityIds.size) {
       setCommunityUnreads({});
       return;
     }
+
     try {
-      // Fetch unread count for each community
-      const communityIds = Array.from(myCommunityIds);
+      const ids = Array.from(myCommunityIds);
+
       const results = await Promise.all(
-        communityIds.map(async (cId) => {
+        ids.map(async (id) => {
           try {
-            const { data } = await api.get(`/api/communities/${cId}/unread`);
-            return { id: cId, count: Number(data?.unread || data?.count || 0) };
+            const { data } = await api.get(
+              `/api/communities/${id}/unread`
+            );
+            return { id, count: Number(data?.unread || data?.count || 0) };
           } catch {
-            return { id: cId, count: 0 };
+            return { id, count: 0 };
           }
         })
       );
-      
-      const next: Record<string, number> = {};
-      results.forEach(({ id, count }) => {
-        const idStr = String(id);
-        if (idStr) next[idStr] = count;
-      });
-      setCommunityUnreads(next);
+
+      const out: Record<string, number> = {};
+      for (const r of results) {
+  const idStr = String(r.id ?? "");
+  if (idStr) out[idStr] = r.count;
+}
+
+      setCommunityUnreads(out);
     } catch {
       setCommunityUnreads({});
     }
   }, [isAuthed, myCommunityIds]);
 
-  // Combined refresh function
   const refreshUnread = React.useCallback(async () => {
-    await Promise.all([
-      refreshDMUnread(),
-      refreshCommunityUnread(),
-    ]);
-  }, [refreshDMUnread, refreshCommunityUnread]);
+    if (!isAuthed) return;
+    await Promise.all([refreshDMUnread(), refreshCommunityUnread()]);
+  }, [isAuthed, refreshDMUnread, refreshCommunityUnread]);
+
+  /* -------------------------------------------------------------------------- */
+  /*                         MARK THREAD AS READ (DM or Community)             */
+  /* -------------------------------------------------------------------------- */
 
   const markThreadRead = React.useCallback(
     async (partnerId: string) => {
       if (!isAuthed || !partnerId) return;
-      
-      // Check if it's a community or DM
+
       const isCommunity = myCommunityIds.has(partnerId);
-      
+
       try {
         if (isCommunity) {
-          // Mark community as read
           await api.patch(`/api/communities/${partnerId}/read`);
-          setCommunityUnreads((prev) => {
-            if (!prev[partnerId]) return prev;
-            const next = { ...prev };
-            next[partnerId] = 0;
-            return next;
-          });
+          setCommunityUnreads((prev) => ({
+            ...prev,
+            [partnerId]: 0,
+          }));
         } else {
-          // Mark DM as read
           await api.patch(`/api/direct-messages/${partnerId}/read`);
-          setUnreadThreads((prev) => {
-            if (!prev[partnerId]) return prev;
-            const next = { ...prev };
-            next[partnerId] = 0;
-            return next;
-          });
+          setUnreadThreads((prev) => ({
+            ...prev,
+            [partnerId]: 0,
+          }));
         }
-      } catch (error) {
-        console.error("[Socket] Failed to mark thread as read:", error);
+      } catch (err) {
+        console.warn("[socket] failed to mark read:", err);
       }
     },
     [isAuthed, myCommunityIds]
   );
 
-  /* ----------------------- Socket Lifecycle ----------------------- */
+  /* -------------------------------------------------------------------------- */
+  /*                          SOCKET CONNECTION LIFECYCLE                       */
+  /* -------------------------------------------------------------------------- */
+
   useEffect(() => {
     let mounted = true;
-    let socketRef: SocketRef = null;
+    let socket: SocketRef = null;
 
-    const attach = async () => {
-      if (!isAuthed) {
+    const start = async () => {
+      /* ---------- Logout or not ready ---------- */
+      if (!isAuthed || !user || !communities) {
         setReady(false);
         setUnreadThreads({});
         setCommunityUnreads({});
@@ -180,53 +211,58 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
         return;
       }
 
+      /* ---------- Establish socket ---------- */
       await connectSocket();
       if (!mounted) return;
-      
-      socketRef = getSocket();
-      if (!socketRef) return;
 
+      socket = getSocket();
+      if (!socket) return;
+
+      /* ------------------ ROOM LOGIC ------------------ */
       const college = user?.collegeSlug ?? user?.collegeId ?? null;
       const faith = user?.religionKey ?? user?.faithId ?? null;
+
       const eventsRoom =
         typeof college === "string" && typeof faith === "string"
           ? `college:${college}:faith:${faith}`
           : null;
 
-      const joinRooms = () => {
-        if (!socketRef) return;
-        
+      const bindRooms = () => {
+        if (!socket) return;
+
         if (eventsRoom) {
-          socketRef.emit?.("events:join", { room: eventsRoom });
+          socket.emit?.("events:join", { room: eventsRoom });
         }
-        
-        // Subscribe to all user's communities
-        const communityIds = Array.from(myCommunityIds);
-        if (communityIds.length > 0) {
-          socketRef.emit?.("subscribe:communities", { ids: communityIds });
-          console.log("🏛️ Subscribed to communities:", communityIds.length);
+
+        const ids = Array.from(myCommunityIds);
+        if (ids.length > 0) {
+          socket.emit?.("subscribe:communities", { ids });
+          console.log("🟣 Subscribed to communities:", ids.length);
         }
-        
-        console.log("🏫 Joined room:", eventsRoom);
+
+        if (eventsRoom) {
+          console.log("🟢 Joined events room:", eventsRoom);
+        }
       };
 
-      socketRef.on?.("connect", () => {
-        console.log("🔌 Socket connected:", socketRef?.id);
-        joinRooms();
+      /* ------------------ EVENT HANDLERS ------------------ */
+
+      const onConnect = () => {
+        console.log("🔌 Socket connected:", socket?.id);
+        bindRooms();
         refreshUnread();
-      });
+      };
 
-      socketRef.on?.("disconnect", () => console.log("⚠️ Socket disconnected"));
+      const onDisconnect = () => {
+        console.log("⚠️ Socket disconnected");
+      };
 
-      /* -------------------- Event Handlers -------------------- */
-      
-      // Handle incoming DM
-      const onReceiveDM = (payload: any) => {
-        console.log("📩 [SocketContext] DM:", payload);
+      const onDM = (payload: any) => {
         const myId = userIdRef.current;
         const to = String(payload?.to || "");
         const from = String(payload?.from || "");
-        if (myId && to && from && myId === to) {
+
+        if (myId && to === myId) {
           setUnreadThreads((prev) => ({
             ...prev,
             [from]: (prev[from] || 0) + 1,
@@ -234,14 +270,11 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
         }
       };
 
-      // Handle incoming community message
       const onCommunityMessage = (payload: any) => {
-        console.log("💬 [SocketContext] receive_message:", payload);
         const communityId = String(payload?.communityId || "");
         const senderId = String(payload?.senderId || payload?.sender?._id || "");
         const myId = userIdRef.current;
-        
-        // Only increment unread if message is from someone else and it's a community we're in
+
         if (communityId && senderId !== myId && myCommunityIds.has(communityId)) {
           setCommunityUnreads((prev) => ({
             ...prev,
@@ -250,66 +283,72 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
         }
       };
 
-      const onCommunityNew = (data: any) => {
-        console.log("🆕 [SocketContext] message:new:", data);
-        // Same logic as onCommunityMessage
-        const communityId = String(data?.communityId || "");
-        const senderId = String(data?.senderId || data?.sender?._id || "");
-        const myId = userIdRef.current;
-        
-        if (communityId && senderId !== myId && myCommunityIds.has(communityId)) {
-          setCommunityUnreads((prev) => ({
-            ...prev,
-            [communityId]: (prev[communityId] || 0) + 1,
-          }));
-        }
-      };
+      /* ------------------ BIND LISTENERS ------------------ */
 
-      /* Register Events */
-      if (socketRef) {
-        socketRef.on?.("receive_direct_message", onReceiveDM);
-        socketRef.on?.("dm:message", onReceiveDM);
-        socketRef.on?.("receive_message", onCommunityMessage);
-        socketRef.on?.("message:new", onCommunityNew);
-      }
+      socket.on?.("connect", onConnect);
+      socket.on?.("disconnect", onDisconnect);
+      socket.on?.("receive_direct_message", onDM);
+      socket.on?.("dm:message", onDM);
+      socket.on?.("receive_message", onCommunityMessage);
+      socket.on?.("message:new", onCommunityMessage);
 
+      /* ------------------ INITIAL UNREADS ------------------ */
       await refreshUnread();
-      if (socketRef) {
-        joinRooms();
-      }
+
       setReady(true);
 
+      /* ------------------ CLEANUP ------------------ */
       return () => {
-        if (!socketRef) return;
-        socketRef.off?.("receive_direct_message", onReceiveDM);
-        socketRef.off?.("dm:message", onReceiveDM);
-        socketRef.off?.("receive_message", onCommunityMessage);
-        socketRef.off?.("message:new", onCommunityNew);
+        socket?.off?.("connect", onConnect);
+        socket?.off?.("disconnect", onDisconnect);
+        socket?.off?.("receive_direct_message", onDM);
+        socket?.off?.("dm:message", onDM);
+        socket?.off?.("receive_message", onCommunityMessage);
+        socket?.off?.("message:new", onCommunityMessage);
       };
     };
 
-    attach();
+    start();
 
     return () => {
       mounted = false;
-      socketRef?.removeAllListeners?.();
+      socket?.removeAllListeners?.();
       disconnectSocket();
     };
-  }, [isAuthed, refreshUnread, user?.collegeSlug, user?.religionKey, user?.collegeId, user?.faithId, myCommunityIds]);
+  }, [
+    isAuthed,
+    user,
+    communities,
+    refreshUnread,
+    user?.collegeSlug,
+    user?.religionKey,
+    myCommunityIds,
+  ]);
 
-  /* ----------------------- AppState Resume ----------------------- */
+  /* -------------------------------------------------------------------------- */
+  /*                         APPSTATE → REFRESH UNREAD ON RESUME               */
+  /* -------------------------------------------------------------------------- */
+
   useEffect(() => {
-    const sub = AppState.addEventListener("change", (next: AppStateStatus) => {
-      if (appState.current.match(/inactive|background/) && next === "active") {
-        console.log("📱 App resumed, refreshing unread...");
+    const sub = AppState.addEventListener("change", (next) => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        next === "active" &&
+        isAuthed
+      ) {
+        console.log("📱 App resumed → refresh unread");
         refreshUnread();
       }
       appState.current = next;
     });
     return () => sub.remove();
-  }, [refreshUnread]);
+  }, [isAuthed, refreshUnread]);
 
-  const value = useMemo<SocketContextValue>(
+  /* -------------------------------------------------------------------------- */
+  /*                                CONTEXT VALUE                               */
+  /* -------------------------------------------------------------------------- */
+
+  const value = useMemo(
     () => ({
       socket: ready ? getSocket() : null,
       socketConnected: ready,
@@ -319,8 +358,17 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({ children }) 
       refreshUnread,
       markThreadRead,
     }),
-    [ready, unreadThreads, unreadDMs, unreadCommunities, refreshUnread, markThreadRead]
+    [
+      ready,
+      unreadThreads,
+      unreadDMs,
+      unreadCommunities,
+      refreshUnread,
+      markThreadRead,
+    ]
   );
 
-  return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
+  return (
+    <SocketContext.Provider value={value}>{children}</SocketContext.Provider>
+  );
 };

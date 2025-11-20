@@ -1,7 +1,11 @@
 // src/api/auth.ts
 import { api } from "./api";
+// ⭐ NEW: Import for token check
+import { getAccessToken } from "../utils/storage"; 
 
-/** ===== Types ===== */
+/* ───────────────────────────────────────────
+   Types
+   ─────────────────────────────────────────── */
 
 export type UserRole = "user" | "mod" | "admin";
 
@@ -24,14 +28,14 @@ export type Community = {
   key?: string;
   createdAt?: string;
   updatedAt?: string;
-  // This is the new field from your /bootstrap route
+
+  // NEW: /bootstrap returns this
   lastMessage?: {
     content?: string;
     timestamp?: string | Date;
   };
 };
 
-// This type is returned by LOGIN
 export type AuthBundle = {
   message: string;
   token: string;
@@ -39,7 +43,6 @@ export type AuthBundle = {
   communities: Community[];
 };
 
-// This type is returned by REGISTER
 export type RegisterResponse = {
   message: string;
 };
@@ -59,7 +62,9 @@ export type ProfileBundle = {
 
 type CommonOpts = { signal?: AbortSignal };
 
-/** ===== Utils ===== */
+/* ───────────────────────────────────────────
+   Utils
+   ─────────────────────────────────────────── */
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
@@ -71,8 +76,11 @@ function assertNonEmpty(name: string, v: string) {
   }
 }
 
-/** ===== API Calls ===== */
+/* ───────────────────────────────────────────
+   API Calls
+   ─────────────────────────────────────────── */
 
+/** LOGIN → returns { token, user, communities } */
 export async function login(
   email: string,
   password: string,
@@ -92,8 +100,8 @@ export async function login(
 }
 
 /**
- * --- THIS FUNCTION IS UPDATED ---
- * It no longer expects a token, only a message.
+ * REGISTER → UPDATED
+ * Server now returns ONLY `{ message }`
  */
 export async function register(
   input: {
@@ -104,36 +112,59 @@ export async function register(
     religionId: string;
   },
   opts?: CommonOpts
-): Promise<RegisterResponse> { // <-- Changed return type
+): Promise<RegisterResponse> {
   assertNonEmpty("fullName", input.fullName);
   assertNonEmpty("email", input.email);
   assertNonEmpty("password", input.password);
   assertNonEmpty("collegeId", input.collegeId);
   assertNonEmpty("religionId", input.religionId);
 
-  const payload = { ...input, email: normalizeEmail(input.email) };
+  const payload = {
+    ...input,
+    email: normalizeEmail(input.email),
+  };
 
-  const { data } = await api.post<RegisterResponse>("/api/register", payload, {
-    signal: opts?.signal,
-  });
+  const { data } = await api.post<RegisterResponse>(
+    "/api/register",
+    payload,
+    { signal: opts?.signal }
+  );
 
-  if (!data?.message) throw new Error("Invalid response from server");
-  return data; // <-- Returns { message: "..." }
+  if (!data?.message) {
+    throw new Error("Invalid register response from server");
+  }
+
+  return data;
 }
 
-/**
- * Fetch user + communities using the current Bearer token.
- */
+/* ───────────────────────────────────────────
+   BOOTSTRAP
+   Fetches { user, communities }
+   Uses in-flight guard in dev mode
+   ─────────────────────────────────────────── */
+
 let bootstrapInflight: Promise<BootstrapBundle> | null = null;
 
-export async function bootstrap(opts?: CommonOpts): Promise<BootstrapBundle> {
+export async function bootstrap(
+  opts?: CommonOpts
+): Promise<BootstrapBundle> {
+  // ⭐ FIX: Check for token first. If not found, throw an error
+  // that AuthContext can handle without hitting the network for a 401.
+  const token = await getAccessToken();
+  if (!token) {
+    throw new Error("Bootstrap failed: No access token found in storage.");
+  }
+  
+  // Avoid duplication in development only
   if (__DEV__ && bootstrapInflight) return bootstrapInflight;
 
   const p = api
     .get<BootstrapBundle>("/api/bootstrap", { signal: opts?.signal })
-    .then((r) => {
-      if (!r.data?.user) throw new Error("Invalid bootstrap response");
-      return r.data;
+    .then((res) => {
+      if (!res.data?.user) {
+        throw new Error("Invalid bootstrap response");
+      }
+      return res.data;
     })
     .finally(() => {
       bootstrapInflight = null;
@@ -143,7 +174,14 @@ export async function bootstrap(opts?: CommonOpts): Promise<BootstrapBundle> {
   return p;
 }
 
-export async function profile(opts?: CommonOpts): Promise<ProfileBundle> {
+/* ───────────────────────────────────────────
+   PROFILE
+   Returns extended user + communities
+   ─────────────────────────────────────────── */
+
+export async function profile(
+  opts?: CommonOpts
+): Promise<ProfileBundle> {
   const { data } = await api.get<ProfileBundle>("/api/profile", {
     signal: opts?.signal,
   });

@@ -26,7 +26,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 
-// ✅ TYPE UPDATE: Includes emailDomains from the new College schema
+// Types
 type CollegeType = {
   _id: string;
   name: string;
@@ -47,22 +47,22 @@ export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === "dark";
 
+  // form
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [showPw, setShowPw] = useState(false);
 
-  // selections
+  // lists
   const [colleges, setColleges] = useState<CollegeType[]>([]);
   const [religions, setReligions] = useState<CommunityLite[]>([]);
-  const [collegeId, setCollegeId] = useState<string>("");
-  const [religionId, setReligionId] = useState<string>("");
+  const [collegeId, setCollegeId] = useState("");
+  const [religionId, setReligionId] = useState("");
 
-  // UI state
   const [loadingLists, setLoadingLists] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // field errors
+  // errors
   const [errName, setErrName] = useState<string | null>(null);
   const [errEmail, setErrEmail] = useState<string | null>(null);
   const [errPw, setErrPw] = useState<string | null>(null);
@@ -77,25 +77,25 @@ export default function RegisterScreen() {
   /* ---------------- Fetch lists ---------------- */
   useEffect(() => {
     let mounted = true;
+
     (async () => {
       try {
         setLoadingLists(true);
+
         const [colRes, relRes] = await Promise.all([
-          // ✅ FIX: Fetch from the new specialized /colleges endpoint
-          api.get(`/api/public/colleges`), 
+          api.get(`/api/public/colleges`),
           api.get(`/api/public/communities?type=religion&paginated=false`),
         ]);
 
-        // The new endpoint returns an array directly
-        const colItems: CollegeType[] = Array.isArray(colRes.data) ? colRes.data : [];
-        
-        const relItems: CommunityLite[] = Array.isArray(relRes.data)
+        const colItems = Array.isArray(colRes.data) ? colRes.data : [];
+        const relItems = Array.isArray(relRes.data)
           ? relRes.data
           : Array.isArray(relRes.data?.items)
           ? relRes.data.items
           : [];
 
         if (!mounted) return;
+
         setColleges(colItems);
         setReligions(relItems);
       } catch (e) {
@@ -104,41 +104,54 @@ export default function RegisterScreen() {
         if (mounted) setLoadingLists(false);
       }
     })();
+
     return () => {
       mounted = false;
     };
   }, []);
 
-  /* ---------------- Auto-Detect College (Dynamic) ---------------- */
+  /* ---------------- Auto-detect college ---------------- */
   useEffect(() => {
-    const lowerEmail = email.trim().toLowerCase();
-    const domain = lowerEmail.split('@')[1]; 
+    const lower = email.trim().toLowerCase();
+    const domain = lower.split("@")[1];
 
     if (domain && colleges.length > 0) {
-      // ✅ Logic: Search the 'emailDomains' array of every college
-      const matchedCollege = colleges.find((c) => 
-        Array.isArray(c.emailDomains) && c.emailDomains.includes(domain)
+      const match = colleges.find(
+        (c) => Array.isArray(c.emailDomains) && c.emailDomains.includes(domain)
       );
 
-      if (matchedCollege) {
-        setCollegeId(matchedCollege._id);
+      if (match) {
+        setCollegeId(match._id);
         setErrCollege(null);
       }
     }
   }, [email, colleges]);
 
-  // ✅ Derived state to toggle UI
   const autoDetectedCollege = useMemo(() => {
-     if (!collegeId) return null;
-     const c = colleges.find(c => c._id === collegeId);
-     // Only show "Auto-detected" UI if the email actually matches
-     const domain = email.split('@')[1]?.toLowerCase();
-     if (c && domain && c.emailDomains?.includes(domain)) {
-       return c;
-     }
-     return null;
-  }, [collegeId, email, colleges]);
+    if (!collegeId) return null;
+    const c = colleges.find((x) => x._id === collegeId);
+    const domain = email.split("@")[1]?.toLowerCase();
+    if (c && domain && c.emailDomains?.includes(domain)) return c;
+    return null;
+  }, [collegeId, colleges, email]);
 
+  /* ---------------- STRICT Filtered Communities (Option A) ---------------- */
+  const filteredCommunities = useMemo(() => {
+    if (!collegeId) return [];
+
+    const col = colleges.find((c) => c._id === collegeId);
+    if (!col) return [];
+
+    const collegeKey = col.key.toLowerCase();
+    const collegeName = col.name.toLowerCase();
+
+    return religions.filter((r) => {
+      const tags = (r.tags || []).map((t) => t.toLowerCase());
+      if (tags.includes(collegeKey)) return true;
+      if (r.name.toLowerCase().includes(collegeName)) return true;
+      return false;
+    });
+  }, [collegeId, colleges, religions]);
 
   /* ---------------- Validation ---------------- */
   const validate = () => {
@@ -150,8 +163,7 @@ export default function RegisterScreen() {
     setErrReligion(null);
     setServerError(null);
 
-    const n = name.trim();
-    if (!n) {
+    if (!name.trim()) {
       setErrName("Full name is required");
       ok = false;
     }
@@ -175,7 +187,7 @@ export default function RegisterScreen() {
       ok = false;
     }
     if (!religionId) {
-      setErrReligion("Select your religion community");
+      setErrReligion("Select your community");
       ok = false;
     }
     return ok;
@@ -188,6 +200,7 @@ export default function RegisterScreen() {
 
     try {
       setSubmitting(true);
+
       const body = {
         fullName: name.trim(),
         email: email.trim().toLowerCase(),
@@ -195,19 +208,17 @@ export default function RegisterScreen() {
         collegeId,
         religionId,
       };
-      
+
       const data = await register(body);
 
       router.replace({
         pathname: "/verify-email",
-        params: { email: body.email, message: data.message }
+        params: { email: body.email, message: data.message },
       });
-
     } catch (err: any) {
       const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
-      if (typeof e === "string") {
-        setServerError(e);
-      } else if (e && typeof e === "object") {
+      if (typeof e === "string") setServerError(e);
+      else if (e && typeof e === "object") {
         if (e.fullName) setErrName(String(e.fullName));
         if (e.email) setErrEmail(String(e.email));
         if (e.password) setErrPw(String(e.password));
@@ -222,7 +233,7 @@ export default function RegisterScreen() {
     }
   };
 
-  /* ---------------- Modern UI Components ---------------- */
+  /* ---------------- Components ---------------- */
   const Pill = ({
     active,
     label,
@@ -233,15 +244,13 @@ export default function RegisterScreen() {
     onPress: () => void;
   }) => {
     const scale = useSharedValue(1);
-    const animStyle = useAnimatedStyle(() => ({
+    const anim = useAnimatedStyle(() => ({
       transform: [{ scale: scale.value }],
     }));
 
     return (
       <Pressable
-        onPressIn={() => {
-          scale.value = withSpring(0.95);
-        }}
+        onPressIn={() => (scale.value = withSpring(0.95))}
         onPressOut={() => {
           scale.value = withSpring(1);
           onPress();
@@ -250,15 +259,13 @@ export default function RegisterScreen() {
       >
         <Animated.View
           style={[
-            animStyle,
+            anim,
             {
               paddingHorizontal: 16,
               paddingVertical: 10,
               borderRadius: 16,
               backgroundColor: active
-                ? isDark
-                  ? "#6366F1"
-                  : "#6366F1"
+                ? "#6366F1"
                 : isDark
                 ? "#1F2937"
                 : "#F3F4F6",
@@ -266,11 +273,6 @@ export default function RegisterScreen() {
               borderColor: isDark ? "#374151" : "#E5E7EB",
               flexDirection: "row",
               alignItems: "center",
-              shadowColor: active ? "#6366F1" : "#000",
-              shadowOpacity: active ? 0.3 : 0.05,
-              shadowRadius: active ? 8 : 2,
-              shadowOffset: { width: 0, height: 2 },
-              elevation: active ? 4 : 1,
             },
           ]}
         >
@@ -286,7 +288,7 @@ export default function RegisterScreen() {
             style={{
               fontSize: 13,
               fontWeight: active ? "600" : "500",
-              color: active ? "#FFFFFF" : isDark ? "#D1D5DB" : "#374151",
+              color: active ? "#fff" : isDark ? "#D1D5DB" : "#374151",
             }}
           >
             {label}
@@ -296,53 +298,41 @@ export default function RegisterScreen() {
     );
   };
 
-  const eduDetected = useMemo(() => email.toLowerCase().includes(".edu"), [email]);
-
-  // Design tokens
-  const bgColor = isDark ? "#0B0F19" : "#F8FAFC";
-  const cardBg = isDark ? "#111827" : "#FFFFFF";
-  const labelColor = isDark ? "#D1D5DB" : "#374155";
-  const inputBg = isDark ? "#1F2937" : "#F9FAFB";
-  const inputBorder = isDark ? "#374151" : "#E5E7EB";
-  const placeholder = isDark ? "#6B7280" : "#9CA3AF";
-  const textColor = isDark ? "#F3F4F6" : "#111827";
-
-  /* ---------------- Premium Submit Button ---------------- */
   const SubmitButton = ({
-    onPress,
     loading,
     disabled,
+    onPress,
   }: {
-    onPress: () => void;
     loading: boolean;
     disabled: boolean;
+    onPress: () => void;
   }) => {
     const scale = useSharedValue(1);
-    const opacity = useSharedValue(1);
+    const op = useSharedValue(1);
 
-    const animStyle = useAnimatedStyle(() => ({
+    const anim = useAnimatedStyle(() => ({
+      opacity: op.value,
       transform: [{ scale: scale.value }],
-      opacity: opacity.value,
     }));
 
     return (
       <Pressable
+        disabled={disabled}
         onPressIn={() => {
           if (!disabled) {
             scale.value = withSpring(0.97);
-            opacity.value = withTiming(0.9);
+            op.value = withTiming(0.9);
           }
         }}
         onPressOut={() => {
           if (!disabled) {
             scale.value = withSpring(1);
-            opacity.value = withTiming(1);
+            op.value = withTiming(1);
             onPress();
           }
         }}
-        disabled={disabled}
       >
-        <Animated.View style={animStyle}>
+        <Animated.View style={anim}>
           <LinearGradient
             colors={disabled ? ["#9CA3AF", "#6B7280"] : ["#6366F1", "#8B5CF6"]}
             start={{ x: 0, y: 0 }}
@@ -352,18 +342,13 @@ export default function RegisterScreen() {
               borderRadius: 16,
               justifyContent: "center",
               alignItems: "center",
-              shadowColor: "#6366F1",
-              shadowOpacity: disabled ? 0 : 0.3,
-              shadowRadius: 12,
-              shadowOffset: { width: 0, height: 6 },
-              elevation: disabled ? 0 : 8,
             }}
           >
             {loading ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={{ color: "#FFFFFF", fontSize: 16, fontWeight: "700" }}>
+                <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>
                   Create Account
                 </Text>
                 <Ionicons name="arrow-forward" size={20} color="#fff" />
@@ -375,6 +360,17 @@ export default function RegisterScreen() {
     );
   };
 
+  // theme
+  const bgColor = isDark ? "#0B0F19" : "#F8FAFC";
+  const cardBg = isDark ? "#111827" : "#FFFFFF";
+  const labelColor = isDark ? "#D1D5DB" : "#374155";
+  const inputBg = isDark ? "#1F2937" : "#F9FAFB";
+  const inputBorder = isDark ? "#374151" : "#E5E7EB";
+  const placeholder = isDark ? "#6B7280" : "#9CA3AF";
+  const textColor = isDark ? "#F3F4F6" : "#111827";
+  const eduDetected = useMemo(() => email.toLowerCase().includes(".edu"), [email]);
+
+  /* ---------------- UI ---------------- */
   return (
     <KeyboardAvoidingView
       behavior={Platform.select({ ios: "padding", android: undefined })}
@@ -389,16 +385,10 @@ export default function RegisterScreen() {
           paddingHorizontal: 20,
         }}
       >
-        {/* Back Button */}
+        {/* Back */}
         <TouchableOpacity
           onPress={() => router.back()}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            marginBottom: 20,
-            paddingVertical: 8,
-          }}
-          activeOpacity={0.7}
+          style={{ flexDirection: "row", alignItems: "center", marginBottom: 20 }}
         >
           <Ionicons name="chevron-back" size={24} color={textColor} />
           <Text style={{ fontSize: 16, fontWeight: "600", color: textColor, marginLeft: 4 }}>
@@ -406,7 +396,7 @@ export default function RegisterScreen() {
           </Text>
         </TouchableOpacity>
 
-        {/* Hero Section */}
+        {/* Hero */}
         <View style={{ alignItems: "center", marginBottom: 32 }}>
           <View
             style={{
@@ -415,11 +405,6 @@ export default function RegisterScreen() {
               borderRadius: 24,
               overflow: "hidden",
               marginBottom: 20,
-              shadowColor: "#6366F1",
-              shadowOpacity: 0.3,
-              shadowRadius: 20,
-              shadowOffset: { width: 0, height: 10 },
-              elevation: 10,
             }}
           >
             <LinearGradient
@@ -428,69 +413,57 @@ export default function RegisterScreen() {
               end={{ x: 1, y: 1 }}
               style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
             >
-              <Ionicons name="people" size={44} color="white" />
+              <Ionicons name="people" size={44} color="#fff" />
             </LinearGradient>
           </View>
 
-          <Text
-            style={{
-              fontSize: 32,
-              fontWeight: "800",
-              color: textColor,
-              marginBottom: 8,
-              letterSpacing: -0.5,
-            }}
-          >
+          <Text style={{ fontSize: 32, fontWeight: "800", color: textColor }}>
             Join CommunityTalk
           </Text>
           <Text
             style={{
+              marginTop: 8,
               fontSize: 15,
               color: isDark ? "#9CA3AF" : "#6B7280",
               textAlign: "center",
-              lineHeight: 22,
             }}
           >
             Connect with campus & faith communities{"\n"}across NYC 🚀
           </Text>
         </View>
 
-        {/* Form Card */}
+        {/* Card */}
         <View
           style={{
             backgroundColor: cardBg,
             borderRadius: 24,
             padding: 24,
-            shadowColor: isDark ? "#000" : "#64748B",
-            shadowOpacity: isDark ? 0.4 : 0.08,
-            shadowRadius: 24,
-            shadowOffset: { width: 0, height: 8 },
-            elevation: 8,
           }}
         >
-          {/* Full Name */}
+          {/* Name */}
           <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
               Full Name
             </Text>
             <View
               style={{
+                marginTop: 8,
                 flexDirection: "row",
                 alignItems: "center",
                 backgroundColor: inputBg,
-                borderRadius: 14,
-                borderWidth: 1.5,
                 borderColor: inputBorder,
-                paddingHorizontal: 16,
+                borderWidth: 1.5,
+                borderRadius: 14,
                 height: 52,
+                paddingHorizontal: 16,
               }}
             >
               <Ionicons name="person-outline" size={20} color={placeholder} />
               <TextInput
                 placeholder="Your full name"
+                placeholderTextColor={placeholder}
                 value={name}
                 onChangeText={setName}
-                placeholderTextColor={placeholder}
                 autoCapitalize="words"
                 style={{
                   flex: 1,
@@ -502,40 +475,36 @@ export default function RegisterScreen() {
               />
             </View>
             {!!errName && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-                <Ionicons name="alert-circle" size={14} color="#EF4444" />
-                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
-                  {errName}
-                </Text>
-              </View>
+              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errName}</Text>
             )}
           </View>
 
           {/* Email */}
           <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
               Email Address
             </Text>
             <View
               style={{
+                marginTop: 8,
                 flexDirection: "row",
                 alignItems: "center",
                 backgroundColor: inputBg,
-                borderRadius: 14,
-                borderWidth: 1.5,
                 borderColor: inputBorder,
-                paddingHorizontal: 16,
+                borderWidth: 1.5,
+                borderRadius: 14,
                 height: 52,
+                paddingHorizontal: 16,
               }}
             >
               <Ionicons name="mail-outline" size={20} color={placeholder} />
               <TextInput
                 placeholder="you@college.edu"
-                keyboardType="email-address"
-                autoCapitalize="none"
+                placeholderTextColor={placeholder}
                 value={email}
                 onChangeText={setEmail}
-                placeholderTextColor={placeholder}
+                autoCapitalize="none"
+                keyboardType="email-address"
                 style={{
                   flex: 1,
                   marginLeft: 12,
@@ -545,58 +514,55 @@ export default function RegisterScreen() {
                 }}
               />
             </View>
+
             {eduDetected && (
               <View
                 style={{
-                  flexDirection: "row",
-                  alignItems: "center",
                   marginTop: 8,
                   backgroundColor: isDark ? "#064E3B" : "#D1FAE5",
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 10,
+                  padding: 8,
+                  borderRadius: 8,
+                  flexDirection: "row",
+                  alignItems: "center",
                 }}
               >
                 <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                <Text style={{ fontSize: 12, color: "#10B981", marginLeft: 6, fontWeight: "600" }}>
+                <Text style={{ marginLeft: 6, color: "#10B981", fontWeight: "600", fontSize: 12 }}>
                   .edu email verified ✓
                 </Text>
               </View>
             )}
+
             {!!errEmail && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-                <Ionicons name="alert-circle" size={14} color="#EF4444" />
-                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
-                  {errEmail}
-                </Text>
-              </View>
+              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errEmail}</Text>
             )}
           </View>
 
           {/* Password */}
-          <View style={{ marginBottom: 24 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
               Password
             </Text>
             <View
               style={{
+                marginTop: 8,
                 flexDirection: "row",
                 alignItems: "center",
                 backgroundColor: inputBg,
-                borderRadius: 14,
-                borderWidth: 1.5,
                 borderColor: inputBorder,
-                paddingHorizontal: 16,
+                borderWidth: 1.5,
+                borderRadius: 14,
                 height: 52,
+                paddingHorizontal: 16,
               }}
             >
               <Ionicons name="lock-closed-outline" size={20} color={placeholder} />
               <TextInput
                 placeholder="Create a strong password"
-                secureTextEntry={!showPw}
+                placeholderTextColor={placeholder}
                 value={pw}
                 onChangeText={setPw}
-                placeholderTextColor={placeholder}
+                secureTextEntry={!showPw}
                 style={{
                   flex: 1,
                   marginLeft: 12,
@@ -605,7 +571,7 @@ export default function RegisterScreen() {
                   fontWeight: "500",
                 }}
               />
-              <TouchableOpacity onPress={() => setShowPw((v) => !v)} activeOpacity={0.7}>
+              <TouchableOpacity onPress={() => setShowPw((v) => !v)}>
                 <Ionicons
                   name={showPw ? "eye-outline" : "eye-off-outline"}
                   size={20}
@@ -615,150 +581,96 @@ export default function RegisterScreen() {
             </View>
 
             {pwStrength && (
-              <View style={{ marginTop: 12 }}>
-                <View style={{ flexDirection: "row", gap: 6, marginBottom: 8 }}>
-                  <View
-                    style={{
-                      flex: 1,
-                      height: 4,
-                      borderRadius: 2,
-                      backgroundColor:
-                        pwStrength === "weak"
-                          ? "#EF4444"
-                          : isDark
-                          ? "#374151"
-                          : "#E5E7EB",
-                    }}
-                  />
-                  <View
-                    style={{
-                      flex: 1,
-                      height: 4,
-                      borderRadius: 2,
-                      backgroundColor:
-                        pwStrength === "medium" || pwStrength === "strong"
-                          ? "#F59E0B"
-                          : isDark
-                          ? "#374151"
-                          : "#E5E7EB",
-                    }}
-                  />
-                  <View
-                    style={{
-                      flex: 1,
-                      height: 4,
-                      borderRadius: 2,
-                      backgroundColor:
-                        pwStrength === "strong"
-                          ? "#10B981"
-                          : isDark
-                          ? "#374151"
-                          : "#E5E7EB",
-                    }}
-                  />
-                </View>
-                <Text style={{ fontSize: 12, fontWeight: "600", color: strengthColors[pwStrength] }}>
-                  Password strength: {pwStrength}
-                </Text>
-              </View>
+              <Text
+                style={{
+                  color: strengthColors[pwStrength],
+                  marginTop: 8,
+                  fontWeight: "600",
+                  fontSize: 12,
+                }}
+              >
+                Password strength: {pwStrength}
+              </Text>
             )}
+
             {!!errPw && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-                <Ionicons name="alert-circle" size={14} color="#EF4444" />
-                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
-                  {errPw}
-                </Text>
-              </View>
+              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errPw}</Text>
             )}
           </View>
 
-          {/* College Selection */}
+          {/* College */}
           <View style={{ marginBottom: 24 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
               Select College
             </Text>
 
-            {/* ✅ NEW: Dynamic UI for ANY detected college */}
             {autoDetectedCollege ? (
-              <View style={{ 
-                backgroundColor: isDark ? 'rgba(16, 185, 129, 0.1)' : '#ECFDF5', 
-                borderRadius: 16, 
-                padding: 16, 
-                borderWidth: 1,
-                borderColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
-                flexDirection: 'row',
-                alignItems: 'center'
-              }}>
-                <View style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
-                  backgroundColor: isDark ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginRight: 12
-                }}>
-                   <Ionicons name="school" size={20} color="#10B981" />
+              <View
+                style={{
+                  marginTop: 12,
+                  backgroundColor: isDark ? "rgba(16,185,129,0.1)" : "#ECFDF5",
+                  borderColor: isDark ? "rgba(16,185,129,0.2)" : "#D1FAE5",
+                  borderWidth: 1,
+                  borderRadius: 16,
+                  padding: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}
+              >
+                <View
+                  style={{
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
+                    backgroundColor: isDark ? "rgba(16,185,129,0.2)" : "#D1FAE5",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginRight: 12,
+                  }}
+                >
+                  <Ionicons name="school" size={20} color="#10B981" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: isDark ? '#fff' : '#065F46' }}>
+                  <Text style={{ fontWeight: "700", color: isDark ? "#fff" : "#065F46" }}>
                     {autoDetectedCollege.name}
                   </Text>
-                  <Text style={{ fontSize: 13, color: '#10B981', fontWeight: '600' }}>
+                  <Text style={{ color: "#10B981", fontWeight: "600", fontSize: 13 }}>
                     Auto-detected via email
                   </Text>
                 </View>
                 <Ionicons name="checkmark-circle" size={24} color="#10B981" />
               </View>
+            ) : loadingLists ? (
+              <ActivityIndicator size="small" color="#6366F1" style={{ marginTop: 12 }} />
             ) : (
-              /* Normal Selection List */
-              loadingLists ? (
-                <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 16 }}>
-                  <ActivityIndicator size="small" color="#6366F1" />
-                  <Text style={{ marginLeft: 10, color: placeholder, fontSize: 14 }}>
-                    Loading colleges...
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                  {colleges.map((c) => (
-                    <Pill
-                      key={c._id}
-                      label={c.name}
-                      active={collegeId === c._id}
-                      onPress={() => setCollegeId(c._id)}
-                    />
-                  ))}
-                </View>
-              )
+              <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 12 }}>
+                {colleges.map((c) => (
+                  <Pill
+                    key={c._id}
+                    label={c.name}
+                    active={collegeId === c._id}
+                    onPress={() => setCollegeId(c._id)}
+                  />
+                ))}
+              </View>
             )}
 
-            {/* Show error only if NOT auto-detected */}
             {!!errCollege && !autoDetectedCollege && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-                <Ionicons name="alert-circle" size={14} color="#EF4444" />
-                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
-                  {errCollege}
-                </Text>
-              </View>
+              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errCollege}</Text>
             )}
           </View>
 
-          {/* Religion Selection */}
+          {/* STRICT FILTER Community */}
           <View style={{ marginBottom: 24 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
               Select Your Community
             </Text>
+
             {loadingLists ? (
-              <View style={{ flexDirection: "row", alignItems: "center", paddingVertical: 16 }}>
-                <ActivityIndicator size="small" color="#6366F1" />
-                <Text style={{ marginLeft: 10, color: placeholder, fontSize: 14 }}>
-                  Loading communities...
-                </Text>
-              </View>
-            ) : (
-              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                {religions.map((r) => (
+              <ActivityIndicator size="small" color="#6366F1" style={{ marginTop: 12 }} />
+            ) : filteredCommunities.length > 0 ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 12 }}>
+                {filteredCommunities.map((r) => (
                   <Pill
                     key={r._id}
                     label={r.name}
@@ -767,14 +679,31 @@ export default function RegisterScreen() {
                   />
                 ))}
               </View>
-            )}
-            {!!errReligion && (
-              <View style={{ flexDirection: "row", alignItems: "center", marginTop: 6 }}>
-                <Ionicons name="alert-circle" size={14} color="#EF4444" />
-                <Text style={{ fontSize: 12, color: "#EF4444", marginLeft: 4, fontWeight: "500" }}>
-                  {errReligion}
+            ) : (
+              <View
+                style={{
+                  marginTop: 12,
+                  padding: 16,
+                  backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#F3F4F6",
+                  borderRadius: 12,
+                }}
+              >
+                <Text
+                  style={{
+                    textAlign: "center",
+                    color: isDark ? "#9CA3AF" : "#6B7280",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {collegeId
+                    ? "No communities found for this college yet. More are coming soon."
+                    : "Select a college above to see available communities."}
                 </Text>
               </View>
+            )}
+
+            {!!errReligion && (
+              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errReligion}</Text>
             )}
           </View>
 
@@ -783,108 +712,58 @@ export default function RegisterScreen() {
             <View
               style={{
                 backgroundColor: isDark ? "#7F1D1D" : "#FEE2E2",
-                padding: 14,
+                borderColor: isDark ? "#991B1B" : "#FECACA",
+                borderWidth: 1,
+                padding: 12,
                 borderRadius: 12,
                 marginBottom: 20,
-                borderWidth: 1,
-                borderColor: isDark ? "#991B1B" : "#FECACA",
               }}
             >
-              <View style={{ flexDirection: "row", alignItems: "flex-start" }}>
-                <Ionicons name="alert-circle" size={18} color="#EF4444" style={{ marginTop: 1 }} />
-                <Text
-                  style={{
-                    flex: 1,
-                    fontSize: 13,
-                    color: isDark ? "#FCA5A5" : "#DC2626",
-                    marginLeft: 8,
-                    fontWeight: "500",
-                    lineHeight: 18,
-                  }}
-                >
-                  {serverError}
-                </Text>
-              </View>
+              <Text style={{ color: "#EF4444", fontSize: 13 }}>{serverError}</Text>
             </View>
           )}
 
-          {/* Submit Button */}
+          {/* Submit */}
           <SubmitButton onPress={handleRegister} loading={submitting} disabled={submitting} />
 
           {/* Terms */}
           <Text
             style={{
-              textAlign: "center",
-              fontSize: 11,
-              color: isDark ? "#6B7280" : "#9CA3AF",
               marginTop: 16,
-              lineHeight: 16,
+              textAlign: "center",
+              color: isDark ? "#6B7280" : "#9CA3AF",
+              fontSize: 11,
             }}
           >
             By creating an account, you agree to our{" "}
             <Text style={{ color: "#6366F1", fontWeight: "600" }}>Terms of Service</Text> and{" "}
-            <Text style={{ color: "#6366F1", fontWeight: "600" }}>Privacy Policy</Text>
+            <Text style={{ color: "#6366F1", fontWeight: "600" }}>Privacy Policy</Text>.
           </Text>
         </View>
 
         {/* Divider */}
-        <View
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            marginVertical: 28,
-          }}
-        >
-          <View
-            style={{
-              flex: 1,
-              height: 1,
-              backgroundColor: isDark ? "#374151" : "#E5E7EB",
-            }}
-          />
-          <Text
-            style={{
-              marginHorizontal: 16,
-              fontSize: 13,
-              color: isDark ? "#6B7280" : "#9CA3AF",
-              fontWeight: "500",
-            }}
-          >
-            or
-          </Text>
-          <View
-            style={{
-              flex: 1,
-              height: 1,
-              backgroundColor: isDark ? "#374151" : "#E5E7EB",
-            }}
-          />
+        <View style={{ marginVertical: 28, flexDirection: "row", alignItems: "center" }}>
+          <View style={{ flex: 1, height: 1, backgroundColor: isDark ? "#374151" : "#E5E7EB" }} />
+          <Text style={{ marginHorizontal: 16, color: isDark ? "#6B7280" : "#9CA3AF" }}>or</Text>
+          <View style={{ flex: 1, height: 1, backgroundColor: isDark ? "#374151" : "#E5E7EB" }} />
         </View>
 
-        {/* Login Link */}
+        {/* Login */}
         <TouchableOpacity
           onPress={() => router.push("/modal")}
-          activeOpacity={0.8}
           style={{
             backgroundColor: isDark ? "#1F2937" : "#F9FAFB",
-            borderRadius: 16,
-            borderWidth: 1.5,
             borderColor: isDark ? "#374151" : "#E5E7EB",
+            borderWidth: 1.5,
             paddingVertical: 16,
+            borderRadius: 16,
             flexDirection: "row",
-            alignItems: "center",
             justifyContent: "center",
+            alignItems: "center",
           }}
         >
           <Ionicons name="log-in-outline" size={20} color={textColor} />
-          <Text
-            style={{
-              marginLeft: 8,
-              fontSize: 15,
-              fontWeight: "600",
-              color: textColor,
-            }}
-          >
+          <Text style={{ marginLeft: 8, color: textColor, fontWeight: "600" }}>
             Already have an account? Log in
           </Text>
         </TouchableOpacity>

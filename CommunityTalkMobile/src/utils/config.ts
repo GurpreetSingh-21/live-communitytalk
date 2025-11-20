@@ -2,13 +2,20 @@
 import Constants from "expo-constants";
 
 /**
- * Sources we support (in priority order):
- *  1) process.env.EXPO_PUBLIC_API_BASE_URL           ← best for dev; set in your shell
- *  2) Constants.expoConfig.extra.EXPO_PUBLIC_API_BASE_URL
- *  3) Constants.expoConfig.extra.API_URL_DEV / API_URL_PROD (legacy keys)
- *  4) Fallbacks (localhost for dev, placeholder for prod)
+ * Priority (highest → lowest):
+ *  1) process.env.EXPO_PUBLIC_API_BASE_URL
+ *  2) expo.extra.EXPO_PUBLIC_API_BASE_URL
+ *  3) expo.extra.API_URL_DEV / API_URL_PROD (legacy)
+ *  4) Fallbacks (localhost for dev, ngrok placeholder for prod)
+ *
+ * This file MUST remain extremely stable because:
+ *  - API layer depends on this URL for early-401 & tokenLoaded handling
+ *  - Socket layer depends on this URL for WebSocket path
  */
 
+/* ────────────────────────────────────────────────────────────
+   TYPES
+   ──────────────────────────────────────────────────────────── */
 type Extra = {
   EXPO_PUBLIC_API_BASE_URL?: string;
   API_URL_DEV?: string;
@@ -17,60 +24,89 @@ type Extra = {
 
 const extra: Extra = (Constants.expoConfig?.extra || {}) as Extra;
 
-/** Keep only the first URL if multiple are comma-separated. */
+/* ────────────────────────────────────────────────────────────
+   HELPERS
+   ──────────────────────────────────────────────────────────── */
+
+/** Pick only the first URL if multiple comma-separated */
 function pickFirstUrl(raw?: string): string | undefined {
   if (!raw) return undefined;
   const first = raw.split(",")[0]?.trim();
   return first || undefined;
 }
 
-/** Remove any trailing slashes so we don’t end up with // in requests. */
+/** Strip trailing slashes to avoid accidental "//api/login" */
 function normalizeBase(url?: string): string | undefined {
   if (!url) return undefined;
   return url.replace(/\/+$/, "");
 }
 
-/** Decide the base URL with clear precedence. */
-function resolveBaseUrl(): string {
-  const fromEnv     = pickFirstUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
-  const fromExtra   = pickFirstUrl(extra.EXPO_PUBLIC_API_BASE_URL);
-  const fromLegacy  = __DEV__ ? pickFirstUrl(extra.API_URL_DEV) : pickFirstUrl(extra.API_URL_PROD);
+/** Check if URL looks valid (http/https) */
+function isValidHttp(url?: string): boolean {
+  return !!url && /^https?:\/\//i.test(url);
+}
 
-  const chosen =
+/* ────────────────────────────────────────────────────────────
+   RESOLVE BASE URL
+   ──────────────────────────────────────────────────────────── */
+function resolveBaseUrl(): string {
+  const fromEnv    = pickFirstUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
+  const fromExtra  = pickFirstUrl(extra.EXPO_PUBLIC_API_BASE_URL);
+  const fromLegacy = __DEV__
+    ? pickFirstUrl(extra.API_URL_DEV)
+    : pickFirstUrl(extra.API_URL_PROD);
+
+  // Prefer in this order:
+  // env → extra → legacy → fallbacks
+  let chosen =
     normalizeBase(fromEnv) ??
     normalizeBase(fromExtra) ??
     normalizeBase(fromLegacy) ??
-    (__DEV__ ? "http://localhost:3000" : "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev");
+    (__DEV__
+      ? "http://localhost:3000"
+      : "https://stephane-mastoparietal-saniyah.ngrok-free.dev");
+
+  // Final validation fallback
+  if (!isValidHttp(chosen)) {
+    console.warn(
+      `[config] ❌ Invalid API base URL resolved ('${chosen}'). Falling back to production fallback.`
+    );
+    chosen = "https://stephane-mastoparietal-saniyah.ngrok-free.dev";
+  }
 
   if (__DEV__) {
-    // Helpful diagnostics so you know exactly what got used
-    // (These logs show once at app start.)
-    // eslint-disable-next-line no-console
     console.log("[config:debug] fromEnv   =", fromEnv || "<undefined>");
-    // eslint-disable-next-line no-console
     console.log("[config:debug] fromExtra =", fromExtra || "<undefined>");
-    // eslint-disable-next-line no-console
     console.log("[config:debug] fromLegacy=", fromLegacy || "<undefined>");
+    console.log("[config:debug] chosen    =", chosen);
   }
 
   return chosen;
 }
 
+/* ────────────────────────────────────────────────────────────
+   EXPORT VALUE
+   ──────────────────────────────────────────────────────────── */
+
 export const API_BASE_URL = resolveBaseUrl();
 
-// Dev-time guidance + confirmation
+/* ────────────────────────────────────────────────────────────
+   DEV-TIME DIAGNOSTICS
+   ──────────────────────────────────────────────────────────── */
 if (__DEV__) {
   if (!API_BASE_URL) {
-    // eslint-disable-next-line no-console
-    console.warn("[config] ❌ Missing API_BASE_URL. Set EXPO_PUBLIC_API_BASE_URL or extra.EXPO_PUBLIC_API_BASE_URL.");
-  } else if (API_BASE_URL.includes("localhost") || API_BASE_URL.includes("127.0.0.1")) {
-    // eslint-disable-next-line no-console
     console.warn(
-      `[config] ⚠️ Using '${API_BASE_URL}' — this usually won't work from iOS/Android devices or emulators.\n` +
-      "Set your LAN IP or ngrok URL in EXPO_PUBLIC_API_BASE_URL (e.g. 'http://192.168.x.x:3000' or 'https://<subdomain>.ngrok-free.dev')."
+      "[config] ❌ API_BASE_URL is empty. Set EXPO_PUBLIC_API_BASE_URL or expo.extra.EXPO_PUBLIC_API_BASE_URL."
+    );
+  } else if (
+    API_BASE_URL.includes("localhost") ||
+    API_BASE_URL.includes("127.0.0.1")
+  ) {
+    console.warn(
+      `[config] ⚠️ Using '${API_BASE_URL}' → this will NOT work on device/emulator.\n` +
+      "Use your LAN IP or ngrok instead (e.g. http://192.168.x.x:3000 or https://<sub>.ngrok-free.dev)."
     );
   } else {
-    // eslint-disable-next-line no-console
     console.log("[config] ✅ Using API_BASE_URL →", API_BASE_URL);
   }
 }

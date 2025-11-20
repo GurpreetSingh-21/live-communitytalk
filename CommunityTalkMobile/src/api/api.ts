@@ -5,7 +5,7 @@ import { getAccessToken, removeAccessToken } from "../utils/storage";
 
 function normalizeBase(url?: string) {
   if (!url) return "";
-  return url.replace(/\/+$/, ""); // strip trailing slashes
+  return url.replace(/\/+$/, "");
 }
 
 const BASE = normalizeBase(API_BASE_URL);
@@ -30,24 +30,31 @@ export const api = axios.create({
   },
 });
 
-// Single-flight guard so we don't spam clear/logouts on a burst of 401s
+// Prevent repeated logout bursts
 let handling401 = false;
 
+// Called by AuthContext
 let onUnauthorized: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: () => void) {
   onUnauthorized = fn;
 }
 
-// Inject Bearer token when present
+// ⭐ FIX — Track when token has actually loaded
+let tokenLoaded = false;
+export function markTokenLoaded() {
+  tokenLoaded = true;
+}
+
+// ────────────────────────────────────────────
+// Inject Authorization Token
+// ────────────────────────────────────────────
 api.interceptors.request.use(
   async (cfg) => {
     const token = await getAccessToken();
-
     const method = (cfg.method || "GET").toUpperCase();
     const fullUrl = `${cfg.baseURL || ""}${cfg.url || ""}`;
     const urlPath = (cfg.url || "").toLowerCase();
 
-    // Do not attach auth to auth endpoints
     const isAuthRoute =
       urlPath.startsWith("/login") ||
       urlPath.startsWith("/register");
@@ -79,13 +86,34 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Centralized error/logging + robust 401 handling
+// ────────────────────────────────────────────
+// Unified Error Handler + Silent 401 Fix
+// ────────────────────────────────────────────
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError<any>) => {
     const status = error.response?.status;
     const triedUrl = `${error.config?.baseURL ?? ""}${error.config?.url ?? ""}`;
+    const urlPath = (error.config?.url || "").toLowerCase(); // New variable for URL path check
 
+    // ⭐ FIX 1: Silent ignore of 401 BEFORE token loads
+    if (status === 401 && !tokenLoaded) {
+      if (__DEV__) {
+        console.log("[api:note] Ignoring early 401 while token not loaded:", triedUrl);
+      }
+      return Promise.resolve({ data: null, _early401: true });
+    }
+
+    // ⭐ FIX 2: Explicitly resolve (silence) the expected 401 on /api/bootstrap 
+    // This prevents the error toast from the unauthenticated bootstrap call.
+    const isBootstrap = urlPath.includes("/bootstrap");
+    if (isBootstrap && status === 401) {
+       console.log("[api:note] Silencing expected 401 error for /api/bootstrap.");
+       // Resolve the promise to prevent the error from propagating to the global handler
+       return Promise.resolve({ data: null, _silenced401: true });
+    }
+
+    // Keep your existing logging (dev only)
     if (__DEV__) {
       console.log(
         "[api:err]",
@@ -97,32 +125,33 @@ api.interceptors.response.use(
       );
     }
 
-    // Handle 401 exactly once per burst
+    // ⭐ FIX — Prevent 401 logout loops but still logout once
     if (status === 401 && !handling401) {
       handling401 = true;
+
       try {
         await removeAccessToken();
       } catch (e) {
         console.error("[api] Failed to remove token:", e);
+      }
+
+      try {
+        onUnauthorized?.();
       } finally {
-        try {
-          onUnauthorized?.();
-        } finally {
-          // small delay to prevent immediate re-entrancy when multiple requests fail together
-          setTimeout(() => {
-            handling401 = false;
-          }, 50);
-        }
+        setTimeout(() => {
+          handling401 = false;
+        }, 50);
       }
     }
 
-    // Nicer error messages for common network cases
+    // Friendly error messages
     if (error.code === "ECONNABORTED") {
       error.message = `Request timed out (${triedUrl}). Check API_BASE_URL or server availability.`;
     } else if (!error.response) {
       error.message = `Network error (${triedUrl}). Is your device on the same network as the server?`;
     }
 
+    // Reject the promise for all other errors
     return Promise.reject(error);
   }
 );

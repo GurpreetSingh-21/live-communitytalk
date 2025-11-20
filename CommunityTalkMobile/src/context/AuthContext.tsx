@@ -12,17 +12,20 @@ import {
   login as apiLogin,
   register as apiRegister,
   RegisterResponse,
+  bootstrap as apiBootstrap, // ⭐ Imported safe bootstrap function
 } from "../api/auth";
-import { api } from "../api/api";
+import { api, setUnauthorizedHandler, markTokenLoaded } from "../api/api";
 import {
   setAccessToken,
   removeAccessToken,
   getAccessToken,
 } from "../utils/storage";
-import { setUnauthorizedHandler } from "../api/api";
 import { refreshSocketAuth, disconnectSocket } from "../api/socket";
 import { registerForPushNotificationsAsync } from "../utils/notifications";
 
+/* ───────────────────────────────────────────
+   Types
+   ─────────────────────────────────────────── */
 type RegisterInput = {
   fullName: string;
   email: string;
@@ -36,13 +39,14 @@ type AuthState = {
   isAuthed: boolean;
   user: any | null;
   communities: any[];
+
   signIn: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<RegisterResponse>;
   signOut: () => Promise<void>;
   refreshBootstrap: () => Promise<void>;
   setToken?: (token: string) => Promise<void>;
   bootstrap?: () => Promise<void>;
-  updateAvatar?: (newUrl: string) => void; // Add to type definition
+  updateAvatar?: (newUrl: string) => void;
 };
 
 export const AuthContext = createContext<AuthState>({
@@ -56,11 +60,14 @@ export const AuthContext = createContext<AuthState>({
   refreshBootstrap: async () => {},
   setToken: async () => {},
   bootstrap: async () => {},
-  updateAvatar: () => {}, // Default no-op
+  updateAvatar: () => {},
 });
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+/* ───────────────────────────────────────────
+   Normalize user scope (fills missing collegeSlug / religionKey)
+   ─────────────────────────────────────────── */
 function deriveScope(user: any | null, communities: any[]) {
   if (!user) return user;
 
@@ -68,33 +75,33 @@ function deriveScope(user: any | null, communities: any[]) {
   const hasReligion = !!user.religionKey;
   if (hasCollege && hasReligion) return user;
 
-  let collegeSlug: string | null | undefined = user.collegeSlug ?? null;
-  let religionKey: string | null | undefined = user.religionKey ?? null;
+  let collegeSlug = user.collegeSlug ?? null;
+  let religionKey = user.religionKey ?? null;
 
   if (!collegeSlug) {
     const c =
-      communities.find((x: any) => x?.type === "college" && x?.key) ||
-      communities.find((x: any) => /college/i.test(String(x?.type || "")) && x?.key);
+      communities.find((x) => x?.type === "college" && x?.key) ||
+      communities.find((x) => /college/i.test(String(x?.type || "")) && x?.key);
     if (c?.key) collegeSlug = c.key;
   }
 
   if (!religionKey) {
     const r =
       communities.find(
-        (x: any) => (x?.type === "religion" || x?.type === "faith") && x?.key
-      ) || communities.find((x: any) =>
+        (x) => (x?.type === "religion" || x?.type === "faith") && x?.key
+      ) ||
+      communities.find((x) =>
         /(religion|faith)/i.test(String(x?.type || "")) && x?.key
       );
     if (r?.key) religionKey = r.key;
   }
 
-  return {
-    ...user,
-    collegeSlug: collegeSlug ?? null,
-    religionKey: religionKey ?? null,
-  };
+  return { ...user, collegeSlug, religionKey };
 }
 
+/* ───────────────────────────────────────────
+   Provider
+   ─────────────────────────────────────────── */
 export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -109,64 +116,135 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [communities, setCommunities] = useState<any[]>([]);
   const clearingRef = useRef(false);
 
+  /* --------------------- Apply auth --------------------- */
   const applyAuthState = useCallback((u: any | null, cs: any[]) => {
     if (!mountedRef.current) return;
+
     const safeCommunities = Array.isArray(cs) ? cs : [];
     const augmentedUser = deriveScope(u, safeCommunities);
     setUser(augmentedUser);
     setCommunities(safeCommunities);
   }, []);
 
+  /* --------------------- Clear auth --------------------- */
   const clearAuthState = useCallback(async () => {
     if (clearingRef.current) return;
     clearingRef.current = true;
+
     try {
       await removeAccessToken();
     } catch {}
+
     disconnectSocket();
     applyAuthState(null, []);
+
     if (mountedRef.current) setIsLoading(false);
     clearingRef.current = false;
   }, [applyAuthState]);
 
   const triedLegacyOnce = useRef(false);
-  const refreshBootstrap = useCallback(async () => {
-    const tryPath = async (path: string) => {
-      const { data } = await api.get(path);
-      return data;
-    };
 
-    try {
-      const data = await tryPath("/api/bootstrap");
-      applyAuthState(data?.user || null, data?.communities || []);
-    } catch (err: any) {
-      const status = err?.response?.status;
-      if (status === 404 && !triedLegacyOnce.current) {
-        triedLegacyOnce.current = true;
-        const data = await tryPath("/bootstrap");
+// CommunityTalkMobile/src/context/AuthContext.tsx (inside AuthProvider)
+
+  /* --------------------- Bootstrap --------------------- */
+  const refreshBootstrap = useCallback(
+    async () => {
+      // ⭐ ULTIMATE DEFENSE: Check token AGAIN here before proceeding.
+      const currentToken = await getAccessToken();
+      if (!currentToken) {
+        // If we get here, it means the initialLoad failed to catch something.
+        console.warn("[AuthContext] Aborting refreshBootstrap: No token found.");
+        return;
+      }
+
+      // NOTE: The request helper is still needed for the 404 fallback logic.
+      const request = async (path: string) => {
+        const { data } = await api.get(path);
+        return data;
+      };
+
+      try {
+        // 1. Try the safe, current API endpoint.
+        const data = await apiBootstrap(); // This will also check the token internally
         applyAuthState(data?.user || null, data?.communities || []);
         return;
-      }
-      if (err?.response?.status === 401) {
-        await clearAuthState();
-        return;
-      }
-      throw err;
-    }
-  }, [applyAuthState, clearAuthState]);
+      } catch (err: any) {
+        if (err?._early401) return;
+        
+        // Handle the custom error thrown when no token is found in auth.ts
+        if (err.message?.includes("No access token found")) {
+            console.log("[AuthContext] Bootstrap skipped due to missing token.");
+            return;
+        }
 
+        const status = err?.response?.status;
+
+        // 2. Fallback legacy endpoint (only for 404 errors)
+        if (status === 404 && !triedLegacyOnce.current) {
+          console.warn("[AuthContext] Bootstrap 404. Trying legacy endpoint...");
+          triedLegacyOnce.current = true;
+          
+          try {
+            const data = await request("/bootstrap"); 
+            applyAuthState(data?.user || null, data?.communities || []);
+            console.log("[AuthContext] Legacy bootstrap succeeded.");
+            return;
+          } catch (e) {
+             console.error("[AuthContext] Legacy bootstrap failed.");
+          }
+        }
+
+        // 3. Token invalid (e.g., 401 from expired token) — force logout
+        if (status === 401) {
+          console.error("[AuthContext] 401 Unauthorized during bootstrap. Forcing logout.");
+          await clearAuthState();
+          return;
+        }
+
+        throw err;
+      }
+    },
+    [applyAuthState, clearAuthState]
+  );
+
+// CommunityTalkMobile/src/context/AuthContext.tsx (around line 290, the initialLoad function)
+
+  /* --------------------- Initial Load --------------------- */
   const initialLoad = useCallback(async () => {
     try {
       const token = await getAccessToken();
+
+      // Let API layer stop early-401 spam
+      markTokenLoaded();
+
       if (token) {
+        // --- AUTHENTICATED PATH ---
+        console.log("[AuthContext] Token found, initiating bootstrap...");
         await refreshSocketAuth(token);
         await refreshBootstrap();
         await registerForPushNotificationsAsync();
       } else {
+        // --- UNAUTHENTICATED PATH (FIXED) ---
+        console.log("[AuthContext] No token found, setting state to unauthed.");
         applyAuthState(null, []);
       }
-    } catch {
-      await clearAuthState();
+    } catch (e: any) { // ⭐ ENSURE CATCH BLOCK IS ROBUST
+      
+      // ⭐ NEW: Filter out the expected error caused by unauthenticated bootstrap
+      if (e.message?.includes("No access token found")) {
+         console.warn("[AuthContext] Load Error: Ignored expected 'No token' error.");
+         // This block intentionally skips clearing state, as it implies the flow is correct.
+         // We must still finish loading.
+      } else if (e?.response?.status === 401) {
+         // This catches genuine 401 on expired tokens
+         console.error("[AuthContext] Initial load failed with 401, clearing state.");
+         await clearAuthState();
+      } else {
+         // Catch all other network/logic errors
+         console.error("[AuthContext] Initial load failed with unexpected error:", e);
+         await clearAuthState();
+      }
+
     } finally {
       if (mountedRef.current) setIsLoading(false);
       try {
@@ -175,22 +253,25 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     }
   }, [applyAuthState, clearAuthState, refreshBootstrap]);
 
+  /* --------------------- Unauthorized → Logout --------------------- */
   useEffect(() => {
     setUnauthorizedHandler(async () => {
       await clearAuthState();
     });
   }, [clearAuthState]);
 
+  /* --------------------- Run initial load once --------------------- */
   useEffect(() => {
     initialLoad();
   }, [initialLoad]);
 
+  /* --------------------- Login flow --------------------- */
   const completeLoginFromToken = useCallback(
     async (token: string) => {
       await setAccessToken(token);
       await refreshSocketAuth(token);
       await refreshBootstrap();
-      await registerForPushNotificationsAsync();
+      await registerForPushNotificationsAsync(); // SAFE
     },
     [refreshBootstrap]
   );
@@ -204,6 +285,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     [completeLoginFromToken]
   );
 
+  /* --------------------- Register --------------------- */
   const doRegister = useCallback(
     async (input: RegisterInput): Promise<RegisterResponse> => {
       const res = await apiRegister(input);
@@ -212,34 +294,37 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     []
   );
 
+  /* --------------------- Sign Out --------------------- */
   const signOut = useCallback(async () => {
     await clearAuthState();
   }, [clearAuthState]);
 
-  const setTokenCompat = useCallback(async (token: string) => {
+  /* --------------------- Compatibility wrappers --------------------- */
+  const setTokenCompat = useCallback(
+    async (token: string) => {
       await completeLoginFromToken(token);
-    }, [completeLoginFromToken]);
-  
-  const bootstrapCompat = useCallback(async () => {
-      await refreshBootstrap();
-    }, [refreshBootstrap]);
-  
-  const registerCompat = useCallback(
-    async (input: RegisterInput): Promise<RegisterResponse> => {
-      return doRegister(input);
     },
+    [completeLoginFromToken]
+  );
+
+  const bootstrapCompat = useCallback(async () => {
+    await refreshBootstrap();
+  }, [refreshBootstrap]);
+
+  const registerCompat = useCallback(
+    async (input: RegisterInput) => doRegister(input),
     [doRegister]
   );
 
-  // ✅ FIXED: Ensure deep clone of user object to trigger re-render
-  const updateAvatar = useCallback((newAvatarUrl: string) => {
-    setUser((prev: any) => {
+  /* --------------------- Avatar updates --------------------- */
+  const updateAvatar = useCallback((newUrl: string) => {
+    setUser((prev: any | null) => {
       if (!prev) return null;
-      // Return a brand new object reference
-      return { ...prev, avatar: newAvatarUrl };
+      return { ...prev, avatar: newUrl };
     });
   }, []);
 
+  /* --------------------- Memo Context Value --------------------- */
   const value = useMemo<AuthState>(
     () => ({
       isLoading,
@@ -252,7 +337,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       refreshBootstrap,
       setToken: setTokenCompat,
       bootstrap: bootstrapCompat,
-      updateAvatar, // ✅ Now included correctly
+      updateAvatar,
     }),
     [
       isLoading,

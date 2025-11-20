@@ -1,100 +1,117 @@
 // src/utils/notifications.ts
-import { Platform } from 'react-native';
-import * as Notifications from 'expo-notifications';
-import Constants from 'expo-constants';
-import { api } from '@/src/api/api';
-import { getAccessToken } from '../utils/storage'; // ✅ NEW: check auth before hitting backend
+import { Platform } from "react-native";
+import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
+import { api } from "@/src/api/api";
+import { getAccessToken } from "../utils/storage";
 
-// ✅ Configure notification handler (FIXED - removed shouldShowAlert)
+/* ───────────────────────────────────────────
+   Foreground Notification Handler
+   ─────────────────────────────────────────── */
 try {
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowBanner: true,  // Show the notification banner at top (iOS)
-      shouldShowList: true,    // Include in notification center/list
-      shouldPlaySound: true,   // Play notification sound
-      shouldSetBadge: false,   // Update app icon badge (iOS only)
+      shouldShowBanner: true,   // iOS banner
+      shouldShowAlert: true,    // Android popup
+      shouldShowList: true,     // Notification center
+      shouldPlaySound: true,
+      shouldSetBadge: false,
     }),
   });
-  console.log("Foreground notification handler set.");
-} catch (e) {
-  console.error("Failed to set notification handler:", e);
+  console.log("[notify] Foreground notification handler attached.");
+} catch (err) {
+  console.error("[notify] Failed to attach notification handler:", err);
 }
 
-// Function to register for push notifications and send the token to the backend
+/* ───────────────────────────────────────────
+   Main Function — Register for Push + Sync
+   Called ONLY after login by AuthContext
+   ─────────────────────────────────────────── */
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
+  // -----------------------------------------------------
+  // 1. Skip entirely if user is not logged in
+  // -----------------------------------------------------
+  const jwt = await getAccessToken();
+  if (!jwt) {
+    console.log("[notify] Skipping push registration → user not logged in");
+    return null;
+  }
+
   let token: string | null = null;
 
-  // --- 1. Set up Android Channel (required) ---
-  if (Platform.OS === 'android') {
+  /* -----------------------------------------------------
+     2. Android Notification Channel
+     ----------------------------------------------------- */
+  if (Platform.OS === "android") {
     try {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
+      await Notifications.setNotificationChannelAsync("default", {
+        name: "default",
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
+        lightColor: "#FF231F7C",
       });
-    } catch (e) {
-      console.error("Failed to set notification channel:", e);
+    } catch (err) {
+      console.error("[notify] Failed to set Android channel:", err);
     }
   }
 
-  // --- 2. Request Permissions ---
-  console.log('Requesting notification permissions...');
+  /* -----------------------------------------------------
+     3. Ask Permissions
+     ----------------------------------------------------- */
+  console.log("[notify] Requesting permissions…");
+
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
 
-  if (existingStatus !== 'granted') {
-    console.log('Permission not granted, asking user...');
-    const { status } = await Notifications.requestPermissionsAsync();
-    finalStatus = status;
+  if (existingStatus !== "granted") {
+    const req = await Notifications.requestPermissionsAsync();
+    finalStatus = req.status;
   }
 
-  if (finalStatus !== 'granted') {
-    console.warn('Push notification permission denied by user.');
+  if (finalStatus !== "granted") {
+    console.warn("[notify] Permissions denied.");
     return null;
   }
-  console.log('Notification permissions granted.');
 
-  // --- 3. Get the Expo Push Token ---
+  console.log("[notify] Permissions granted.");
+
+  /* -----------------------------------------------------
+     4. Generate Expo Push Token
+     ----------------------------------------------------- */
   try {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-
     if (!projectId) {
-      console.error('ERROR: Project ID not found in app.json');
-      console.error('Add projectId under `expo.extra.eas.projectId` in app.json');
-      alert('Error: Push notification setup is incomplete. Missing Project ID.');
+      console.error("[notify] Missing expo.extra.eas.projectId");
       return null;
     }
 
-    console.log(`Getting Expo push token using Project ID: ${projectId}`);
-    token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-    console.log('Expo Push Token received:', token);
-  } catch (error) {
-    console.error('Error getting Expo Push Token:', error);
-    alert('Failed to get push token. Please try restarting the app.');
+    const t = await Notifications.getExpoPushTokenAsync({ projectId });
+    token = t.data;
+    console.log("[notify] Expo push token:", token);
+  } catch (err) {
+    console.error("[notify] Failed to get Expo push token:", err);
     return null;
   }
 
-  // --- 4. Send the token to your backend (ONLY if logged in) ---
+  /* -----------------------------------------------------
+     5. Sync token with backend
+     ----------------------------------------------------- */
   if (token) {
-    try {
-      // ✅ NEW: make sure we actually have a JWT before hitting /api/notifications/register
-      const accessToken = await getAccessToken();
-      if (!accessToken) {
-        console.warn(
-          "[push] Skipping backend registration: no access token in storage yet (user not logged in?)."
-        );
-        return token;
-      }
+    const jwt2 = await getAccessToken(); // re-validate auth
+    if (!jwt2) {
+      console.warn("[notify] Token generated but user not logged in → skipping backend sync.");
+      return token;
+    }
 
-      console.log(`Registering token with backend: ${token.substring(0, 20)}...`);
-      await api.post('/api/notifications/register', { token });
-      console.log('✅ Push token successfully registered with the backend.');
-    } catch (error: any) {
-      console.error('Failed to register push token with backend:');
-      console.error('Status:', error?.response?.status);
-      console.error('Data:', error?.response?.data);
-      console.error('Message:', error?.message);
+    try {
+      await api.post("/api/notifications/register", { token });
+      console.log("[notify] Push token registered with backend ✔");
+    } catch (err: any) {
+      console.error("[notify] Backend registration failed:");
+      console.error(" • Status:", err?.response?.status);
+      console.error(" • Data:", err?.response?.data);
+      console.error(" • Message:", err?.message);
+      // Do NOT throw — notifications should never break app flow
     }
   }
 
