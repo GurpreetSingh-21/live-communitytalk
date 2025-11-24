@@ -42,6 +42,7 @@ const notificationRoutes = require("./routes/notificationRoutes");
 const datingRoutes = require("./routes/datingRoutes"); // Dating feature
 const userRoutes = require("./routes/userRoutes"); // ✅ User routes (avatar upload)
 const userReportRoutes = require("./routes/userReportRoutes");
+const uploadRoutes = require('./routes/upload');
 
 // 📦 Models
 const Person = require("./person");
@@ -361,6 +362,7 @@ app.use("/api/events", (req, _res, next) => {
   next();
 });
 app.use("/api/events", authenticate, eventRoutes);
+app.use('/api/upload', uploadRoutes);
 
 // 🔒 SECURITY FIX: Test push endpoint now requires authentication
 app.post("/api/test-push", authenticate, async (req, res) => {
