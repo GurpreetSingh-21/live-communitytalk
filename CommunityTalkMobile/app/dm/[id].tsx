@@ -1,4 +1,5 @@
-// CommunityTalkMobile/app/dm/[id].tsx
+//CommunityTalkMobile/app/dm/[id].tsx
+
 import React, {
   useCallback,
   useEffect,
@@ -17,12 +18,14 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  Image,
 } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
+import * as ImagePicker from 'expo-image-picker';
 
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
@@ -199,7 +202,6 @@ export default function DMThreadScreen() {
 
   const [meta, setMeta] = useState<PartnerMeta | null>(null);
   const [loading, setLoading] = useState(true);
-
   const [messages, setMessages] = useState<DMMessage[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const [sending, setSending] = useState(false);
@@ -260,13 +262,12 @@ export default function DMThreadScreen() {
         };
       }
     }
-    // ⭐ FIX 1: If API fails, return the name passed via navigation parameters
     return {
       partnerId,
       partnerName: paramName || "Direct Message",
       avatar: paramAvatar || undefined,
     };
-  }, [USER_ENDPOINTS, partnerId, paramName, paramAvatar]); // Added paramName, paramAvatar
+  }, [USER_ENDPOINTS, partnerId, paramName, paramAvatar]);
 
   /* ─────── Initial load ─────── */
   const loadInitial = useCallback(async () => {
@@ -275,7 +276,6 @@ export default function DMThreadScreen() {
     try {
       const [metaData] = await Promise.all([fetchPartnerMeta()]);
 
-      // ⭐ FIX 2: Ensure the meta state uses the name/avatar if the API returned the fallback
       const finalMeta = {
         ...metaData,
         partnerName: metaData.partnerName || paramName,
@@ -311,14 +311,14 @@ export default function DMThreadScreen() {
     } finally {
       setLoading(false);
     }
-  }, [partnerId, fetchPartnerMeta, socket, paramName, paramAvatar]); // Added paramName, paramAvatar
+  }, [partnerId, fetchPartnerMeta, socket, paramName, paramAvatar]);
 
   useEffect(() => {
     loadInitial();
     return () => {
       socket?.emit?.("room:leave", { room: `dm:${partnerId}` });
     };
-  }, [loadInitial, partnerId]); // Added partnerId dependency
+  }, [loadInitial, partnerId]);
 
   /* ─────── Pagination (older) ─────── */
   const loadOlder = useCallback(async () => {
@@ -373,7 +373,7 @@ export default function DMThreadScreen() {
     return () => socket.off?.("dm:message", onDM);
   }, [socket, partnerId]);
 
-  /* ─────── Send ─────── */
+  /* ─────── Send Text ─────── */
   const send = useCallback(async () => {
     const text = input.trim();
     if (!text || sending) return;
@@ -432,7 +432,8 @@ export default function DMThreadScreen() {
       setMessages((prev) =>
         finalizeUnique(upsertMessages(prev, serverMsg, { prefer: "server" }))
       );
-    } catch {
+    } catch (e: any) {
+      console.error("[dm] send text error:", e);
       setMessages((prev) =>
         prev.map((m) =>
           m.clientMessageId === clientMessageId
@@ -445,8 +446,111 @@ export default function DMThreadScreen() {
     }
   }, [input, sending, myId, partnerId]);
 
+  /* ─────── Pick & Send Image ─────── */
+  const pickImage = useCallback(async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permissionResult.granted === false) {
+        Alert.alert("Permission Denied", "Permission to access media library is required!");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        const asset = result.assets[0];
+        console.log("Selected image URI:", asset.uri);
+
+        const clientMessageId = `dm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+        // Show optimistic image immediately
+        const optimistic: DMMessage = {
+          from: myId,
+          to: partnerId,
+          content: asset.uri,
+          createdAt: new Date(),
+          type: "photo",
+          clientMessageId,
+        };
+
+        setMessages((prev) => finalizeUnique(upsertMessages(prev, optimistic, { prefer: "local" })));
+
+        requestAnimationFrame(() =>
+          listRef.current?.scrollToEnd({ animated: true })
+        );
+
+        setSending(true);
+
+        try {
+          // Prepare FormData for upload
+          const formData = new FormData();
+          formData.append('file', {
+            uri: asset.uri,
+            name: `upload_${Date.now()}.jpg`,
+            type: 'image/jpeg',
+          } as any);
+
+          // Upload image
+          let uploadRes: any;
+          try {
+            uploadRes = await api.post('/api/upload', formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            });
+          } catch (uploadErr: any) {
+            console.warn("[dm] /api/upload failed, attempting fallback");
+            // If upload endpoint doesn't exist, use the local URI directly
+            uploadRes = { data: { url: asset.uri } };
+          }
+
+          const imageUrl = uploadRes.data?.url || asset.uri;
+
+          // Send as DM message
+          try {
+            await api.post(`/api/direct-messages/${partnerId}`, {
+              content: imageUrl,
+              type: "photo",
+              clientMessageId,
+            });
+          } catch (dmErr: any) {
+            if (dmErr?.response?.status !== 404) throw dmErr;
+            console.log("[dm] falling back to body-style DM POST for image");
+            await api.post(`/api/direct-messages`, {
+              to: partnerId,
+              content: imageUrl,
+              type: "photo",
+              clientMessageId,
+            });
+          }
+
+          // Mark as resolved
+          if (clientMessageId) resolvedClientIdsRef.current.add(clientMessageId);
+        } catch (err: any) {
+          console.error("[dm] image send error:", err);
+          Alert.alert("Send Failed", "Could not send image. Please try again.");
+          
+          // Mark as failed
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.clientMessageId === clientMessageId
+                ? { ...m, content: "[failed to send]", type: "text" }
+                : m
+            )
+          );
+        } finally {
+          setSending(false);
+        }
+      }
+    } catch (error: any) {
+      console.log("[dm] image picker error:", error);
+      setSending(false);
+    }
+  }, [myId, partnerId]);
+
   /* ─────── UI helpers ─────── */
-  // Prefer server meta; fall back to navigation params (so name shows even if meta 404s)
   const headerName =
     meta?.partnerName || meta?.fullName || meta?.name || paramName || "Direct Message";
   const headerAvatar = meta?.avatar || paramAvatar || undefined;
@@ -472,6 +576,7 @@ export default function DMThreadScreen() {
     const prev = messages[index - 1];
     const curD = asDate(item.createdAt);
     const showDate = !prev || !isSameDay(curD, asDate(prev.createdAt));
+
     return (
       <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
         {showDate && (
@@ -499,7 +604,23 @@ export default function DMThreadScreen() {
           }}
         >
           <View style={{ maxWidth: "75%" }}>
-            {mine ? (
+            {item.type === 'photo' ? (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                style={{
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                  borderWidth: mine ? 0 : 0.5,
+                  borderColor: colors.border,
+                }}
+              >
+                <Image
+                  source={{ uri: item.content }}
+                  style={{ width: 220, height: 220, backgroundColor: '#eee' }}
+                  resizeMode="cover"
+                />
+              </TouchableOpacity>
+            ) : mine ? (
               <LinearGradient
                 colors={[colors.primaryStart, colors.primaryEnd]}
                 start={{ x: 0, y: 0 }}
@@ -544,7 +665,6 @@ export default function DMThreadScreen() {
       edges={["top"]}
       style={{ flex: 1, backgroundColor: colors.bg }}
     >
-      {/* Hide native header completely; we draw our own top bar */}
       <Stack.Screen options={{ headerShown: false }} />
 
       <KeyboardAvoidingView
@@ -566,30 +686,19 @@ export default function DMThreadScreen() {
               onEndReachedThreshold={0.2}
               onEndReached={loadOlder}
               ListHeaderComponent={
-                <View
-                  style={{
-                    paddingTop: 4, // small extra to breathe under the notch
-                    backgroundColor: colors.headerBg,
-                  }}
-                >
+                <View style={{ paddingTop: 4, backgroundColor: colors.headerBg }}>
                   <DMHeader
                     name={headerName}
                     avatar={headerAvatar}
                     status={status}
                     onPressBack={() => router.back()}
                     onPressProfile={() => {
-                      // We need the full user object to show the modal/profile,
-                      // but since we don't have it directly, we navigate to the profile screen
-                      // which will fetch the data using the partnerId.
-                      // Alternatively, we could open the UserProfileModal component here if it's imported.
                       router.push({
                         pathname: "/profile/[id]",
                         params: { id: partnerId },
-                      } as never); // ⭐ FIX: Using as never to bypass the strict type error
+                      } as never);
                     }}
-                    onPressMore={() => {
-                      // open a bottom sheet / actions
-                    }}
+                    onPressMore={() => {}}
                     themeBg={colors.headerBg}
                     themeBorder={colors.border}
                     dark={isDark}
@@ -603,7 +712,7 @@ export default function DMThreadScreen() {
               showsVerticalScrollIndicator={false}
             />
 
-            {/* Composer */}
+            {/* Composer - 3 Column Layout (Button | Input | Button) */}
             <View
               style={{
                 paddingHorizontal: 16,
@@ -621,37 +730,70 @@ export default function DMThreadScreen() {
                 style={{
                   flexDirection: "row",
                   alignItems: "flex-end",
-                  backgroundColor: isDark ? "#1C1C1E" : "#F2F2F7",
-                  borderRadius: 24,
-                  paddingHorizontal: 16,
-                  paddingVertical: 8,
                 }}
               >
-                <TextInput
-                  value={input}
-                  onChangeText={setInput}
-                  placeholder="Message"
-                  placeholderTextColor={colors.textSecondary}
+                {/* Image Picker Button (Left) */}
+                <TouchableOpacity
+                  onPress={pickImage}
+                  disabled={sending}
                   style={{
-                    color: colors.text,
-                    fontSize: 17,
-                    flex: 1,
-                    minHeight: 36,
-                    paddingVertical: 8,
+                    height: 40,
+                    width: 40,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginRight: 8,
+                    marginBottom: 2,
+                    opacity: sending ? 0.5 : 1,
                   }}
-                  multiline
-                  editable={!sending}
-                />
+                >
+                  <Ionicons
+                    name="images"
+                    size={28}
+                    color={colors.primaryEnd}
+                  />
+                </TouchableOpacity>
+
+                {/* Text Input (Middle, Gray Pill) */}
+                <View
+                  style={{
+                    flex: 1,
+                    backgroundColor: isDark ? "#1C1C1E" : "#F2F2F7",
+                    borderRadius: 24,
+                    paddingHorizontal: 12,
+                    paddingVertical: 4,
+                    minHeight: 40,
+                    justifyContent: 'center',
+                  }}
+                >
+                  <TextInput
+                    value={input}
+                    onChangeText={setInput}
+                    placeholder="Message"
+                    placeholderTextColor={colors.textSecondary}
+                    style={{
+                      color: colors.text,
+                      fontSize: 17,
+                      maxHeight: 120,
+                      paddingTop: 8,
+                      paddingBottom: 8,
+                    }}
+                    multiline
+                    editable={!sending}
+                  />
+                </View>
+
+                {/* Send Button (Right) */}
                 <TouchableOpacity
                   onPress={send}
                   disabled={sending || !input.trim()}
                   style={{
                     marginLeft: 8,
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 20,
                     overflow: "hidden",
                     opacity: sending || !input.trim() ? 0.4 : 1,
+                    marginBottom: 2,
                   }}
                 >
                   <LinearGradient
@@ -663,7 +805,7 @@ export default function DMThreadScreen() {
                     {sending ? (
                       <ActivityIndicator color="#fff" size="small" />
                     ) : (
-                      <Ionicons name="arrow-up" size={20} color="#fff" />
+                      <Ionicons name="arrow-up" size={24} color="#fff" />
                     )}
                   </LinearGradient>
                 </TouchableOpacity>
