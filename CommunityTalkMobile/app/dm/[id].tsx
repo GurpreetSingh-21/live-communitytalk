@@ -1,4 +1,4 @@
-//CommunityTalkMobile/app/dm/[id].tsx
+// CommunityTalkMobile/app/dm/[id].tsx
 
 import React, {
   useCallback,
@@ -19,6 +19,8 @@ import {
   Platform,
   Alert,
   Image,
+  ActionSheetIOS,
+  Linking,
 } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,6 +28,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import { Audio } from 'expo-av';
 
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
@@ -39,9 +43,10 @@ type DMMessage = {
   to: string;
   content: string;
   createdAt: string | Date;
-  type?: "text" | "photo" | "voice";
+  type?: "text" | "photo" | "video" | "audio" | "file";
   clientMessageId?: string;
   timestamp?: string | Date;
+  fileName?: string;
 };
 
 type PartnerMeta = {
@@ -207,6 +212,10 @@ export default function DMThreadScreen() {
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
 
+  // ✅ Recording State
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+
   const resolvedClientIdsRef = useRef<Set<string>>(new Set());
   const listRef = useRef<FlatList<DMMessage>>(null);
 
@@ -359,6 +368,7 @@ export default function DMThreadScreen() {
         createdAt: p.timestamp || p.createdAt || new Date(),
         type: p.type || "text",
         clientMessageId: p.clientMessageId,
+        fileName: p.attachments?.[0]?.name, // Support receiving filenames
       };
 
       setMessages((prev) =>
@@ -373,8 +383,180 @@ export default function DMThreadScreen() {
     return () => socket.off?.("dm:message", onDM);
   }, [socket, partnerId]);
 
+  /* ─────── Consolidated Upload & Send Logic ─────── */
+  const uploadAndSend = async (
+    fileUri: string, 
+    fileType: string, 
+    fileName: string, 
+    msgType: "photo" | "video" | "audio" | "file"
+  ) => {
+    setSending(true);
+    const clientMessageId = `dm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    // Optimistic Update
+    const optimistic: DMMessage = {
+      from: myId,
+      to: partnerId,
+      content: fileUri, // Show local URI temporarily
+      createdAt: new Date(),
+      type: msgType,
+      clientMessageId,
+      fileName: fileName
+    };
+    
+    setMessages((prev) => 
+        finalizeUnique(upsertMessages(prev, optimistic, { prefer: "local" }))
+    );
+    
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri: fileUri,
+        name: fileName,
+        type: fileType,
+      } as any);
+
+      const uploadRes = await api.post('/api/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      const secureUrl = uploadRes.data?.url || fileUri;
+
+      const payload = {
+        content: secureUrl,
+        type: msgType,
+        clientMessageId,
+        attachments: [{ url: secureUrl, type: msgType, name: fileName }]
+      };
+
+      // Try specific ID route first
+      try {
+        await api.post(`/api/direct-messages/${partnerId}`, payload);
+      } catch (e: any) {
+        if (e?.response?.status !== 404) throw e;
+        // Fallback to body-only route
+        await api.post(`/api/direct-messages`, { ...payload, to: partnerId });
+      }
+      
+      if (clientMessageId) resolvedClientIdsRef.current.add(clientMessageId);
+
+    } catch (err) {
+      console.error("Send failed", err);
+      Alert.alert("Upload Failed", "Could not send file.");
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.clientMessageId === clientMessageId
+            ? { ...m, content: "[failed to send]" }
+            : m
+        )
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  /* ─────── Handlers ─────── */
+
+  // 1. Pick Image or Video
+  const handlePickMedia = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All, // ✅ Images AND Videos
+      allowsEditing: true,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const type = asset.type === 'video' ? 'video' : 'photo';
+      const mime = asset.mimeType || (type === 'video' ? 'video/mp4' : 'image/jpeg');
+      const name = asset.fileName || `media_${Date.now()}.${type === 'video' ? 'mp4' : 'jpg'}`;
+      
+      uploadAndSend(asset.uri, mime, name, type);
+    }
+  };
+
+  // 2. Pick Document (PDF)
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf'], // ✅ Only PDFs
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const doc = result.assets[0];
+        uploadAndSend(doc.uri, doc.mimeType || 'application/pdf', doc.name, 'file');
+      }
+    } catch (e) {
+      console.log("Document picker error", e);
+    }
+  };
+
+  // 3. Audio Recording
+  const startRecording = async () => {
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (perm.status !== 'granted') {
+        Alert.alert("Permission needed", "Audio permission is required to record voice notes.");
+        return;
+      }
+
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecording(recording);
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Failed to start recording", err);
+    }
+  };
+
+  const stopRecordingAndSend = async () => {
+    if (!recording) return;
+    setIsRecording(false);
+    await recording.stopAndUnloadAsync();
+    const uri = recording.getURI();
+    setRecording(null);
+
+    if (uri) {
+      uploadAndSend(uri, 'audio/m4a', `audio_${Date.now()}.m4a`, 'audio');
+    }
+  };
+
+  const cancelRecording = async () => {
+    if (!recording) return;
+    setIsRecording(false);
+    try { await recording.stopAndUnloadAsync(); } catch {}
+    setRecording(null);
+  };
+
+  // 4. The "Plus" Menu
+  const showAttachmentOptions = () => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ["Cancel", "Photo & Video", "Document (PDF)", "Record Audio"],
+          cancelButtonIndex: 0,
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 1) handlePickMedia();
+          if (buttonIndex === 2) handlePickDocument();
+          if (buttonIndex === 3) startRecording();
+        }
+      );
+    } else {
+      Alert.alert("Add Attachment", "Choose an option", [
+        { text: "Photo & Video", onPress: handlePickMedia },
+        { text: "Document (PDF)", onPress: handlePickDocument },
+        { text: "Record Audio", onPress: startRecording },
+        { text: "Cancel", style: "cancel" },
+      ]);
+    }
+  };
+
   /* ─────── Send Text ─────── */
-  const send = useCallback(async () => {
+  const sendText = useCallback(async () => {
     const text = input.trim();
     if (!text || sending) return;
     setSending(true);
@@ -402,19 +584,14 @@ export default function DMThreadScreen() {
 
     try {
       let data: any;
+      const payload = { content: text, type: 'text', clientMessageId };
+      
       try {
-        ({ data } = await api.post(`/api/direct-messages/${partnerId}`, {
-          content: text,
-          clientMessageId,
-        }));
+        ({ data } = await api.post(`/api/direct-messages/${partnerId}`, payload));
       } catch (e: any) {
         if (e?.response?.status !== 404) throw e;
-        console.log("[dm] falling back to body-style DM POST");
-        ({ data } = await api.post(`/api/direct-messages`, {
-          to: partnerId,
-          content: text,
-          clientMessageId,
-        }));
+        // Fallback
+        ({ data } = await api.post(`/api/direct-messages`, { ...payload, to: partnerId }));
       }
 
       const serverMsg: DMMessage = {
@@ -446,211 +623,91 @@ export default function DMThreadScreen() {
     }
   }, [input, sending, myId, partnerId]);
 
-  /* ─────── Pick & Send Image ─────── */
-  const pickImage = useCallback(async () => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permissionResult.granted === false) {
-        Alert.alert("Permission Denied", "Permission to access media library is required!");
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.7,
-      });
-
-      if (!result.canceled && result.assets.length > 0) {
-        const asset = result.assets[0];
-        console.log("Selected image URI:", asset.uri);
-
-        const clientMessageId = `dm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-        // Show optimistic image immediately
-        const optimistic: DMMessage = {
-          from: myId,
-          to: partnerId,
-          content: asset.uri,
-          createdAt: new Date(),
-          type: "photo",
-          clientMessageId,
-        };
-
-        setMessages((prev) => finalizeUnique(upsertMessages(prev, optimistic, { prefer: "local" })));
-
-        requestAnimationFrame(() =>
-          listRef.current?.scrollToEnd({ animated: true })
-        );
-
-        setSending(true);
-
-        try {
-          // Prepare FormData for upload
-          const formData = new FormData();
-          formData.append('file', {
-            uri: asset.uri,
-            name: `upload_${Date.now()}.jpg`,
-            type: 'image/jpeg',
-          } as any);
-
-          // Upload image
-          let uploadRes: any;
-          try {
-            uploadRes = await api.post('/api/upload', formData, {
-              headers: { 'Content-Type': 'multipart/form-data' },
-            });
-          } catch (uploadErr: any) {
-            console.warn("[dm] /api/upload failed, attempting fallback");
-            // If upload endpoint doesn't exist, use the local URI directly
-            uploadRes = { data: { url: asset.uri } };
-          }
-
-          const imageUrl = uploadRes.data?.url || asset.uri;
-
-          // Send as DM message
-          try {
-            await api.post(`/api/direct-messages/${partnerId}`, {
-              content: imageUrl,
-              type: "photo",
-              clientMessageId,
-            });
-          } catch (dmErr: any) {
-            if (dmErr?.response?.status !== 404) throw dmErr;
-            console.log("[dm] falling back to body-style DM POST for image");
-            await api.post(`/api/direct-messages`, {
-              to: partnerId,
-              content: imageUrl,
-              type: "photo",
-              clientMessageId,
-            });
-          }
-
-          // Mark as resolved
-          if (clientMessageId) resolvedClientIdsRef.current.add(clientMessageId);
-        } catch (err: any) {
-          console.error("[dm] image send error:", err);
-          Alert.alert("Send Failed", "Could not send image. Please try again.");
-          
-          // Mark as failed
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.clientMessageId === clientMessageId
-                ? { ...m, content: "[failed to send]", type: "text" }
-                : m
-            )
-          );
-        } finally {
-          setSending(false);
-        }
-      }
-    } catch (error: any) {
-      console.log("[dm] image picker error:", error);
-      setSending(false);
-    }
-  }, [myId, partnerId]);
-
-  /* ─────── UI helpers ─────── */
-  const headerName =
-    meta?.partnerName || meta?.fullName || meta?.name || paramName || "Direct Message";
-  const headerAvatar = meta?.avatar || paramAvatar || undefined;
-  const lastSeenIso = meta?.lastSeen || meta?.updatedAt;
-  const status =
-    meta?.online
-      ? "online"
-      : lastSeenIso
-        ? `last seen ${new Date(lastSeenIso as any).toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
-        })}`
-        : "";
-
-  const renderItem = ({
-    item,
-    index,
-  }: {
-    item: DMMessage;
-    index: number;
-  }) => {
+  /* ─────── Render Item Update ─────── */
+  const renderItem = ({ item, index }: { item: DMMessage; index: number }) => {
     const mine = String(item.from) === myId;
     const prev = messages[index - 1];
     const curD = asDate(item.createdAt);
     const showDate = !prev || !isSameDay(curD, asDate(prev.createdAt));
 
+    // ✅ FIX: Auto-detect old images (URL in Chat issue)
+    const looksLikeImage = item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) || item.content?.includes('cloudinary.com');
+    const currentType = (!item.type && looksLikeImage) ? 'photo' : (item.type || 'text');
+
+    let contentNode;
+    if (currentType === 'photo') {
+      contentNode = (
+        <TouchableOpacity activeOpacity={0.9} onPress={() => {
+            if(item.content.startsWith('http')) Linking.openURL(item.content);
+        }}>
+          <Image 
+            source={{ uri: item.content }} 
+            style={{ width: 220, height: 220, borderRadius: 12, backgroundColor: '#eee' }} 
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
+      );
+    } else if (currentType === 'video') {
+      contentNode = (
+        <TouchableOpacity onPress={() => Linking.openURL(item.content)} style={{ width: 220, height: 150, borderRadius: 12, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="play-circle" size={48} color="#fff" />
+          <Text style={{ color: '#fff', fontSize: 12, marginTop: 4 }}>Tap to Play Video</Text>
+        </TouchableOpacity>
+      );
+    } else if (currentType === 'file') {
+      contentNode = (
+        <TouchableOpacity onPress={() => Linking.openURL(item.content)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="document-text" size={28} color={mine ? '#fff' : colors.text} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: mine ? '#fff' : colors.text, textDecorationLine: 'underline', fontWeight: '600' }}>
+              {item.fileName || "Document.pdf"}
+            </Text>
+            <Text style={{ color: mine ? '#rgba(255,255,255,0.7)' : colors.textSecondary, fontSize: 10 }}>Tap to open</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    } else if (currentType === 'audio') {
+      contentNode = (
+        <TouchableOpacity onPress={() => Linking.openURL(item.content)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="mic-circle" size={32} color={mine ? '#fff' : colors.text} />
+          <View>
+             <Text style={{ color: mine ? '#fff' : colors.text, fontWeight: '600' }}>Voice Note</Text>
+             <Text style={{ color: mine ? '#rgba(255,255,255,0.7)' : colors.textSecondary, fontSize: 10 }}>Tap to listen</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    } else {
+      contentNode = <Text style={{ color: mine ? '#fff' : colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>;
+    }
+
     return (
       <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
         {showDate && (
           <View style={{ alignItems: "center", marginVertical: 12 }}>
-            <View
-              style={{
-                backgroundColor: colors.surface,
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 12,
-                borderWidth: 0.5,
-                borderColor: colors.border,
-              }}
-            >
-              <Text style={{ color: colors.textSecondary, fontWeight: "600" }}>
-                {dayLabel(curD)}
-              </Text>
+            <View style={{ backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 0.5, borderColor: colors.border }}>
+              <Text style={{ color: colors.textSecondary, fontWeight: "600" }}>{dayLabel(curD)}</Text>
             </View>
           </View>
         )}
-        <View
-          style={{
-            alignItems: mine ? "flex-end" : "flex-start",
-            marginBottom: 6,
-          }}
-        >
+        <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: 6 }}>
           <View style={{ maxWidth: "75%" }}>
-            {item.type === 'photo' ? (
-              <TouchableOpacity
-                activeOpacity={0.9}
-                style={{
-                  borderRadius: 16,
-                  overflow: 'hidden',
-                  borderWidth: mine ? 0 : 0.5,
-                  borderColor: colors.border,
-                }}
-              >
-                <Image
-                  source={{ uri: item.content }}
-                  style={{ width: 220, height: 220, backgroundColor: '#eee' }}
-                  resizeMode="cover"
-                />
-              </TouchableOpacity>
-            ) : mine ? (
-              <LinearGradient
-                colors={[colors.primaryStart, colors.primaryEnd]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                }}
-              >
-                <Text style={{ color: "#fff", fontSize: 16, lineHeight: 22 }}>
-                  {item.content}
-                </Text>
-              </LinearGradient>
-            ) : (
-              <View
-                style={{
-                  backgroundColor: colors.surface,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  borderWidth: 0.5,
-                  borderColor: colors.border,
-                }}
-              >
-                <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>
-                  {item.content}
-                </Text>
-              </View>
-            )}
+            <View style={{
+              backgroundColor: mine ? undefined : colors.surface,
+              borderRadius: 18,
+              overflow: 'hidden',
+              borderWidth: mine ? 0 : 0.5,
+              borderColor: colors.border
+            }}>
+              {mine && currentType === 'text' ? (
+                <LinearGradient colors={[colors.primaryStart, colors.primaryEnd]} style={{ padding: 12 }}>
+                  {contentNode}
+                </LinearGradient>
+              ) : (
+                <View style={{ padding: currentType === 'text' ? 12 : 8 }}>
+                  {contentNode}
+                </View>
+              )}
+            </View>
           </View>
         </View>
       </View>
@@ -660,12 +717,28 @@ export default function DMThreadScreen() {
   const data = useMemo(() => finalizeUnique(messages), [messages]);
 
   /* ─────── Render ─────── */
+  const headerName = meta?.partnerName || meta?.fullName || meta?.name || paramName || "Direct Message";
+  const headerAvatar = meta?.avatar || paramAvatar || undefined;
+  const status = meta?.online ? "online" : "";
+
   return (
-    <SafeAreaView
-      edges={["top"]}
-      style={{ flex: 1, backgroundColor: colors.bg }}
-    >
+    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
+
+      {/* ✅ FIXED: Header is OUTSIDE KeyboardAvoidingView so it never moves */}
+      <View style={{ backgroundColor: colors.headerBg, zIndex: 10 }}>
+        <DMHeader
+          name={headerName}
+          avatar={headerAvatar}
+          status={status}
+          onPressBack={() => router.back()}
+          onPressProfile={() => router.push({ pathname: "/profile/[id]", params: { id: partnerId } } as never)}
+          onPressMore={() => {}}
+          themeBg={colors.headerBg}
+          themeBorder={colors.border}
+          dark={isDark}
+        />
+      </View>
 
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.bg }}
@@ -674,7 +747,7 @@ export default function DMThreadScreen() {
       >
         {loading ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <ActivityIndicator />
+            <ActivityIndicator size="large" color={colors.primaryEnd} />
           </View>
         ) : (
           <>
@@ -685,131 +758,98 @@ export default function DMThreadScreen() {
               renderItem={renderItem}
               onEndReachedThreshold={0.2}
               onEndReached={loadOlder}
-              ListHeaderComponent={
-                <View style={{ paddingTop: 4, backgroundColor: colors.headerBg }}>
-                  <DMHeader
-                    name={headerName}
-                    avatar={headerAvatar}
-                    status={status}
-                    onPressBack={() => router.back()}
-                    onPressProfile={() => {
-                      router.push({
-                        pathname: "/profile/[id]",
-                        params: { id: partnerId },
-                      } as never);
-                    }}
-                    onPressMore={() => {}}
-                    themeBg={colors.headerBg}
-                    themeBorder={colors.border}
-                    dark={isDark}
-                  />
-                </View>
-              }
-              stickyHeaderIndices={[0]}
-              contentContainerStyle={{
-                paddingBottom: Math.max(92, insets.bottom + 60),
-              }}
+              contentContainerStyle={{ paddingBottom: Math.max(92, insets.bottom + 60), paddingTop: 8 }}
               showsVerticalScrollIndicator={false}
             />
 
-            {/* Composer - 3 Column Layout (Button | Input | Button) */}
+            {/* Composer - Toggle between Recording and Normal */}
             <View
               style={{
                 paddingHorizontal: 16,
                 paddingVertical: 12,
-                paddingBottom:
-                  Platform.OS === "ios"
-                    ? Math.max(16, insets.bottom) + 8
-                    : 12,
+                paddingBottom: Platform.OS === "ios" ? Math.max(16, insets.bottom) + 8 : 12,
                 borderTopWidth: 0.5,
                 borderTopColor: colors.border,
                 backgroundColor: colors.bg,
               }}
             >
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "flex-end",
-                }}
-              >
-                {/* Image Picker Button (Left) */}
-                <TouchableOpacity
-                  onPress={pickImage}
-                  disabled={sending}
-                  style={{
-                    height: 40,
-                    width: 40,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: 8,
-                    marginBottom: 2,
-                    opacity: sending ? 0.5 : 1,
-                  }}
-                >
-                  <Ionicons
-                    name="images"
-                    size={28}
-                    color={colors.primaryEnd}
-                  />
-                </TouchableOpacity>
-
-                {/* Text Input (Middle, Gray Pill) */}
-                <View
-                  style={{
-                    flex: 1,
-                    backgroundColor: isDark ? "#1C1C1E" : "#F2F2F7",
-                    borderRadius: 24,
-                    paddingHorizontal: 12,
-                    paddingVertical: 4,
-                    minHeight: 40,
-                    justifyContent: 'center',
-                  }}
-                >
-                  <TextInput
-                    value={input}
-                    onChangeText={setInput}
-                    placeholder="Message"
-                    placeholderTextColor={colors.textSecondary}
-                    style={{
-                      color: colors.text,
-                      fontSize: 17,
-                      maxHeight: 120,
-                      paddingTop: 8,
-                      paddingBottom: 8,
-                    }}
-                    multiline
-                    editable={!sending}
-                  />
+              {isRecording ? (
+                // 🔴 Recording UI
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 40 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: 'red', marginRight: 8 }} />
+                    <Text style={{ color: 'red', fontWeight: '600' }}>Recording Audio...</Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 16 }}>
+                    <TouchableOpacity onPress={cancelRecording}>
+                      <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={stopRecordingAndSend}>
+                      <Ionicons name="send" size={24} color={colors.primaryEnd} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-
-                {/* Send Button (Right) */}
-                <TouchableOpacity
-                  onPress={send}
-                  disabled={sending || !input.trim()}
-                  style={{
-                    marginLeft: 8,
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    overflow: "hidden",
-                    opacity: sending || !input.trim() ? 0.4 : 1,
-                    marginBottom: 2,
-                  }}
-                >
-                  <LinearGradient
-                    colors={[colors.primaryStart, colors.primaryEnd]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+              ) : (
+                // 🔵 Standard UI with Plus Button
+                <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+                  <TouchableOpacity
+                    onPress={showAttachmentOptions}
+                    disabled={sending}
+                    style={{ height: 40, width: 40, alignItems: "center", justifyContent: "center", marginRight: 8, marginBottom: 2, opacity: sending ? 0.5 : 1 }}
                   >
-                    {sending ? (
-                      <ActivityIndicator color="#fff" size="small" />
-                    ) : (
-                      <Ionicons name="arrow-up" size={24} color="#fff" />
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
+                    <Ionicons name="add-circle" size={34} color={colors.primaryEnd} />
+                  </TouchableOpacity>
+
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: isDark ? "#1C1C1E" : "#F2F2F7",
+                      borderRadius: 24,
+                      paddingHorizontal: 12,
+                      paddingVertical: 4,
+                      minHeight: 40,
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <TextInput
+                      value={input}
+                      onChangeText={setInput}
+                      placeholder="Message"
+                      placeholderTextColor={colors.textSecondary}
+                      style={{
+                        color: colors.text,
+                        fontSize: 17,
+                        maxHeight: 120,
+                        paddingTop: 8,
+                        paddingBottom: 8,
+                      }}
+                      multiline
+                      editable={!sending}
+                    />
+                  </View>
+
+                  {input.trim().length > 0 && (
+                    <TouchableOpacity
+                      onPress={sendText}
+                      disabled={sending}
+                      style={{ marginLeft: 8, width: 40, height: 40, borderRadius: 20, overflow: "hidden", opacity: sending ? 0.4 : 1, marginBottom: 2 }}
+                    >
+                      <LinearGradient
+                        colors={[colors.primaryStart, colors.primaryEnd]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 1 }}
+                        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+                      >
+                        {sending ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                        ) : (
+                          <Ionicons name="arrow-up" size={24} color="#fff" />
+                        )}
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
           </>
         )}

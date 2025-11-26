@@ -27,6 +27,7 @@ export const api = axios.create({
   headers: {
     "Content-Type": "application/json",
     "X-Requested-With": "XMLHttpRequest",
+    "ngrok-skip-browser-warning": "true",
   },
 });
 

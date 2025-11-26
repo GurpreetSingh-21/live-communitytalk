@@ -29,8 +29,7 @@ router.get("/", async (req, res) => {
       // 3. Identify Partner ID (Raw)
       { $addFields: { partnerIdRaw: { $cond: [{ $eq: ["$from", me] }, "$to", "$from"] } } },
       
-      // 4. ⭐ FIX: Convert Partner ID to ObjectId safely
-      // This fixes the "Deleted User" bug caused by String vs ObjectId mismatch
+      // 4. Convert Partner ID to ObjectId safely
       { $addFields: { 
           partnerIdObj: { $toObjectId: "$partnerIdRaw" } 
       }},
@@ -39,8 +38,9 @@ router.get("/", async (req, res) => {
       {
         $group: {
           _id: "$partnerIdObj",
-          partnerIdRaw: { $first: "$partnerIdRaw" }, // Keep raw ID for reference
+          partnerIdRaw: { $first: "$partnerIdRaw" },
           lastMessage: { $first: "$content" },
+          lastType: { $first: "$type" }, // ✅ Capture type for preview
           lastAttachments: { $first: "$attachments" },
           lastStatus: { $first: "$status" },
           lastId: { $first: "$_id" },
@@ -52,13 +52,13 @@ router.get("/", async (req, res) => {
       {
         $lookup: {
           from: "people",
-          localField: "_id", // Now matching ObjectId to ObjectId
+          localField: "_id",
           foreignField: "_id",
           as: "partner",
         },
       },
       
-      // 7. Unwind safely (keep chat even if user missing)
+      // 7. Unwind safely
       { 
         $unwind: {
           path: "$partner",
@@ -79,7 +79,7 @@ router.get("/", async (req, res) => {
       {
         $lookup: {
           from: "directmessages",
-          let: { pid: "$partnerIdRaw" }, // Use raw ID to match message document format
+          let: { pid: "$partnerIdRaw" },
           pipeline: [
             {
               $match: {
@@ -98,12 +98,10 @@ router.get("/", async (req, res) => {
         },
       },
       
-      // 10. ⭐ FIX: Smart Project for Name & Avatar
+      // 10. Smart Project for Name & Avatar
       {
         $project: {
           partnerId: "$_id",
-          
-          // Try 'fullName', then 'name', then combine 'firstName + lastName'
           fullName: { 
             $ifNull: [
               "$partner.fullName", 
@@ -116,13 +114,10 @@ router.get("/", async (req, res) => {
               "Unknown User"
             ] 
           },
-          
           email: { $ifNull: ["$partner.email", ""] },
-          
-          // Check all possible avatar fields
           avatar: { $ifNull: ["$partner.avatar", "$partner.photoUrl", "$partner.image", "/default-avatar.png"] },
-          
           lastMessage: 1,
+          lastType: 1,
           lastAttachments: 1,
           lastStatus: 1,
           lastId: 1,
@@ -135,18 +130,29 @@ router.get("/", async (req, res) => {
       { $limit: limit },
     ]);
 
-    const normalized = items.map((t) => ({
-      partnerId: String(t.partnerId),
-      fullName: t.fullName,
-      email: t.email,
-      avatar: t.avatar,
-      lastMessage: t.lastMessage,
-      hasAttachment: Array.isArray(t.lastAttachments) && t.lastAttachments.length > 0,
-      lastStatus: t.lastStatus,
-      lastId: String(t.lastId),
-      lastTimestamp: t.lastTimestamp,
-      unread: t.unread || 0,
-    }));
+    // Generate human-readable previews based on message type
+    const normalized = items.map((t) => {
+      let preview = t.lastMessage;
+      if (!preview || preview.trim() === "") {
+        if (t.lastType === 'photo') preview = '[Photo]';
+        else if (t.lastType === 'video') preview = '[Video]';
+        else if (t.lastType === 'audio') preview = '[Voice Note]';
+        else if (t.lastType === 'file') preview = '[File]';
+      }
+
+      return {
+        partnerId: String(t.partnerId),
+        fullName: t.fullName,
+        email: t.email,
+        avatar: t.avatar,
+        lastMessage: preview,
+        hasAttachment: Array.isArray(t.lastAttachments) && t.lastAttachments.length > 0,
+        lastStatus: t.lastStatus,
+        lastId: String(t.lastId),
+        lastTimestamp: t.lastTimestamp,
+        unread: t.unread || 0,
+      };
+    });
 
     return res.json(normalized);
   } catch (err) {
@@ -166,12 +172,10 @@ router.get("/:memberId", async (req, res) => {
     const them = OID(themRaw);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
 
-    // Match messages regardless of which ID type (String/ObjectId) was saved
     const filter = {
       $or: [
         { from: me, to: them },
         { from: them, to: me },
-        // Fallback for string-saved IDs if any exist
         { from: String(me), to: String(them) },
         { from: String(them), to: String(me) },
       ],
@@ -189,11 +193,12 @@ router.get("/:memberId", async (req, res) => {
   }
 });
 
-// ───────────────────────── POST new DM ─────────────────────────
-router.post("/", async (req, res) => {
+// ───────────────────────── Unified Send Handler ─────────────────────────
+const handleSend = async (req, res) => {
   try {
     const from = OID(req.user.id);
-    const { to: toRaw, content = "", attachments = [] } = req.body || {};
+    // Allow 'to' ID to come from URL params OR Body
+    const toRaw = req.params.id || req.body.to;
     
     if (!isValidId(toRaw)) return res.status(400).json({ error: "Invalid recipient id" });
     const to = OID(toRaw);
@@ -201,33 +206,43 @@ router.post("/", async (req, res) => {
     if (String(to) === String(from))
       return res.status(400).json({ error: "Cannot message yourself" });
 
+    let { content = "", attachments = [], type = "text", clientMessageId } = req.body;
+
+    // ✅ FIX: Safe parsing if attachments arrive as a JSON string
+    if (typeof attachments === 'string') {
+      try {
+        attachments = JSON.parse(attachments);
+      } catch (e) {
+        console.warn("[DM Routes] Failed to parse attachments string, defaulting to empty array");
+        attachments = [];
+      }
+    }
+
     const text = String(content || "").trim();
-    const cleanAttachments = Array.isArray(attachments)
-      ? attachments.filter((a) => a && a.url)
-      : [];
+    const cleanAttachments = Array.isArray(attachments) ? attachments : [];
 
     if (!text && cleanAttachments.length === 0)
       return res.status(400).json({ error: "Message content or attachments required" });
 
-    // 1. Check if they ever replied (ObjectId check)
+    // Anti-spam check: Check if they ever replied
     const hasReplied = await DirectMessage.exists({ from: to, to: from });
-
     if (!hasReplied) {
       const mySentCount = await DirectMessage.countDocuments({ from: from, to: to });
-      // Anti-spam: Block if 1 message sent with no reply
-      if (mySentCount >= 1) {
+      // Allow up to 5 initial messages before blocking
+      if (mySentCount >= 5) {
         return res.status(403).json({ 
-          error: "You cannot send another message until the user replies." 
+          error: "You cannot send more messages until the user replies." 
         });
       }
     }
 
     const dm = await DirectMessage.create({
-      from, // Saved as ObjectId
-      to,   // Saved as ObjectId
+      from,
+      to,
       content: text,
-      attachments: cleanAttachments,
+      attachments: cleanAttachments, // ✅ Now guaranteed to be an array or object, not string
       status: "sent",
+      type: type, // ✅ Save message type
     });
 
     const payload = {
@@ -238,6 +253,8 @@ router.post("/", async (req, res) => {
       attachments: dm.attachments,
       timestamp: dm.createdAt,
       status: dm.status,
+      type: dm.type,
+      clientMessageId
     };
 
     req.io?.to(String(to)).emit("receive_direct_message", payload);
@@ -249,7 +266,11 @@ router.post("/", async (req, res) => {
     console.error("[DM Routes] POST error:", err);
     return res.status(500).json({ error: "Failed to send message" });
   }
-});
+};
+
+// Register the same handler for both route patterns
+router.post("/", handleSend);
+router.post("/:id", handleSend);
 
 // ───────────────────────── PATCH mark as read ─────────────────────────
 router.patch("/:memberId/read", async (req, res) => {
@@ -257,7 +278,6 @@ router.patch("/:memberId/read", async (req, res) => {
     const me = OID(req.user.id);
     const them = OID(req.params.memberId);
     
-    // Update matches both ObjectId and String formats to be safe
     const result = await DirectMessage.updateMany(
       { 
         $or: [
