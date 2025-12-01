@@ -1,0 +1,43 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 120
+      arrivalRate: 10
+      rampTo: 50
+      name: "Ramp up load"
+    - duration: 600
+      arrivalRate: 50
+      name: "Sustained load"
+  engines:
+    socketio-v3:
+      transports: ["websocket"]
+  payload:
+    path: "users.csv"
+    fields:
+      - "token"
+      - "userId"
+      - "communityId"
+    order: sequence
+
+scenarios:
+  - name: "Chat Flow"
+    engine: "socketio-v3"
+    flow:
+      # Artillery socketio engine specific:
+      - connect:
+          auth:
+            token: "{{ token }}"
+      
+      - think: 1
+      
+      - emit:
+          channel: "message:send"
+          data:
+            content: "Hello from load test!"
+            communityId: "{{ communityId }}"
+            clientMessageId: "{{ $randomString() }}"
+            
+      - think: 5
