@@ -3,7 +3,7 @@ import { api } from "./api";
 
 /* ---------- Types ---------- */
 
-export type ChatMessageStatus = "sent" | "edited" | "deleted";
+export type ChatMessageStatus = "sent" | "delivered" | "read" | "edited" | "deleted";
 
 export type ChatMessage = {
   _id: string;
@@ -17,6 +17,8 @@ export type ChatMessage = {
   editedAt?: string | Date;
   isDeleted?: boolean;
   deletedAt?: string | Date;
+  deliveredAt?: string | Date;
+  readAt?: string | Date;
   /** client-generated id to dedupe optimistic sends */
   clientMessageId?: string;
 };
@@ -41,14 +43,14 @@ function buildQuery(params: Record<string, string | undefined>): string {
     if (v !== undefined && v !== null && String(v).length > 0) qs.set(k, String(v));
   });
   const s = qs.toString();
-  return s ? `?${s}` : "";
+  return s ? `? ${s} ` : "";
 }
 
 function mapDates<T extends ChatMessage | Partial<ChatMessage>>(m: T, enable = false): T {
   if (!enable || !m) return m;
   const next: any = { ...m };
   if (next.timestamp) next.timestamp = new Date(next.timestamp);
-  if (next.editedAt)  next.editedAt  = new Date(next.editedAt);
+  if (next.editedAt) next.editedAt = new Date(next.editedAt);
   if (next.deletedAt) next.deletedAt = new Date(next.deletedAt);
   return next;
 }
@@ -67,11 +69,11 @@ export async function getMessages(
 
   const query = buildQuery({
     before: opts?.before ? toISO(opts.before) : undefined,
-    limit:  opts?.limit  !== undefined ? String(opts.limit) : undefined,
+    limit: opts?.limit !== undefined ? String(opts.limit) : undefined,
   });
 
   const { data } = await api.get<ChatMessage[]>(
-    `/api/messages/${encodeURIComponent(communityId)}${query}`,
+    `/ api / messages / ${encodeURIComponent(communityId)}${query} `,
     { signal: opts?.signal }
   );
 
@@ -79,8 +81,8 @@ export async function getMessages(
   const list: ChatMessage[] = Array.isArray(data)
     ? data
     : Array.isArray((data as any)?.items)
-    ? (data as any).items
-    : [];
+      ? (data as any).items
+      : [];
 
   if (opts?.mapDatesToJS) {
     return list.map((m) => mapDates(m, true));
@@ -96,7 +98,7 @@ export async function getLatestMessage(
   if (!communityId) throw new Error("communityId is required");
 
   const { data } = await api.get<ChatMessage | null>(
-    `/api/messages/${encodeURIComponent(communityId)}/latest`,
+    `/ api / messages / ${encodeURIComponent(communityId)}/latest`,
     { signal: opts?.signal }
   );
 

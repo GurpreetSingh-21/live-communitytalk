@@ -93,8 +93,10 @@ type ChatMessage = {
   content: string;
   timestamp: string | Date;
   communityId: string;
-  status?: "sent" | "edited" | "deleted";
+  status?: "sent" | "delivered" | "read" | "edited" | "deleted";
   isDeleted?: boolean;
+  deliveredAt?: string | Date;
+  readAt?: string | Date;
   clientMessageId?: string;
 };
 
@@ -285,6 +287,7 @@ export default function CommunityScreen() {
 
   const typingLabel = useMemo(() => {
     const entries = Array.from(typingMap.values()).filter(e => e.expiresAt > Date.now());
+    console.log(`🏷️ [TYPING LABEL] Active entries: ${entries.length}`, entries.map(e => e.name));
     if (!entries.length) return "";
     const names = entries.map(e => e.name).slice(0, 2);
     if (entries.length === 1) return `${names[0]} is typing…`;
@@ -426,7 +429,8 @@ export default function CommunityScreen() {
 
   useEffect(() => {
     if (!socket || !communityId || !isMember) return;
-    socket.emit?.("room:join", { room: `community:${communityId}` });
+    console.log("🔵 [ROOM] Joining community room:", communityId);
+    socket.emit?.("community:join", communityId);
 
     const onNew = (payload: any) => {
       if (String(payload?.communityId) !== communityId) return;
@@ -443,6 +447,13 @@ export default function CommunityScreen() {
         });
       } else {
         setMessages((prev) => [...prev, payload]);
+        // Send delivery receipt for messages from others
+        const myIds = [String(user?._id || ""), "me"];
+        if (!myIds.includes(String(payload.senderId || ""))) {
+          setTimeout(() => {
+            socket.emit?.("message:delivered", { messageId: payload._id });
+          }, 100);
+        }
       }
       if (isAtBottomRef.current) {
         requestAnimationFrame(() => scrollToBottom(true));
@@ -465,41 +476,66 @@ export default function CommunityScreen() {
       );
     };
 
+    // Listen for delivery and read status updates
+    const onStatusUpdate = (p: any) => {
+      if (p?.messageId) {
+        setMessages((prev) => 
+          prev.map((m) => 
+            String(m._id) === String(p.messageId) 
+              ? { ...m, status: p.status, deliveredAt: p.deliveredAt, readAt: p.readAt }
+              : m
+          )
+        );
+      }
+    };
+
     socket.on?.("receive_message", onNew);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
+    socket.on?.("message:status", onStatusUpdate);
 
     return () => {
       socket.off?.("receive_message", onNew);
       socket.off?.("message:updated", onEdited);
       socket.off?.("message:deleted", onDeleted);
-      socket.emit?.("room:leave", { room: `community:${communityId}` });
+      socket.off?.("message:status", onStatusUpdate);
+      console.log("🔴 [ROOM] Leaving community room:", communityId);
+      socket.emit?.("community:leave", communityId);
     };
-  }, [socket, communityId, isMember, socketConnected, scrollToBottom]);
+  }, [socket, communityId, isMember, socketConnected, scrollToBottom, user?._id]);
 
   useEffect(() => {
     if (!socket || !communityId || !isMember) return;
 
     const onTyping = (p: any) => {
+      console.log("📨 [TYPING] Received typing event:", p);
       if (String(p?.communityId) !== String(communityId)) return;
       const from = String(p?.from || p?.userId || "");
-      if (!from || String(from) === String(user?._id)) return;
-      const typing = !!p?.typing;
+      if (!from || String(from) === String(user?._id)) {
+        console.log("⚠️ [TYPING] Ignoring - either no sender or it's me");
+        return;
+      }
+      const typing = !!p?.isTyping;  // Changed from p?.typing to p?.isTyping
+      console.log(`✅ [TYPING] Processing: ${typing ? 'START' : 'STOP'} typing from user ${from}`);
 
       setTypingMap(prev => {
         const next = new Map(prev);
         if (typing) {
-          const label = (p?.name as string) || nameForId(from);
+          const label = (p?.fullName as string) || (p?.name as string) || nameForId(from);
+          console.log(`👤 [TYPING] Adding "${label}" to typing map`);
           next.set(from, { id: from, name: label, expiresAt: Date.now() + 6000 });
         } else {
+          console.log(`👤 [TYPING] Removing user ${from} from typing map`);
           next.delete(from);
         }
+        console.log(`📊 [TYPING] Total typing users: ${next.size}`);
         return next;
       });
     };
 
-    socket.on?.("typing", onTyping);
-    socket.on?.("community:typing", onTyping);
+    socket.on?.("user:typing", onTyping);  // Backend emits this
+    socket.on?.("typing", onTyping);        // Legacy support
+    socket.on?.("community:typing", onTyping); // Legacy support
 
     const gc = setInterval(() => {
       const now = Date.now();
@@ -517,6 +553,7 @@ export default function CommunityScreen() {
     }, 2000);
 
     return () => {
+      socket.off?.("user:typing", onTyping);
       socket.off?.("typing", onTyping);
       socket.off?.("community:typing", onTyping);
       clearInterval(gc);
@@ -1094,6 +1131,23 @@ export default function CommunityScreen() {
                   <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
                 )}
               </LinearGradient>
+              {/* Delivery status indicators */}
+              {!deleted && (
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 6, marginRight: 4 }}>
+                  <Text style={{ 
+                    color: item.status === "read" ? colors.primary : colors.textTertiary, 
+                    fontSize: 14,
+                    fontWeight: "600",
+                    marginRight: 4
+                  }}>
+                    {(item.status === "read" || item.status === "delivered") && "✓✓"}
+                    {(!item.status || item.status === "sent") && "✓"}
+                  </Text>
+                  <Text style={{ color: colors.textTertiary, fontSize: 12 }}>
+                    {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
         )}
@@ -1300,11 +1354,13 @@ export default function CommunityScreen() {
                           const now = Date.now();
                           if (now - (typingPingRef.current.lastSent || 0) > 2000) {
                             typingPingRef.current.lastSent = now;
-                            socket.emit?.("typing", { communityId, typing: true });
+                            console.log("🟢 [TYPING] Emitting community:typing=true for community:", communityId);
+                            socket.emit?.("community:typing", { communityId, isTyping: true });
                           }
                           clearTimeout(typingPingRef.current.timer);
                           typingPingRef.current.timer = setTimeout(() => {
-                            socket.emit?.("typing", { communityId, typing: false });
+                            console.log("🔴 [TYPING] Emitting community:typing=false for community:", communityId);
+                            socket.emit?.("community:typing", { communityId, isTyping: false });
                           }, 5000);
                         }
                       }}

@@ -43,6 +43,8 @@ const datingRoutes = require("./routes/datingRoutes"); // Dating feature
 const userRoutes = require("./routes/userRoutes"); // ✅ User routes (avatar upload)
 const userReportRoutes = require("./routes/userReportRoutes");
 const uploadRoutes = require('./routes/upload');
+const reactionRoutes = require('./routes/reactionRoutes');
+const twoFactorRoutes = require('./routes/twoFactorRoutes');
 
 // 📦 Models
 const Person = require("./person");
@@ -249,12 +251,32 @@ io.on("connection", async (socket) => {
 
   // Manual community join/leave
   socket.on("community:join", async (cid) => {
-    socket.join(communityRoom(cid));
+    const roomName = communityRoom(cid);
+    console.log(`🔵 [BACKEND] User ${uid} joining community room: ${roomName}`);
+    console.log(`   Before join - Socket rooms:`, Array.from(socket.rooms));
+    
+    socket.join(roomName);
+    
+    console.log(`   After join - Socket rooms:`, Array.from(socket.rooms));
+    console.log(`   Verification - InRoom: ${socket.rooms.has(roomName)}`);
+    
+    // ✅ Sync socket user state so typing checks pass
+    if (socket.user && socket.user.communityIds && !socket.user.communityIds.includes(cid)) {
+      console.log(`🔄 [BACKEND] Adding ${cid} to socket.user.communityIds for ${uid}`);
+      socket.user.communityIds.push(cid);
+    }
+
     await presence.joinCommunity(uid, cid);
   });
 
   socket.on("community:leave", async (cid) => {
-    socket.leave(communityRoom(cid));
+    const roomName = communityRoom(cid);
+    console.log(`🔴 [BACKEND] User ${uid} leaving community room: ${roomName}`);
+    console.log(`   Before leave - Socket rooms:`, Array.from(socket.rooms));
+    
+    socket.leave(roomName);
+    
+    console.log(`   After leave - Socket rooms:`, Array.from(socket.rooms));
     await presence.leaveCommunity(uid, cid);
   });
 
@@ -319,6 +341,88 @@ io.on("connection", async (socket) => {
     }
   });
 
+  // 📨 Message Delivery Receipt
+  socket.on("message:delivered", async ({ messageId }) => {
+    try {
+      const message = await Message.findById(messageId);
+      if (message && message.status === "sent") {
+        await message.markDelivered();
+        // Notify sender
+        io.to(String(message.senderId)).emit("message:status", {
+          messageId,
+          status: "delivered",
+          deliveredAt: message.deliveredAt
+        });
+      }
+    } catch (err) {
+      console.error("💥 Message delivered error:", err);
+    }
+  });
+
+  // 📖 Message Read Receipt
+  socket.on("message:read", async ({ messageId }) => {
+    try {
+      const message = await Message.findById(messageId);
+      if (message && message.status !== "deleted") {
+        await message.markRead();
+        // Notify sender
+        io.to(String(message.senderId)).emit("message:status", {
+          messageId,
+          status: "read",
+          readAt: message.readAt
+        });
+      }
+    } catch (err) {
+      console.error("💥 Message read error:", err);
+    }
+  });
+
+  // ⌨️ Typing Indicator - Community
+  socket.on("community:typing", ({ communityId, isTyping }) => {
+    try {
+      console.log(`⌨️ [BACKEND] Received typing event: user=${uid}, community=${communityId} (${typeof communityId}), isTyping=${isTyping}`);
+      
+      // Ensure communityIds exists
+      const userCommunities = socket.user.communityIds || [];
+      const isMember = userCommunities.includes(communityId);
+      
+      // DEBUG: Check if user is actually in the room
+      const roomName = communityRoom(communityId);
+      const inRoom = socket.rooms.has(roomName);
+      console.log(`🔍 [BACKEND] Debug: Room=${roomName}, InRoom=${inRoom}, IsMember=${isMember}`);
+      console.log(`   Socket Rooms:`, Array.from(socket.rooms));
+
+      if (isMember) {
+        console.log(`✅ [BACKEND] User is member, broadcasting to room: ${roomName}`);
+        socket.to(roomName).emit("user:typing", {
+          userId: uid,
+          fullName: socket.user.fullName,
+          communityId,
+          isTyping
+        });
+        console.log(`📤 [BACKEND] Emitted user:typing event`);
+      } else {
+        console.log(`❌ [BACKEND] User is NOT a member of community ${communityId}`);
+        console.log(`   User's communities:`, userCommunities);
+      }
+    } catch (err) {
+      console.error("💥 Community typing error:", err);
+    }
+  });
+
+  // ⌨️ Typing Indicator - Direct Message
+  socket.on("dm:typing", ({ recipientId, isTyping }) => {
+    try {
+      io.to(recipientId).emit("dm:typing", {
+        userId: uid,
+        fullName: socket.user.fullName,
+        isTyping
+      });
+    } catch (err) {
+      console.error("💥 DM typing error:", err);
+    }
+  });
+
   // Handle disconnect
   socket.on("disconnect", async () => {
     if (!uid) return;
@@ -355,6 +459,10 @@ app.use("/api/direct-messages", authenticate, directMessageRoutes);
 app.use("/api/notifications", authenticate, notificationRoutes);
 // ⭐ NEW: User Reporting Route (Authenticated)
 app.use("/api/reports", authenticate, userReportRoutes);
+// Reactions routes (emoji reactions on messages)
+app.use("/api/reactions", authenticate, reactionRoutes);
+// Two-Factor Authentication routes
+app.use("/api/2fa", twoFactorRoutes);
 // Events routes with pre-auth logging
 app.use("/api/events", (req, _res, next) => {
   console.log("🧭 [/api/events pre-auth]");

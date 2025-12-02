@@ -38,10 +38,26 @@ const messageSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["sent", "edited", "deleted"],
+      enum: ["sent", "delivered", "read", "edited", "deleted"],
       default: "sent",
       index: true,
     },
+
+    reactions: [
+      {
+        emoji: { type: String, required: true },
+        userId: { 
+          type: mongoose.Schema.Types.ObjectId, 
+          ref: "Person", 
+          required: true 
+        },
+        userName: String,
+        createdAt: { type: Date, default: Date.now }
+      }
+    ],
+
+    deliveredAt: Date,
+    readAt: Date,
   },
   {
     timestamps: true, // -> createdAt, updatedAt
@@ -76,6 +92,22 @@ messageSchema.methods.markDeleted = async function () {
   this.deletedAt = new Date();
   this.status = "deleted";
   this.content = "";
+  return this.save();
+};
+
+messageSchema.methods.markDelivered = async function () {
+  if (this.status === "sent") {
+    this.status = "delivered";
+    this.deliveredAt = new Date();
+  }
+  return this.save();
+};
+
+messageSchema.methods.markRead = async function () {
+  if (this.status !== "deleted") {
+    this.status = "read";
+    this.readAt = new Date();
+  }
   return this.save();
 };
 

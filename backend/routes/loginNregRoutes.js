@@ -4,6 +4,7 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const mongoose = require("mongoose");
+const speakeasy = require("speakeasy");
 
 const Person = require("../person");
 const Community = require("../models/Community");
@@ -270,6 +271,23 @@ router.post("/login", async (req, res) => {
       });
     }
 
+    // ✅ Check if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      // Generate temporary token for 2FA verification
+      const tempToken = jwt.sign(
+        { id: user._id, temp2FA: true },
+        JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+
+      return res.status(200).json({
+        requires2FA: true,
+        tempToken,
+        message: "Please enter your 2FA code"
+      });
+    }
+
+    // Regular login (no 2FA)
     const token = signToken(user);
 
     let communities = [];
@@ -297,6 +315,96 @@ router.post("/login", async (req, res) => {
     });
   } catch (err) {
     console.error("POST /login error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+/* -------------------------- 2FA VERIFY LOGIN -------------------------- */
+router.post("/verify-2fa-login", async (req, res) => {
+  try {
+    const { tempToken, code } = req.body;
+
+    if (!tempToken || !code) {
+      return res.status(400).json({ error: "Temp token and 2FA code are required" });
+    }
+
+    // Verify temp token
+    let decoded;
+    try {
+      decoded = jwt.verify(tempToken, JWT_SECRET);
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid or expired temp token" });
+    }
+
+    if (!decoded.temp2FA) {
+      return res.status(401).json({ error: "Invalid temp token" });
+    }
+
+    const user = await Person.findById(decoded.id).select("+twoFactorSecret +twoFactorBackupCodes");
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (!user.twoFactorEnabled) {
+      return res.status(400).json({ error: "2FA is not enabled for this account" });
+    }
+
+    // Try TOTP code first
+    const totpValid = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: "base32",
+      token: code,
+      window: 2
+    });
+
+    let isValid = totpValid;
+
+    // If TOTP fails, try backup codes
+    if (!totpValid && user.twoFactorBackupCodes && user.twoFactorBackupCodes.length > 0) {
+      for (let i = 0; i < user.twoFactorBackupCodes.length; i++) {
+        const isMatch = await bcrypt.compare(code, user.twoFactorBackupCodes[i]);
+        if (isMatch) {
+          isValid = true;
+          // Remove used backup code
+          user.twoFactorBackupCodes.splice(i, 1);
+          await user.save();
+          break;
+        }
+      }
+    }
+
+    if (!isValid) {
+      return res.status(401).json({ error: "Invalid 2FA code" });
+    }
+
+    // Issue final auth token
+    const token = signToken(user);
+
+    let communities = [];
+    if (Array.isArray(user.communityIds) && user.communityIds.length > 0) {
+      communities = await Community.find({ _id: { $in: user.communityIds } })
+        .select("_id name type key createdAt updatedAt")
+        .lean();
+    }
+
+    return res.status(200).json({
+      message: "Login successful",
+      token,
+      user: {
+        _id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        avatar: user.avatar,
+        role: user.role || "user",
+        hasDatingProfile: user.hasDatingProfile || false,
+        datingProfileId: user.datingProfileId || null,
+        collegeSlug: user.collegeSlug || null,
+        religionKey: user.religionKey || null,
+      },
+      communities,
+    });
+  } catch (err) {
+    console.error("POST /verify-2fa-login error:", err);
     return res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -371,7 +479,7 @@ router.get("/profile", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
       .select(
-        "_id fullName email avatar communityIds role notificationPrefs privacyPrefs hasDatingProfile datingProfileId collegeSlug religionKey"
+        "_id fullName email avatar bio communityIds role notificationPrefs privacyPrefs hasDatingProfile datingProfileId collegeSlug religionKey"
       )
       .lean();
 
@@ -416,6 +524,15 @@ router.patch("/profile", authenticate, async (req, res) => {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "bio")) {
+      const raw = String(req.body.bio || "").trim();
+      if (raw.length > 500) {
+        errors.bio = "Bio must be at most 500 characters";
+      } else {
+        updates.bio = raw;
+      }
+    }
+
     if (Object.keys(errors).length > 0) {
       return res.status(400).json({ error: errors });
     }
@@ -429,7 +546,7 @@ router.patch("/profile", authenticate, async (req, res) => {
       { $set: updates },
       { new: true }
     )
-      .select("_id fullName email avatar communityIds role")
+      .select("_id fullName email avatar bio communityIds role")
       .lean();
 
     if (!user) {
@@ -631,7 +748,7 @@ router.get("/bootstrap", authenticate, async (req, res) => {
   try {
     const user = await Person.findById(req.user.id)
       .select(
-        "_id fullName email avatar communityIds role notificationPrefs privacyPrefs hasDatingProfile datingProfileId collegeSlug religionKey"
+        "_id fullName email avatar bio communityIds role notificationPrefs privacyPrefs hasDatingProfile datingProfileId collegeSlug religionKey"
       )
       .lean();
 

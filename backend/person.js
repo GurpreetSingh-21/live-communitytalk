@@ -17,6 +17,13 @@ const personSchema = new mongoose.Schema(
     /* ---------------------- Basic identity ---------------------- */
     fullName: { type: String, required: true, trim: true },
 
+    bio: { 
+      type: String, 
+      trim: true, 
+      maxlength: 500,
+      default: "" 
+    },
+
     email: {
       type: String,
       required: true,
@@ -119,10 +126,15 @@ const personSchema = new mongoose.Schema(
 
     // Privacy preferences (for /profile/security screen)
     privacyPrefs: {
-      showOnlineStatus: { type: Boolean, default: true },
+      showOnlineStatus: { type: Boolean, default: false },
       allowDMsFromSameCollege: { type: Boolean, default: true },
       allowDMsFromOthers: { type: Boolean, default: false },
     },
+
+    /* ---------------------- Two-Factor Authentication ---------------------- */
+    twoFactorEnabled: { type: Boolean, default: false },
+    twoFactorSecret: { type: String, select: false },
+    twoFactorBackupCodes: { type: [String], select: false, default: [] },
 
     /* ---------------------- Other Flags ---------------------- */
     nonEduEmail: { type: Boolean, default: false },

@@ -39,11 +39,25 @@ const directMessageSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["sent", "read", "edited", "deleted"],
+      enum: ["sent", "delivered", "read", "edited", "deleted"],
       default: "sent",
       index: true,
     },
 
+    reactions: [
+      {
+        emoji: { type: String, required: true },
+        userId: { 
+          type: mongoose.Schema.Types.ObjectId, 
+          ref: "Person", 
+          required: true 
+        },
+        userName: String,
+        createdAt: { type: Date, default: Date.now }
+      }
+    ],
+
+    deliveredAt: Date,
     readAt: Date,
     editedAt: Date,
     deletedAt: Date,
@@ -89,6 +103,14 @@ directMessageSchema.methods.markRead = async function () {
   if (this.status !== "deleted") {
     this.status = "read";
     this.readAt = new Date();
+  }
+  return this.save();
+};
+
+directMessageSchema.methods.markDelivered = async function () {
+  if (this.status === "sent") {
+    this.status = "delivered";
+    this.deliveredAt = new Date();
   }
   return this.save();
 };
