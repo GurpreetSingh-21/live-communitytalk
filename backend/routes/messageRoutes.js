@@ -333,10 +333,101 @@ router.delete("/:messageId", async (req, res) => {
       senderId: String(doc.senderId),
     };
 
-    req.io?.to(ROOM(doc.communityId)).emit("message:deleted", payload);
+      req.io?.to(ROOM(doc.communityId)).emit("message:deleted", payload);
     return res.json(payload);
   } catch (error) {
     console.error("DELETE /api/messages/:messageId error:", error);
+    return res.status(500).json({ error: "Server Error" });
+  }
+});
+
+/* ───────────────────── POST /api/messages/:messageId/reactions ───────────────────── */
+router.post("/:messageId/reactions", async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const { emoji } = req.body || {};
+    
+    if (!isValidId(messageId))
+      return res.status(400).json({ error: "Invalid messageId" });
+    if (!emoji || typeof emoji !== "string")
+      return res.status(400).json({ error: "emoji is required" });
+
+    const doc = await Message.findById(messageId);
+    if (!doc) return res.status(404).json({ error: "Message not found" });
+
+    const gate = await assertCommunityAndMembership(doc.communityId, req.user.id);
+    if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
+
+    // Remove existing reaction from this user for this emoji
+    doc.reactions = doc.reactions.filter(
+      r => !(String(r.userId) === String(req.user.id) && r.emoji === emoji)
+    );
+
+    // Add new reaction
+    doc.reactions.push({
+      emoji,
+      userId: req.user.id,
+      userName: req.user.fullName || "User",
+      createdAt: new Date()
+    });
+
+    await doc.save();
+
+    const payload = {
+      _id: String(doc._id),
+      communityId: String(doc.communityId),
+      reactions: doc.reactions.map(r => ({
+        emoji: r.emoji,
+        userId: String(r.userId),
+        userName: r.userName,
+        createdAt: r.createdAt
+      }))
+    };
+
+    req.io?.to(ROOM(doc.communityId)).emit("message:reacted", payload);
+    return res.json(payload);
+  } catch (error) {
+    console.error("POST /api/messages/:messageId/reactions error:", error);
+    return res.status(500).json({ error: "Server Error" });
+  }
+});
+
+/* ───────────────────── DELETE /api/messages/:messageId/reactions/:emoji ───────────────────── */
+router.delete("/:messageId/reactions/:emoji", async (req, res) => {
+  try {
+    const { messageId, emoji } = req.params;
+    
+    if (!isValidId(messageId))
+      return res.status(400).json({ error: "Invalid messageId" });
+
+    const doc = await Message.findById(messageId);
+    if (!doc) return res.status(404).json({ error: "Message not found" });
+
+    const gate = await assertCommunityAndMembership(doc.communityId, req.user.id);
+    if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
+
+    // Remove reaction from this user for this emoji
+    doc.reactions = doc.reactions.filter(
+      r => !(String(r.userId) === String(req.user.id) && r.emoji === decodeURIComponent(emoji))
+    );
+
+    await doc.save();
+
+    const payload = {
+      _id: String(doc._id),
+      communityId: String(doc.communityId),
+      reactions: doc.reactions.map(r => ({
+        emoji: r.emoji,
+        userId: String(r.userId),
+        userName: r.userName,
+        createdAt: r.createdAt
+      }))
+    };
+
+    req.io?.to(ROOM(doc.communityId)).emit("message:reacted", payload);
+    return res.json(payload);
+  } catch (error) {
+    console.error("DELETE /api/messages/:messageId/reactions/:emoji error:", error);
     return res.status(500).json({ error: "Server Error" });
   }
 });

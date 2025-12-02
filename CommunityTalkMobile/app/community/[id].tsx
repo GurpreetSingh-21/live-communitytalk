@@ -98,6 +98,12 @@ type ChatMessage = {
   deliveredAt?: string | Date;
   readAt?: string | Date;
   clientMessageId?: string;
+  reactions?: Array<{
+    emoji: string;
+    userId: string;
+    userName: string;
+    createdAt: Date;
+  }>;
 };
 
 const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
@@ -272,6 +278,11 @@ export default function CommunityScreen() {
   const chatListRef = useRef<FlatList<ChatMessage>>(null);
   const contentHeightRef = useRef(0);
   const prevContentHeightRef = useRef(0);
+
+  // Emoji reactions state
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+  const QUICK_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
   const loadingOlderRef = useRef(false);
   const initialLoadedRef = useRef(false);
   const isAtBottomRef = useRef(true);
@@ -427,8 +438,67 @@ export default function CommunityScreen() {
     }
   }, [input, sending, communityId, user?._id, user?.fullName, scrollToBottom]);
 
+  // Emoji reaction functions
+  const addReaction = useCallback(async (messageId: string, emoji: string) => {
+    try {
+      await api.post(`/api/messages/${messageId}/reactions`, { emoji });
+      setMessages(prev => prev.map(m => {
+        if (m._id === messageId) {
+          const reactions = m.reactions || [];
+          return {
+            ...m,
+            reactions: [...reactions.filter(r => !(String(r.userId) === String(user?._id) && r.emoji === emoji)), {
+              emoji,
+              userId: String(user?._id),
+              userName: user?.fullName || 'User',
+              createdAt: new Date()
+            }]
+          };
+        }
+        return m;
+      }));
+    } catch (err) {
+      console.error('Add reaction error:', err);
+    }
+  }, [user?._id, user?.fullName]);
+
+  const removeReaction = useCallback(async (messageId: string, emoji: string) => {
+    try {
+      await api.delete(`/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
+      setMessages(prev => prev.map(m => 
+        m._id === messageId 
+          ? { ...m, reactions: (m.reactions || []).filter(r => !(String(r.userId) === String(user?._id) && r.emoji === emoji)) }
+          : m
+      ));
+    } catch (err) {
+      console.error('Remove reaction error:', err);
+    }
+  }, [user?._id]);
+
+  const toggleReaction = useCallback((messageId: string, emoji: string) => {
+    const msg = messages.find(m => m._id === messageId);
+    const hasReacted = msg?.reactions?.some(r => String(r.userId) === String(user?._id) && r.emoji === emoji);
+    
+    if (hasReacted) {
+      removeReaction(messageId, emoji);
+    } else {
+      addReaction(messageId, emoji);
+    }
+    setShowEmojiPicker(false);
+  }, [messages, user?._id, addReaction, removeReaction]);
+
+  const handleLongPress = useCallback((messageId: string) => {
+    setSelectedMessageId(messageId);
+    setShowEmojiPicker(true);
+  }, []);
+
+
   useEffect(() => {
-    if (!socket || !communityId || !isMember) return;
+    console.log("🔍 [ROOM DEBUG] useEffect triggered - socket:", !!socket, "communityId:", communityId, "isMember:", isMember);
+    if (!socket || !communityId || !isMember) {
+      console.log("⚠️ [ROOM DEBUG] Skipping join - socket:", !!socket, "communityId:", !!communityId, "isMember:", isMember);
+      return;
+    }
     console.log("🔵 [ROOM] Joining community room:", communityId);
     socket.emit?.("community:join", communityId);
 
@@ -489,16 +559,27 @@ export default function CommunityScreen() {
       }
     };
 
+    const onReacted = (payload: any) => {
+      if (String(payload?.communityId) !== communityId) return;
+      setMessages(prev => prev.map(m => 
+        String(m._id) === String(payload._id) 
+          ? { ...m, reactions: payload.reactions }
+          : m
+      ));
+    };
+
     socket.on?.("receive_message", onNew);
     socket.on?.("message:updated", onEdited);
     socket.on?.("message:deleted", onDeleted);
     socket.on?.("message:status", onStatusUpdate);
+    socket.on?.("message:reacted", onReacted);
 
     return () => {
       socket.off?.("receive_message", onNew);
       socket.off?.("message:updated", onEdited);
       socket.off?.("message:deleted", onDeleted);
       socket.off?.("message:status", onStatusUpdate);
+      socket.off?.("message:reacted", onReacted);
       console.log("🔴 [ROOM] Leaving community room:", communityId);
       socket.emit?.("community:leave", communityId);
     };
@@ -1080,57 +1161,148 @@ export default function CommunityScreen() {
                   {item.sender}
                 </Text>
               )}
-              <View
-                style={{
-                  backgroundColor: colors.surfaceElevated,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  borderTopLeftRadius: isFirstOfGroup ? 20 : 6,
-                  borderBottomLeftRadius: isLastOfGroup ? 20 : 6,
-                  shadowColor: colors.shadow,
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 3,
-                }}
+              <TouchableOpacity
+                onLongPress={() => handleLongPress(item._id)}
+                delayLongPress={300}
+                activeOpacity={0.9}
               >
-                {deleted ? (
-                  <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
-                    Message deleted
-                  </Text>
-                ) : (
-                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
-                )}
-              </View>
+                <View
+                  style={{
+                    backgroundColor: colors.surfaceElevated,
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 20,
+                    borderTopLeftRadius: isFirstOfGroup ? 20 : 6,
+                    borderBottomLeftRadius: isLastOfGroup ? 20 : 6,
+                    shadowColor: colors.shadow,
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 3,
+                  }}
+                >
+                  {deleted ? (
+                    <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
+                      Message deleted
+                    </Text>
+                  ) : (
+                    <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
+                  )}
+                </View>
+              </TouchableOpacity>
+              
+              {/* Reactions Display */}
+              {item.reactions && item.reactions.length > 0 && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 }}>
+                  {Object.entries(
+                    item.reactions.reduce((acc, r) => {
+                      acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                      acc[r.emoji].count++;
+                      acc[r.emoji].users.push(r.userName);
+                      if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                      return acc;
+                    }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                  ).map(([emoji, data]) => (
+                    <TouchableOpacity
+                      key={emoji}
+                      onPress={() => toggleReaction(item._id, emoji)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 12,
+                        backgroundColor: data.hasYou 
+                          ? (isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)')
+                          : colors.surfaceElevated,
+                        borderWidth: data.hasYou ? 1 : 0,
+                        borderColor: '#6366F1',
+                      }}
+                    >
+                      <Text style={{ fontSize: 14 }}>{emoji}</Text>
+                      {data.count > 1 && (
+                        <Text style={{ marginLeft: 4, fontSize: 11, color: colors.textSecondary }}>
+                          {data.count}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
           </View>
         ) : (
           <View style={{ alignItems: "flex-end", marginBottom: isLastOfGroup ? 12 : 2 }}>
             <View style={{ maxWidth: "75%" }}>
-              <LinearGradient
-                colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  borderTopRightRadius: isFirstOfGroup ? 20 : 6,
-                  borderBottomRightRadius: isLastOfGroup ? 20 : 6,
-                  shadowColor: colors.primary,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.25,
-                  shadowRadius: 6,
-                }}
+              <TouchableOpacity
+                onLongPress={() => handleLongPress(item._id)}
+                delayLongPress={300}
+                activeOpacity={0.9}
               >
-                {deleted ? (
-                  <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, fontStyle: "italic" }}>
-                    Message deleted
-                  </Text>
-                ) : (
-                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
-                )}
-              </LinearGradient>
+                <LinearGradient
+                  colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 10,
+                    borderRadius: 20,
+                    borderTopRightRadius: isFirstOfGroup ? 20 : 6,
+                    borderBottomRightRadius: isLastOfGroup ? 20 : 6,
+                    shadowColor: colors.primary,
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 6,
+                  }}
+                >
+                  {deleted ? (
+                    <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, fontStyle: "italic" }}>
+                      Message deleted
+                    </Text>
+                  ) : (
+                    <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+              
+              {/* Reactions Display (Right Aligned) */}
+              {item.reactions && item.reactions.length > 0 && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4, justifyContent: 'flex-end' }}>
+                  {Object.entries(
+                    item.reactions.reduce((acc, r) => {
+                      acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                      acc[r.emoji].count++;
+                      acc[r.emoji].users.push(r.userName);
+                      if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                      return acc;
+                    }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                  ).map(([emoji, data]) => (
+                    <TouchableOpacity
+                      key={emoji}
+                      onPress={() => toggleReaction(item._id, emoji)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                        borderRadius: 12,
+                        backgroundColor: data.hasYou 
+                          ? (isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)')
+                          : colors.surfaceElevated,
+                        borderWidth: data.hasYou ? 1 : 0,
+                        borderColor: '#6366F1',
+                      }}
+                    >
+                      <Text style={{ fontSize: 14 }}>{emoji}</Text>
+                      {data.count > 1 && (
+                        <Text style={{ marginLeft: 4, fontSize: 11, color: colors.textSecondary }}>
+                          {data.count}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
               {/* Delivery status indicators */}
               {!deleted && (
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 6, marginRight: 4 }}>
@@ -1470,5 +1642,56 @@ export default function CommunityScreen() {
         </>
       )}
     </KeyboardAvoidingView>
-  );
+
+    {/* Emoji Picker Modal */}
+    {showEmojiPicker && (
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={() => setShowEmojiPicker(false)}
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            borderRadius: 20,
+            padding: 16,
+            flexDirection: 'row',
+            gap: 12,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.3,
+            shadowRadius: 8,
+            elevation: 5,
+          }}
+        >
+          {QUICK_EMOJIS.map(emoji => (
+            <TouchableOpacity
+              key={emoji}
+              onPress={() => selectedMessageId && toggleReaction(selectedMessageId, emoji)}
+              style={{
+                width: 52,
+                height: 52,
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderRadius: 26,
+                backgroundColor: colors.surfaceElevated,
+              }}
+            >
+              <Text style={{ fontSize: 32 }}>{emoji}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </TouchableOpacity>
+    )}
+  </>
+);
 }

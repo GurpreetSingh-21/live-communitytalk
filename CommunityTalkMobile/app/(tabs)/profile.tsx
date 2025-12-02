@@ -41,6 +41,7 @@ type ProfileData = {
   name: string;
   isVerified: boolean;
   avatar?: string | null;
+  bio?: string | null;
   stats: { communities: number; messages: number; connections: number };
 };
 
@@ -227,6 +228,13 @@ const ProfileHeader = ({
         <Text className="text-2xl font-bold shadow-sm text-gray-900 dark:text-white">
           {item.name}
         </Text>
+        
+        {/* Bio Section */}
+        {item.bio && (
+          <Text className="text-sm text-gray-600 dark:text-gray-300 mt-2 text-center px-4">
+            {item.bio}
+          </Text>
+        )}
 
         <View className="flex-row justify-center items-center mt-6 gap-6 p-4 rounded-2xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
           <View className="items-center px-2">
@@ -531,6 +539,7 @@ export default function ProfileScreen(): React.JSX.Element {
         ...p,
         name: fullName,
         avatar: u.avatar || p.avatar, // ✅ Preserve existing avatar if API returns null/undefined
+        bio: u.bio || null,
         stats: {
           communities: communities.length || 0,
           messages: p.stats.messages,

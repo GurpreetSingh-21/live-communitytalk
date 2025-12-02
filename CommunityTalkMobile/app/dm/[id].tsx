@@ -215,6 +215,10 @@ export default function DMThreadScreen() {
   // ✅ Recording State
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  
+  // Typing indicator state
+  const [partnerTyping, setPartnerTyping] = useState(false);
+  const typingTimeoutRef = useRef<any>(null);
 
   const resolvedClientIdsRef = useRef<Set<string>>(new Set());
   const listRef = useRef<FlatList<DMMessage>>(null);
@@ -379,8 +383,17 @@ export default function DMThreadScreen() {
       );
     };
 
+    const onTyping = (payload: any) => {
+      if (String(payload?.userId) !== partnerId) return;
+      setPartnerTyping(payload?.isTyping === true);
+    };
+
     socket.on?.("dm:message", onDM);
-    return () => socket.off?.("dm:message", onDM);
+    socket.on?.("dm:typing", onTyping);
+    return () => {
+      socket.off?.("dm:message", onDM);
+      socket.off?.("dm:typing", onTyping);
+    };
   }, [socket, partnerId]);
 
   /* ─────── Consolidated Upload & Send Logic ─────── */
@@ -554,6 +567,23 @@ export default function DMThreadScreen() {
       ]);
     }
   };
+
+  /* ─────── Typing indicator emission ─────── */
+  const emitTyping = useCallback((isTyping: boolean) => {
+    socket?.emit?.("dm:typing", { recipientId: partnerId, isTyping });
+  }, [socket, partnerId]);
+
+  const handleTextChange = useCallback((text: string) => {
+    setInput(text);
+    
+    if (text.trim()) {
+      emitTyping(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => emitTyping(false), 2000);
+    } else {
+      emitTyping(false);
+    }
+  }, [emitTyping]);
 
   /* ─────── Send Text ─────── */
   const sendText = useCallback(async () => {
@@ -762,6 +792,15 @@ export default function DMThreadScreen() {
               showsVerticalScrollIndicator={false}
             />
 
+            {/* Typing Indicator */}
+            {partnerTyping && (
+              <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
+                <Text style={{ color: colors.textSecondary, fontSize: 14, fontStyle: 'italic' }}>
+                  {headerName} is typing...
+                </Text>
+              </View>
+            )}
+
             {/* Composer - Toggle between Recording and Normal */}
             <View
               style={{
@@ -813,7 +852,7 @@ export default function DMThreadScreen() {
                   >
                     <TextInput
                       value={input}
-                      onChangeText={setInput}
+                      onChangeText={handleTextChange}
                       placeholder="Message"
                       placeholderTextColor={colors.textSecondary}
                       style={{

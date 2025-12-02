@@ -30,6 +30,10 @@ export default function AccountSettingsScreen() {
   const [nameValue, setNameValue] = useState(user?.fullName || '');
   const [savingName, setSavingName] = useState(false);
 
+  const [editingBio, setEditingBio] = useState(false);
+  const [bioValue, setBioValue] = useState(user?.bio || '');
+  const [savingBio, setSavingBio] = useState(false);
+
   const bg = isDark ? '#020617' : '#F1F5F9';
   const cardBg = isDark ? '#020617' : '#FFFFFF';
   const border = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(15,23,42,0.06)';
@@ -68,6 +72,35 @@ export default function AccountSettingsScreen() {
       );
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleEditBio = () => {
+    setBioValue(user?.bio || '');
+    setEditingBio(true);
+  };
+
+  const handleSubmitBio = async () => {
+    const trimmed = bioValue.trim();
+    if (trimmed.length > 500) {
+      Alert.alert('Bio too long', 'Please keep your bio under 500 characters.');
+      return;
+    }
+
+    try {
+      setSavingBio(true);
+      await api.patch('/api/profile', { bio: trimmed || null });
+      await refreshBootstrap();
+      setEditingBio(false);
+      Alert.alert('Saved', 'Your bio has been updated.');
+    } catch (e: any) {
+      console.error('Failed to update bio', e?.response?.data || e);
+      Alert.alert(
+        'Error',
+        e?.response?.data?.error || 'Could not update your bio. Please try again.',
+      );
+    } finally {
+      setSavingBio(false);
     }
   };
 
@@ -242,6 +275,46 @@ export default function AccountSettingsScreen() {
                 </Text>
                 <Text style={{ color: textSecondary, fontSize: 13 }}>
                   {user?.fullName || 'Student'}
+                </Text>
+              </View>
+            </View>
+            <Text style={{ color: '#6366F1', fontSize: 13, fontWeight: '600' }}>Edit</Text>
+          </View>
+        </Pressable>
+
+        {/* Bio row */}
+        <Pressable
+          onPress={handleEditBio}
+          style={{
+            backgroundColor: cardBg,
+            borderRadius: 18,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            borderWidth: 1,
+            borderColor: border,
+            marginBottom: 10,
+          }}
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-3">
+              <View
+                style={{
+                  height: 32,
+                  width: 32,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: isDark ? '#020617' : '#FEF3C7',
+                }}
+              >
+                <Ionicons name="create-outline" size={18} color={textPrimary} />
+              </View>
+              <View style={{ maxWidth: '70%' }}>
+                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+                  Bio
+                </Text>
+                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
+                  {user?.bio || 'Add a short bio about yourself'}
                 </Text>
               </View>
             </View>
@@ -460,6 +533,125 @@ export default function AccountSettingsScreen() {
                 }}
               >
                 {savingName && (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                )}
+                <Text
+                  style={{
+                    color: '#FFFFFF',
+                    fontSize: 14,
+                    fontWeight: '600',
+                  }}
+                >
+                  Save
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Edit bio overlay */}
+      {editingBio && (
+        <View
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundColor: isDark ? 'rgba(15,23,42,0.7)' : 'rgba(15,23,42,0.45)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 24,
+          }}
+        >
+          <View
+            style={{
+              width: '100%',
+              borderRadius: 20,
+              padding: 16,
+              backgroundColor: cardBg,
+              borderWidth: 1,
+              borderColor: border,
+            }}
+          >
+            <Text
+              style={{
+                color: textPrimary,
+                fontSize: 16,
+                fontWeight: '700',
+                marginBottom: 8,
+              }}
+            >
+              Edit bio
+            </Text>
+            <Text
+              style={{
+                color: textSecondary,
+                fontSize: 13,
+                marginBottom: 12,
+              }}
+            >
+              Tell others a bit about yourself (max 500 characters).
+            </Text>
+            <TextInput
+              value={bioValue}
+              onChangeText={setBioValue}
+              placeholder="Add a short bio..."
+              placeholderTextColor={isDark ? '#6B7280' : '#9CA3AF'}
+              style={{
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: border,
+                paddingHorizontal: 12,
+                paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+                color: textPrimary,
+                backgroundColor: isDark ? '#020617' : '#F9FAFB',
+                marginBottom: 4,
+                minHeight: 80,
+                textAlignVertical: 'top',
+              }}
+              multiline
+              maxLength={500}
+            />
+            <Text style={{ color: textSecondary, fontSize: 11, marginBottom: 16, textAlign: 'right' }}>
+              {bioValue.length}/500
+            </Text>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                justifyContent: 'flex-end',
+                gap: 12,
+              }}
+            >
+              <Pressable
+                onPress={() => {
+                  if (!savingBio) setEditingBio(false);
+                }}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 8,
+                }}
+              >
+                <Text style={{ color: textSecondary, fontSize: 14, fontWeight: '500' }}>
+                  Cancel
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSubmitBio}
+                disabled={savingBio}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: savingBio
+                    ? '#4F46E5aa'
+                    : '#4F46E5',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 6,
+                }}
+              >
+                {savingBio && (
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 )}
                 <Text

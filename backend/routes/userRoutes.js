@@ -63,4 +63,27 @@ router.post("/avatar", async (req, res) => {
   }
 });
 
+/**
+ * GET /api/user/:id
+ * Fetch user profile by ID
+ */
+router.get("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await Person.findById(id)
+      .select("fullName avatar email collegeSlug religionKey bio")
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    return res.json(user);
+  } catch (err) {
+    console.error("[User Routes] GET error:", err);
+    return res.status(500).json({ error: "Failed to fetch user" });
+  }
+});
+
 module.exports = router;
