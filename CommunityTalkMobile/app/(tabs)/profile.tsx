@@ -229,8 +229,8 @@ const ProfileHeader = ({
           {item.name}
         </Text>
         
-        {/* Bio Section */}
-        {item.bio && (
+        {/* Bio Section - don't show if it's just the email */}
+        {item.bio && item.bio.trim() && !item.bio.includes('@') && (
           <Text className="text-sm text-gray-600 dark:text-gray-300 mt-2 text-center px-4">
             {item.bio}
           </Text>

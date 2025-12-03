@@ -60,7 +60,7 @@
     },
 
     "extra": {
-      "API_URL_DEV": "https://stephane-mastoparietal-saniyah.ngrok-free.dev ",
+      "API_URL_DEV": "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev",
       "API_URL_PROD": "https://your-production-api.example.com",
       "router": {},
       "eas": { "projectId": "fc828742-1044-46ce-a60e-65d1acd26002" }

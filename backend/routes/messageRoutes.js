@@ -50,6 +50,7 @@ router.post("/", async (req, res) => {
       communityId,
       attachments = [],
       clientMessageId,
+      replyTo, // NEW: Accept replyTo from frontend
     } = req.body || {};
 
     // 1) Validation
@@ -100,6 +101,7 @@ router.post("/", async (req, res) => {
       content: content.trim(),
       communityId: OID(communityId),
       attachments: parsedAttachments,
+      replyTo: replyTo || undefined, // NEW: Save replyTo if provided
     });
 
     // 4) Payload
@@ -116,6 +118,8 @@ router.post("/", async (req, res) => {
       isDeleted: !!msg.isDeleted,
       deletedAt: msg.deletedAt || null,
       clientMessageId: clientMessageId || undefined,
+      reactions: msg.reactions || [],
+      replyTo: msg.replyTo || undefined, // NEW: Include replyTo in response
     };
 
     // 5) Real-time emits
@@ -236,7 +240,7 @@ router.get("/:communityId", async (req, res) => {
       createdAt: { $lt: before },
     })
       .select(
-        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt"
+        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt reactions replyTo"
       )
       .sort({ createdAt: -1 })
       .limit(limit)
@@ -268,7 +272,7 @@ router.get("/:communityId/latest", async (req, res) => {
 
     const latest = await Message.findOne({ communityId: OID(communityId) })
       .select(
-        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt"
+        "_id sender senderId avatar content createdAt communityId status editedAt isDeleted deletedAt reactions replyTo"
       )
       .sort({ createdAt: -1 })
       .lean();

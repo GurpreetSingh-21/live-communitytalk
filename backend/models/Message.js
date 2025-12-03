@@ -56,6 +56,16 @@ const messageSchema = new mongoose.Schema(
       }
     ],
 
+    // Discord-style reply to another message
+    replyTo: {
+      messageId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Message",
+      },
+      sender: { type: String },
+      content: { type: String, maxlength: 200 }, // Preview only
+    },
+
     deliveredAt: Date,
     readAt: Date,
   },

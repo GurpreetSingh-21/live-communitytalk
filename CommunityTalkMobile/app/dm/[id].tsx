@@ -653,6 +653,199 @@ export default function DMThreadScreen() {
     }
   }, [input, sending, myId, partnerId]);
 
+  /* ─────── Discord-Style Profile Header ─────── */
+  const renderProfileHeader = () => {
+    console.log('🎨 [DM] Rendering Discord-style profile header for:', headerName);
+    
+    // Generate avatar color based on partner name
+    const hueFrom = (s: string) => {
+      let h = 0;
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+      return `hsl(${h} 85% 55%)`;
+    };
+
+    const initials = (name?: string) => {
+      const base = (name || headerName || "DM").trim();
+      const parts = base.split(/\s+/).filter(Boolean);
+      const s = (parts[0]?.[0] || "") + (parts.length > 1 ? parts[parts.length - 1][0] || "" : "");
+      return (s || "U").toUpperCase();
+    };
+
+    const avatarColor = hueFrom(headerName || "User");
+    const isOnline = meta?.online;
+
+    return (
+      <View style={{ backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5', marginBottom: 16 }}>
+        {/* Banner - Make it VERY visible */}
+        <View style={{ height: 150, backgroundColor: avatarColor }} />
+
+        {/* Content Section */}
+        <View style={{ paddingHorizontal: 20, paddingBottom: 20 }}>
+          {/* Floating Avatar */}
+          <View style={{ marginTop: -50, marginBottom: 16 }}>
+            <View
+              style={{
+                width: 100,
+                height: 100,
+                borderRadius: 50,
+                backgroundColor: avatarColor,
+                borderWidth: 6,
+                borderColor: isDark ? colors.bg : colors.surface,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {headerAvatar ? (
+                <Image
+                  source={{ uri: headerAvatar }}
+                  style={{ width: 88, height: 88, borderRadius: 44 }}
+                />
+              ) : (
+                <Text style={{ color: "#fff", fontSize: 42, fontWeight: "800" }}>
+                  {initials(headerName)}
+                </Text>
+              )}
+
+              {/* Online Status Indicator */}
+              <View
+                style={{
+                  position: "absolute",
+                  bottom: 2,
+                  right: 2,
+                  width: 24,
+                  height: 24,
+                  borderRadius: 12,
+                  backgroundColor: isOnline ? "#43B581" : "#747F8D",
+                  borderWidth: 5,
+                  borderColor: isDark ? colors.bg : colors.surface,
+                }}
+              />
+            </View>
+          </View>
+
+          {/* User Name */}
+          <Text style={{ color: colors.text, fontSize: 24, fontWeight: "800", marginBottom: 4 }}>
+            {headerName}
+          </Text>
+
+          {/* User Bio/Email */}
+          {(meta as any)?.bio && (
+            <Text style={{ color: colors.textSecondary, fontSize: 14, marginBottom: 8 }}>
+              {(meta as any).bio}
+            </Text>
+          )}
+
+          {/* Action Buttons */}
+          <View style={{ flexDirection: "row", gap: 12, marginTop: 16 }}>
+            {/* Message Button */}
+            <TouchableOpacity
+              style={{
+                flex: 1,
+                backgroundColor: isDark ? "#43464D" : "#E3E5E8",
+                borderRadius: 8,
+                padding: 14,
+                alignItems: "center",
+              }}
+            >
+              <Ionicons name="chatbubble" size={20} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600", marginTop: 4 }}>
+                Message
+              </Text>
+            </TouchableOpacity>
+
+            {/* Voice Call Button */}
+            <TouchableOpacity
+              onPress={() => Alert.alert("Voice Call", "Voice calls  coming soon!")}
+              style={{
+                flex: 1,
+                backgroundColor: isDark ? "#43464D" : "#E3E5E8",
+                borderRadius: 8,
+                padding: 14,
+                alignItems: "center",
+              }}
+            >
+              <Ionicons name="call" size={20} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600", marginTop: 4 }}>
+                Voice Call
+              </Text>
+            </TouchableOpacity>
+
+            {/* Video Call Button */}
+            <TouchableOpacity
+              onPress={() => Alert.alert("Video Call", "Video calls coming soon!")}
+              style={{
+                flex: 1,
+                backgroundColor: isDark ? "#43464D" : "#E3E5E8",
+                borderRadius: 8,
+                padding: 14,
+                alignItems: "center",
+              }}
+            >
+              <Ionicons name="videocam" size={20} color={colors.text} />
+              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600", marginTop: 4 }}>
+                Video Call
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* About Me Section */}
+          {(meta as any)?.bio && (
+            <View style={{ marginTop: 20 }}>
+              <View
+                style={{
+                  backgroundColor: isDark ? "#2F3136" : "#F2F3F5",
+                  borderRadius: 12,
+                  padding: 16,
+                }}
+              >
+                <Text style={{ color: colors.text, fontSize: 13, fontWeight: "700", marginBottom: 8 }}>
+                  ABOUT ME
+                </Text>
+                <Text style={{ color: colors.text, fontSize: 15, lineHeight: 20 }}>
+                  {(meta as any).bio}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Member Since */}
+          <View style={{ marginTop: 20 }}>
+            <View
+              style={{
+                backgroundColor: isDark ? "#2F3136" : "#F2F3F5",
+                borderRadius: 12,
+                padding: 16,
+              }}
+            >
+              <Text style={{ color: colors.text, fontSize: 13, fontWeight: "700", marginBottom: 8 }}>
+                MEMBER SINCE
+              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
+                <Text style={{ color: colors.text, fontSize: 14 }}>
+                  {meta?.updatedAt 
+                    ? new Date(meta.updatedAt).toLocaleDateString(undefined, { 
+                        month: 'short', 
+                        day: 'numeric', 
+                        year: 'numeric' 
+                      })
+                    : "November 20, 2025"}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Messages Divider */}
+          <View style={{ marginTop: 24, paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, fontWeight: "700", marginBottom: 8 }}>
+              MESSAGES
+            </Text>
+          </View>
+        </View>
+      </View>
+    );
+  };
+
   /* ─────── Render Item Update ─────── */
   const renderItem = ({ item, index }: { item: DMMessage; index: number }) => {
     const mine = String(item.from) === myId;
@@ -786,9 +979,10 @@ export default function DMThreadScreen() {
               data={data}
               keyExtractor={msgKey}
               renderItem={renderItem}
+              ListHeaderComponent={renderProfileHeader}
               onEndReachedThreshold={0.2}
               onEndReached={loadOlder}
-              contentContainerStyle={{ paddingBottom: Math.max(92, insets.bottom + 60), paddingTop: 8 }}
+              contentContainerStyle={{ paddingBottom: Math.max(92, insets.bottom + 60) }}
               showsVerticalScrollIndicator={false}
             />
 
