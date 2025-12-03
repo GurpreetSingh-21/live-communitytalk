@@ -333,69 +333,79 @@ export default function CommunitiesScreen(): React.JSX.Element {
 
   /* ------------------- Fetch Communities ------------------- */
 
-/* ------------------- Fetch Communities ------------------- */
+  /* ------------------- Fetch Communities ------------------- */
 
-const fetchCommunityThreads = useCallback(async (signal?: AbortSignal) => {
-  if (!isAuthed) return [] as CommunityThread[];
-  const mine = Array.isArray(myCommunities) ? myCommunities : [];
+  const fetchCommunityThreads = useCallback(async (signal?: AbortSignal) => {
+    if (!isAuthed) return [] as CommunityThread[];
+    const mine = Array.isArray(myCommunities) ? myCommunities : [];
 
-  const results = await Promise.all(
-    mine.map(async (c: any) => {
-      const cId = String(c?._id || c?.id || '');
-      if (!cId) return null;
-      try {
-        const { data } = await api.get(`/api/messages/${cId}`, {
-          params: { limit: 1, order: 'desc' },
-          signal,
-        });
-        const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-        const last = list[0];
-        
-        // ✅ FIX: Don't return null if no messages. Use fallback values.
-        // if (!last) return null; <--- THIS WAS THE BUG
+    const results = await Promise.all(
+      mine.map(async (c: any) => {
+        const cId = String(c?._id || c?.id || '');
+        if (!cId) return null;
+        try {
+          const { data } = await api.get(`/api/messages/${cId}`, {
+            params: { limit: 1, order: 'desc' },
+            signal,
+          });
+          const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+          const last = list[0];
 
-        const type = last?.type === 'photo' ? 'photo' : last?.type === 'voice' ? 'voice' : 'text';
-        
-        // Show real message content OR "No messages yet"
-        const content = last 
-          ? (type === 'text' ? String(last.content ?? '') : type === 'photo' ? 'Photo' : 'Voice Memo')
-          : 'No messages yet';
+          // ✅ FIX: Don't return null if no messages. Use fallback values.
+          // if (!last) return null; <--- THIS WAS THE BUG
 
-        // Use message time OR community join/create time
-        const lastAt = last 
-          ? Number(new Date(last.createdAt ?? last.timestamp ?? Date.now()).getTime())
-          : Number(new Date(c.createdAt || c.updatedAt || Date.now()).getTime());
+          const type = last?.type === 'photo' ? 'photo' : last?.type === 'voice' ? 'voice' : 'text';
 
-        const th: CommunityThread = {
-          id: cId,
-          name: String(c?.name || 'Community'),
-          avatar: '🏛️',
-          lastMsg: { type: last ? type : 'text', content },
-          lastAt,
-          unread: 0,
-          pinned: !!c?.pinned,
-          memberCount: c?.memberCount || 0,
-        };
-        return th;
-      } catch (err) {
-        // ✅ Fallback: If API fails (e.g. 404), still show the community so it's clickable
-        console.log(`[Community] Failed to load thread ${cId}`, err);
-        return {
-          id: cId,
-          name: String(c?.name || 'Community'),
-          avatar: '🏛️',
-          lastMsg: { type: 'text', content: 'Tap to start chatting' },
-          lastAt: Number(new Date(c.createdAt || Date.now()).getTime()),
-          unread: 0,
-          pinned: !!c?.pinned,
-          memberCount: c?.memberCount || 0,
-        };
-      }
-    })
-  );
+          // Show real message content OR "No messages yet"
+          let content = 'No messages yet';
+          if (last) {
+            if (type === 'photo') content = '📷 Image';
+            else if (type === 'voice') content = '🎤 Voice Memo';
+            else {
+              const text = String(last.content ?? '');
+              if (text.includes('cloudinary.com') || text.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+                content = '📷 Image';
+              } else {
+                content = text;
+              }
+            }
+          }
 
-  return results.filter(Boolean) as CommunityThread[];
-}, [isAuthed, myCommunities]);
+          // Use message time OR community join/create time
+          const lastAt = last
+            ? Number(new Date(last.createdAt ?? last.timestamp ?? Date.now()).getTime())
+            : Number(new Date(c.createdAt || c.updatedAt || Date.now()).getTime());
+
+          const th: CommunityThread = {
+            id: cId,
+            name: String(c?.name || 'Community'),
+            avatar: '🏛️',
+            lastMsg: { type: last ? type : 'text', content },
+            lastAt,
+            unread: 0,
+            pinned: !!c?.pinned,
+            memberCount: c?.memberCount || 0,
+          };
+          return th;
+        } catch (err) {
+          // ✅ Fallback: If API fails (e.g. 404), still show the community so it's clickable
+          console.log(`[Community] Failed to load thread ${cId}`, err);
+          return {
+            id: cId,
+            name: String(c?.name || 'Community'),
+            avatar: '🏛️',
+            lastMsg: { type: 'text', content: 'Tap to start chatting' },
+            lastAt: Number(new Date(c.createdAt || Date.now()).getTime()),
+            unread: 0,
+            pinned: !!c?.pinned,
+            memberCount: c?.memberCount || 0,
+          };
+        }
+      })
+    );
+
+    return results.filter(Boolean) as CommunityThread[];
+  }, [isAuthed, myCommunities]);
 
   // Initial load
   useEffect(() => {
@@ -428,12 +438,17 @@ const fetchCommunityThreads = useCallback(async (signal?: AbortSignal) => {
       const cid = String(payload?.communityId || '');
       if (!cid || !myCommunityIds.has(cid)) return;
 
-      const newMsg: MessageContent =
-        payload?.type === 'photo'
-          ? { type: 'photo', content: 'Photo' }
-          : payload?.type === 'voice'
-            ? { type: 'voice', content: 'Voice Memo' }
-            : { type: 'text', content: String(payload?.content ?? '') };
+      let newContent = String(payload?.content ?? '');
+      if (payload?.type === 'photo' || newContent.includes('cloudinary.com') || newContent.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+        newContent = '📷 Image';
+      } else if (payload?.type === 'voice') {
+        newContent = '🎤 Voice Memo';
+      }
+
+      const newMsg: MessageContent = {
+        type: payload?.type === 'photo' ? 'photo' : payload?.type === 'voice' ? 'voice' : 'text',
+        content: newContent
+      };
 
       const lastAt = Number(new Date(payload?.createdAt ?? Date.now()).getTime());
 
