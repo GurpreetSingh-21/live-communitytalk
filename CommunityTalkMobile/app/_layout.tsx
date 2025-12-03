@@ -50,11 +50,11 @@ export default function RootLayout() {
                 <Stack.Screen name="landing" />
                 <Stack.Screen name="register" />
                 <Stack.Screen name="verify-email" />
-            
+
                 <Stack.Screen
                   name="modal"
                   options={{
-                    presentation: Platform.OS === "ios" ? "formSheet" : "modal",
+                    presentation: Platform.OS === "ios" ? "fullScreenModal" : "modal",
                     animation: "slide_from_bottom",
                   }}
                 />

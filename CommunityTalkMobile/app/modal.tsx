@@ -36,13 +36,13 @@ type ModalContext = "communities" | "default";
 /* ───────────────────────── Navigation helpers ───────────────────────── */
 export const safeClose = () => {
   console.log("🔵 safeClose called");
-  
+
   try {
     // Try to dismiss modal first
     if (typeof router.canDismiss === "function") {
       const canDismiss = router.canDismiss();
       console.log("🔵 canDismiss:", canDismiss);
-      
+
       if (canDismiss && typeof router.dismiss === "function") {
         console.log("🔵 Dismissing modal");
         router.dismiss();
@@ -58,7 +58,7 @@ export const safeClose = () => {
     if (typeof router.canGoBack === "function") {
       const canGoBack = router.canGoBack();
       console.log("🔵 canGoBack:", canGoBack);
-      
+
       if (canGoBack) {
         console.log("🔵 Going back");
         router.back();
@@ -83,7 +83,7 @@ export const safeClose = () => {
 /** Leave the modal and navigate somewhere without breaking the back stack */
 const navigateFromModal = (to: "/global/communities" | "/(tabs)/explore") => {
   console.log("🟢 navigateFromModal called with:", to);
-  
+
   // Close the modal first, then navigate
   try {
     if (typeof router.canDismiss === "function" && router.canDismiss()) {
@@ -246,7 +246,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
 
     } catch (e: any) {
       // --- START OF FIX ---
-      
+
       // Check for the specific "EMAIL_NOT_VERIFIED" code from the backend
       const errorCode = e?.response?.data?.code;
       const errorMessage = e?.response?.data?.error || (typeof e?.message === "string" ? e.message : "Login failed");
@@ -254,7 +254,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
       if (errorCode === "EMAIL_NOT_VERIFIED") {
         // This is the user we need to verify
         const userEmail = email.trim().toLowerCase();
-        
+
         // Navigate to the verify screen, passing the email and message
         router.replace({
           pathname: "/verify-email",
@@ -277,16 +277,27 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
   const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1"
-      style={{ backgroundColor: pageBg }}
-      behavior={Platform.select({ ios: "padding", android: undefined })}
-    >
-      <View style={{ paddingTop: insets.top, paddingHorizontal: 20, paddingBottom: 8 }}>
+    <View style={{ flex: 1, backgroundColor: pageBg }}>
+      {/* Close Button - Fixed at top */}
+      <View
+        style={{
+          position: 'absolute',
+          top: insets.top,
+          left: 20,
+          zIndex: 9999,
+        }}
+      >
         <TouchableOpacity
           onPress={handleClose}
-          className="h-10 w-10 items-center justify-center"
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{
+            height: 44,
+            width: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+            borderRadius: 22,
+          }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           accessibilityRole="button"
           accessibilityLabel="Close"
           activeOpacity={0.6}
@@ -295,13 +306,14 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
         </TouchableOpacity>
       </View>
 
+      {/* Scrollable Content */}
       <ScrollView
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={{
+          paddingTop: insets.top + 60,
           paddingHorizontal: 24,
-          paddingBottom: insets.bottom + 24,
-          paddingTop: 40,
-          flexGrow: 1,
+          paddingBottom: Math.max(insets.bottom + 24, 40),
         }}
       >
         <MotiView
@@ -404,7 +416,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
           </LinearGradient>
         </TouchableOpacity>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -450,18 +462,29 @@ export default function ModalScreen() {
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "flex-start",
+          zIndex: 9999,
         }}
+        collapsable={false}
       >
-        <TouchableOpacity
-          onPress={handleClose}
-          className="h-10 w-10 items-center justify-center"
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-          activeOpacity={0.6}
-        >
-          <Ionicons name="close" size={28} color={isDark ? "white" : "black"} />
-        </TouchableOpacity>
+        <View style={{ width: 44, height: 44 }} pointerEvents="box-only">
+          <TouchableOpacity
+            onPress={handleClose}
+            style={{
+              height: 44,
+              width: 44,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+              borderRadius: 22,
+            }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+            activeOpacity={0.6}
+          >
+            <Ionicons name="close" size={28} color={isDark ? "white" : "black"} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Body */}

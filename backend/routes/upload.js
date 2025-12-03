@@ -35,7 +35,7 @@ const storage = new CloudinaryStorage({
       resource_type: resourceType,
       public_id: `${Date.now()}-${path.parse(file.originalname).name}`,
       // For raw files (PDFs), we want to keep the original extension
-      format: isPdf ? 'pdf' : undefined, 
+      format: isPdf ? 'pdf' : undefined,
     };
   },
 });
@@ -70,9 +70,16 @@ const upload = multer({
 });
 
 // 4. Secure Upload Route
-router.post('/', upload.single('file'), (req, res) => {
+router.post('/', (req, res, next) => {
+  console.log('🔍 [UPLOAD] Request received');
+  console.log('Headers:', req.headers);
+  console.log('Body type:', typeof req.body);
+  next();
+}, upload.single('file'), (req, res) => {
   try {
+    console.log('📥 [UPLOAD] After multer - req.file:', req.file ? 'EXISTS' : 'NULL');
     if (!req.file) {
+      console.log('❌ [UPLOAD] No file in request');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -88,8 +95,8 @@ router.post('/', upload.single('file'), (req, res) => {
       url: req.file.path || req.file.secure_url, // Cloudinary URL
       type: frontendType,
       name: req.file.originalname,
-      size: req.file.size, 
-      publicId: req.file.filename 
+      size: req.file.size,
+      publicId: req.file.filename
     };
 
     console.log(`✅ File uploaded (${frontendType}):`, attachmentData.name);

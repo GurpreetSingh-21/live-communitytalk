@@ -18,10 +18,10 @@ const messageSchema = new mongoose.Schema(
 
     attachments: [
       {
-        url: String,
-        type: String,
-        name: String,
-        size: Number,
+        url: { type: String },
+        type: { type: String }, // Explicitly define 'type' field
+        name: { type: String },
+        size: { type: Number },
       },
     ],
 
@@ -46,10 +46,10 @@ const messageSchema = new mongoose.Schema(
     reactions: [
       {
         emoji: { type: String, required: true },
-        userId: { 
-          type: mongoose.Schema.Types.ObjectId, 
-          ref: "Person", 
-          required: true 
+        userId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Person",
+          required: true
         },
         userName: String,
         createdAt: { type: Date, default: Date.now }

@@ -21,11 +21,14 @@ import {
   NativeSyntheticEvent,
   NativeScrollEvent,
   Image,
+  Linking,
+  Animated,
 } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import * as ImagePicker from 'expo-image-picker';
 
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
@@ -104,6 +107,8 @@ type ChatMessage = {
     userName: string;
     createdAt: Date;
   }>;
+  type?: "text" | "photo" | "video" | "file";
+  fileName?: string;
 };
 
 const asDate = (v: any) => (v instanceof Date ? v : new Date(v));
@@ -270,6 +275,8 @@ export default function CommunityScreen() {
   const [sending, setSending] = useState(false);
   const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(44);
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const attachmentMenuAnim = useRef(new Animated.Value(0)).current;
   const [chatError, setChatError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatHasMore, setChatHasMore] = useState(true);
@@ -438,6 +445,162 @@ export default function CommunityScreen() {
     }
   }, [input, sending, communityId, user?._id, user?.fullName, scrollToBottom]);
 
+  // Media upload handlers
+  const uploadAndSend = useCallback(async (
+    fileUri: string,
+    fileType: string,
+    fileName: string,
+    msgType: "photo" | "video" | "file"
+  ) => {
+    if (!communityId || sending) return;
+    setSending(true);
+    setChatError(null);
+    const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    // Optimistic Update
+    const optimistic: ChatMessage = {
+      _id: clientMessageId,
+      clientMessageId,
+      sender: user?.fullName || "You",
+      senderId: String(user?._id || "me"),
+      content: fileUri, // Show local URI temporarily
+      timestamp: new Date(),
+      communityId,
+      type: msgType,
+      fileName: fileName,
+      status: "sent",
+    };
+
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMessages((prev) => [...prev, optimistic]);
+    requestAnimationFrame(() => scrollToBottom(true));
+
+    try {
+      const formData = new FormData();
+      // React Native FormData requires specific structure for file uploads
+      const fileToUpload: any = {
+        uri: fileUri,
+        type: fileType,
+        name: fileName,
+      };
+
+      console.log('📤 [UPLOAD] Preparing file:', { uri: fileUri, type: fileType, name: fileName });
+      formData.append('file', fileToUpload);
+
+      console.log('📤 [UPLOAD] Sending to /api/upload...');
+      const uploadRes = await api.post('/api/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      console.log('✅ [UPLOAD] Success:', uploadRes.data);
+      const secureUrl = uploadRes.data?.url || fileUri;
+
+      const payload = {
+        content: secureUrl,
+        communityId,
+        type: msgType,
+        clientMessageId,
+        attachments: [{ url: secureUrl, type: msgType, name: fileName }]
+      };
+
+      const { data } = await api.post(`/api/messages`, payload);
+
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.clientMessageId === clientMessageId || m._id === clientMessageId);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        next[idx] = {
+          ...next[idx],
+          ...data,
+          _id: String(data._id),
+          content: secureUrl,
+          timestamp: data.timestamp || next[idx].timestamp,
+        };
+        return next;
+      });
+    } catch (err) {
+      console.error("Upload failed", err);
+      Alert.alert("Upload Failed", "Could not send file.");
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.clientMessageId === clientMessageId
+            ? { ...m, status: "deleted", content: "[failed to send]" }
+            : m
+        )
+      );
+    } finally {
+      setSending(false);
+    }
+  }, [communityId, sending, user?._id, user?.fullName, scrollToBottom]);
+
+  const handlePickMedia = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const type = asset.type === 'video' ? 'video' : 'photo';
+      const mime = asset.mimeType || (type === 'video' ? 'video/mp4' : 'image/jpeg');
+      const name = asset.fileName || `media_${Date.now()}.${type === 'video' ? 'mp4' : 'jpg'}`;
+
+      uploadAndSend(asset.uri, mime, name, type);
+    }
+  }, [uploadAndSend]);
+
+  const handlePickPhoto = useCallback(async () => {
+    setShowAttachmentMenu(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const mime = asset.mimeType || 'image/jpeg';
+      const name = asset.fileName || `photo_${Date.now()}.jpg`;
+      uploadAndSend(asset.uri, mime, name, 'photo');
+    }
+  }, [uploadAndSend]);
+
+  const handlePickVideo = useCallback(async () => {
+    setShowAttachmentMenu(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+      allowsEditing: true,
+      quality: 0.7,
+    });
+
+    if (!result.canceled && result.assets.length > 0) {
+      const asset = result.assets[0];
+      const mime = asset.mimeType || 'video/mp4';
+      const name = asset.fileName || `video_${Date.now()}.mp4`;
+      uploadAndSend(asset.uri, mime, name, 'video');
+    }
+  }, [uploadAndSend]);
+
+  const showAttachmentOptions = useCallback(() => {
+    setShowAttachmentMenu(prev => {
+      const newValue = !prev;
+      if (newValue) {
+        // Slide up animation when opening
+        Animated.spring(attachmentMenuAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 100,
+          friction: 8,
+        }).start();
+      } else {
+        // Reset animation when closing
+        attachmentMenuAnim.setValue(0);
+      }
+      return newValue;
+    });
+  }, [attachmentMenuAnim]);
+
   // Emoji reaction functions
   const addReaction = useCallback(async (messageId: string, emoji: string) => {
     try {
@@ -465,8 +628,8 @@ export default function CommunityScreen() {
   const removeReaction = useCallback(async (messageId: string, emoji: string) => {
     try {
       await api.delete(`/api/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`);
-      setMessages(prev => prev.map(m => 
-        m._id === messageId 
+      setMessages(prev => prev.map(m =>
+        m._id === messageId
           ? { ...m, reactions: (m.reactions || []).filter(r => !(String(r.userId) === String(user?._id) && r.emoji === emoji)) }
           : m
       ));
@@ -478,7 +641,7 @@ export default function CommunityScreen() {
   const toggleReaction = useCallback((messageId: string, emoji: string) => {
     const msg = messages.find(m => m._id === messageId);
     const hasReacted = msg?.reactions?.some(r => String(r.userId) === String(user?._id) && r.emoji === emoji);
-    
+
     if (hasReacted) {
       removeReaction(messageId, emoji);
     } else {
@@ -549,9 +712,9 @@ export default function CommunityScreen() {
     // Listen for delivery and read status updates
     const onStatusUpdate = (p: any) => {
       if (p?.messageId) {
-        setMessages((prev) => 
-          prev.map((m) => 
-            String(m._id) === String(p.messageId) 
+        setMessages((prev) =>
+          prev.map((m) =>
+            String(m._id) === String(p.messageId)
               ? { ...m, status: p.status, deliveredAt: p.deliveredAt, readAt: p.readAt }
               : m
           )
@@ -561,8 +724,8 @@ export default function CommunityScreen() {
 
     const onReacted = (payload: any) => {
       if (String(payload?.communityId) !== communityId) return;
-      setMessages(prev => prev.map(m => 
-        String(m._id) === String(payload._id) 
+      setMessages(prev => prev.map(m =>
+        String(m._id) === String(payload._id)
           ? { ...m, reactions: payload.reactions }
           : m
       ));
@@ -703,7 +866,7 @@ export default function CommunityScreen() {
   // NEW: Handle avatar press - find member and show modal
   const handleAvatarPress = useCallback((senderId: string, senderName: string) => {
     const member = members.find(m => String(m.person) === String(senderId));
-    
+
     setSelectedUser({
       id: senderId,
       name: senderName,
@@ -872,20 +1035,20 @@ export default function CommunityScreen() {
     </View>
   );
 
-  const Avatar = ({ 
-    name, 
-    email, 
+  const Avatar = ({
+    name,
+    email,
     avatar,
-    size = 48 
-  }: { 
-    name?: string; 
-    email?: string; 
+    size = 48
+  }: {
+    name?: string;
+    email?: string;
     avatar?: string | null;
-    size?: number 
+    size?: number
   }) => {
     const label = initials(name, email);
     const bg = hueFrom(name || email || label);
-    
+
     return (
       <View
         style={{
@@ -939,9 +1102,9 @@ export default function CommunityScreen() {
       >
         <View style={{ flexDirection: "row", alignItems: "center" }}>
           <View>
-            <Avatar 
-              name={item.fullName} 
-              email={item.email} 
+            <Avatar
+              name={item.fullName}
+              email={item.email}
               avatar={item.avatar} // ✅ Pass avatar
             />
             {isOnline && (
@@ -960,7 +1123,7 @@ export default function CommunityScreen() {
               />
             )}
           </View>
-          
+
           <View style={{ marginLeft: 14, flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
               <Text style={{ color: colors.text, fontWeight: "600", fontSize: 17 }}>{item.fullName}</Text>
@@ -1083,19 +1246,19 @@ export default function CommunityScreen() {
     const mine = myIds.includes(String(item.senderId || ""));
     const prev = messages[index - 1];
     const next = messages[index + 1];
-  
+
     const curDate = asDate(item.timestamp);
     const prevDate = prev ? asDate(prev.timestamp) : undefined;
     const showDateDivider = !prev || !prevDate || !isSameDay(curDate, prevDate);
-  
+
     const isFirstOfGroup = !prev || prev.senderId !== item.senderId || showGap15min(prev, item);
     const isLastOfGroup = !next || next.senderId !== item.senderId || showGap15min(item, next);
-  
+
     const deleted = item.isDeleted || item.status === "deleted";
-  
+
     // Find member info for avatar status AND avatar URL
     const memberInfo = members.find(m => String(m.person) === String(item.senderId));
-  
+
     return (
       <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
         {showDateDivider && (
@@ -1116,7 +1279,7 @@ export default function CommunityScreen() {
             </View>
           </View>
         )}
-  
+
         {/* Discord-style: Show avatar on left for others, gradient bubble on right for self */}
         {!mine ? (
           <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
@@ -1128,10 +1291,10 @@ export default function CommunityScreen() {
                   activeOpacity={0.7}
                 >
                   <View style={{ position: "relative" }}>
-                    <Avatar 
-                      name={item.sender} 
+                    <Avatar
+                      name={item.sender}
                       avatar={memberInfo?.avatar} // ✅ Pass avatar URL
-                      size={40} 
+                      size={40}
                     />
                     {/* Online indicator */}
                     {memberInfo?.status === "online" && (
@@ -1153,7 +1316,7 @@ export default function CommunityScreen() {
                 </TouchableOpacity>
               ) : null}
             </View>
-  
+
             {/* Message content */}
             <View style={{ flex: 1, maxWidth: "75%" }}>
               {isFirstOfGroup && (
@@ -1184,12 +1347,27 @@ export default function CommunityScreen() {
                     <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
                       Message deleted
                     </Text>
+                  ) : item.type === 'photo' || item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) || item.content?.includes('cloudinary.com') ? (
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => {
+                      if (item.content.startsWith('http')) Linking.openURL(item.content);
+                    }}>
+                      <Image
+                        source={{ uri: item.content }}
+                        style={{ width: 220, height: 220, borderRadius: 12, backgroundColor: '#eee' }}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+                  ) : item.type === 'video' ? (
+                    <TouchableOpacity onPress={() => Linking.openURL(item.content)} style={{ width: 220, height: 150, borderRadius: 12, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="play-circle" size={48} color="#fff" />
+                      <Text style={{ color: '#fff', fontSize: 12, marginTop: 4 }}>Tap to Play Video</Text>
+                    </TouchableOpacity>
                   ) : (
                     <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
                   )}
                 </View>
               </TouchableOpacity>
-              
+
               {/* Reactions Display */}
               {item.reactions && item.reactions.length > 0 && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4 }}>
@@ -1211,7 +1389,7 @@ export default function CommunityScreen() {
                         paddingHorizontal: 6,
                         paddingVertical: 2,
                         borderRadius: 12,
-                        backgroundColor: data.hasYou 
+                        backgroundColor: data.hasYou
                           ? (isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)')
                           : colors.surfaceElevated,
                         borderWidth: data.hasYou ? 1 : 0,
@@ -1258,12 +1436,27 @@ export default function CommunityScreen() {
                     <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, fontStyle: "italic" }}>
                       Message deleted
                     </Text>
+                  ) : item.type === 'photo' || item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) || item.content?.includes('cloudinary.com') ? (
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => {
+                      if (item.content.startsWith('http')) Linking.openURL(item.content);
+                    }}>
+                      <Image
+                        source={{ uri: item.content }}
+                        style={{ width: 220, height: 220, borderRadius: 12 }}
+                        resizeMode="cover"
+                      />
+                    </TouchableOpacity>
+                  ) : item.type === 'video' ? (
+                    <TouchableOpacity onPress={() => Linking.openURL(item.content)} style={{ width: 220, height: 150, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="play-circle" size={48} color="#fff" />
+                      <Text style={{ color: '#fff', fontSize: 12, marginTop: 4 }}>Tap to Play Video</Text>
+                    </TouchableOpacity>
                   ) : (
                     <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
                   )}
                 </LinearGradient>
               </TouchableOpacity>
-              
+
               {/* Reactions Display (Right Aligned) */}
               {item.reactions && item.reactions.length > 0 && (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, gap: 4, justifyContent: 'flex-end' }}>
@@ -1285,7 +1478,7 @@ export default function CommunityScreen() {
                         paddingHorizontal: 6,
                         paddingVertical: 2,
                         borderRadius: 12,
-                        backgroundColor: data.hasYou 
+                        backgroundColor: data.hasYou
                           ? (isDark ? 'rgba(99, 102, 241, 0.3)' : 'rgba(99, 102, 241, 0.15)')
                           : colors.surfaceElevated,
                         borderWidth: data.hasYou ? 1 : 0,
@@ -1306,8 +1499,8 @@ export default function CommunityScreen() {
               {/* Delivery status indicators */}
               {!deleted && (
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 6, marginRight: 4 }}>
-                  <Text style={{ 
-                    color: item.status === "read" ? colors.primary : colors.textTertiary, 
+                  <Text style={{
+                    color: item.status === "read" ? colors.primary : colors.textTertiary,
                     fontSize: 14,
                     fontWeight: "600",
                     marginRight: 4
@@ -1328,370 +1521,470 @@ export default function CommunityScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1"
-      behavior={Platform.select({ ios: "padding", android: undefined })}
-      style={{ backgroundColor: colors.bg }}
-    >
-      <Stack.Screen options={{ header: () => null }} />
+    <>
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.select({ ios: "padding", android: undefined })}
+        style={{ backgroundColor: colors.bg }}
+      >
+        <Stack.Screen options={{ header: () => null }} />
 
-      {/* User Profile Modal */}
-      <UserProfileModal
-        visible={showUserModal}
-        onClose={() => setShowUserModal(false)}
-        user={selectedUser}
-        isDark={isDark}
-        colors={colors}
-        currentUserId={user?._id}
-      />
+        {/* User Profile Modal */}
+        <UserProfileModal
+          visible={showUserModal}
+          onClose={() => setShowUserModal(false)}
+          user={selectedUser}
+          isDark={isDark}
+          colors={colors}
+          currentUserId={user?._id}
+        />
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : !community ? (
-        <View className="flex-1 items-center justify-center px-6">
-          <Text style={{ color: colors.text, fontSize: 16, textAlign: "center" }}>Community not found.</Text>
-        </View>
-      ) : (
-        <>
-          <AppHeader />
+        {loading ? (
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : !community ? (
+          <View className="flex-1 items-center justify-center px-6">
+            <Text style={{ color: colors.text, fontSize: 16, textAlign: "center" }}>Community not found.</Text>
+          </View>
+        ) : (
+          <>
+            <AppHeader />
 
-          {!isMember ? (
-            <View style={{ paddingHorizontal: 16, paddingVertical: 24 }}>
-              <View
-                style={{
-                  backgroundColor: colors.surfaceElevated,
-                  borderRadius: 16,
-                  padding: 20,
-                  shadowColor: colors.shadow,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.08,
-                  shadowRadius: 8,
-                }}
-              >
-                <View style={{ alignItems: "center", marginBottom: 12 }}>
-                  <Ionicons name="lock-closed-outline" size={40} color={colors.textSecondary} />
-                </View>
-                <Text style={{ color: colors.text, fontSize: 17, textAlign: "center", fontWeight: "600" }}>
-                  Members Only
-                </Text>
-                <Text style={{ color: colors.textSecondary, marginTop: 8, textAlign: "center" }}>
-                  Join this community to chat and view members.
-                </Text>
-              </View>
-            </View>
-          ) : (
-            <ScrollView
-              ref={pagerRef}
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              onMomentumScrollEnd={onMomentumEnd}
-            >
-              {/* CHAT */}
-              <View style={{ width: SCREEN_W, flex: 1 }}>
-                {!!chatError && (
-                  <View
-                    style={{
-                      marginHorizontal: 16,
-                      marginTop: 12,
-                      backgroundColor: isDark ? "rgba(255, 59, 48, 0.15)" : "#FFEBEE",
-                      borderLeftWidth: 3,
-                      borderLeftColor: colors.destructive,
-                      borderRadius: 12,
-                      paddingHorizontal: 16,
-                      paddingVertical: 12,
-                    }}
-                  >
-                    <Text style={{ color: colors.destructive, fontSize: 14, fontWeight: "500" }}>{chatError}</Text>
-                  </View>
-                )}
-
-                <View style={{ flex: 1, marginTop: 8 }}>
-                  {chatLoading ? (
-                    <View className="flex-1 items-center justify-center">
-                      <ActivityIndicator size="large" color={colors.primary} />
-                    </View>
-                  ) : (
-                    <FlatList
-                      ref={chatListRef}
-                      data={messages}
-                      keyExtractor={(m) => String(m._id)}
-                      renderItem={renderMessage}
-                      onContentSizeChange={handleChatContentSizeChange}
-                      onScroll={handleChatScroll}
-                      scrollEventThrottle={16}
-                      ListHeaderComponent={
-                        chatHasMore ? (
-                          <TouchableOpacity
-                            onPress={fetchOlderChat}
-                            disabled={fetchingMoreChatRef.current}
-                            style={{ paddingVertical: 16, alignItems: "center" }}
-                          >
-                            {fetchingMoreChatRef.current ? (
-                              <ActivityIndicator color={colors.primary} />
-                            ) : (
-                              <View
-                                style={{
-                                  backgroundColor: colors.surface,
-                                  paddingHorizontal: 16,
-                                  paddingVertical: 8,
-                                  borderRadius: 20,
-                                }}
-                              >
-                                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
-                                  Load earlier messages
-                                </Text>
-                              </View>
-                            )}
-                          </TouchableOpacity>
-                        ) : (
-                          <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                            <View style={{ alignItems: "center" }}>
-                              <View
-                                style={{
-                                  width: 48,
-                                  height: 48,
-                                  borderRadius: 24,
-                                  backgroundColor: colors.surface,
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  marginBottom: 8,
-                                }}
-                              >
-                                <Ionicons name="chatbubbles-outline" size={24} color={colors.textSecondary} />
-                              </View>
-                              <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: "500" }}>
-                                Start of conversation
-                              </Text>
-                            </View>
-                          </View>
-                        )
-                      }
-                      contentContainerStyle={{ paddingBottom: 110, paddingTop: 8 }}
-                      showsVerticalScrollIndicator={false}
-                    />
-                  )}
-                </View>
-
-                {typingLabel ? (
-                  <View style={{ paddingHorizontal: 16, marginTop: 6 }}>
-                    <View
-                      style={{
-                        alignSelf: "flex-start",
-                        backgroundColor: isDark ? "rgba(52, 199, 89, 0.15)" : "#E8F8EF",
-                        borderRadius: 12,
-                        paddingHorizontal: 12,
-                        paddingVertical: 6,
-                      }}
-                    >
-                      <Text style={{ color: isDark ? "#34C759" : "#0F8C4C", fontSize: 13, fontWeight: "600" }}>
-                        {typingLabel}
-                      </Text>
-                    </View>
-                  </View>
-                ) : null}
-
+            {!isMember ? (
+              <View style={{ paddingHorizontal: 16, paddingVertical: 24 }}>
                 <View
                   style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    paddingBottom: Platform.OS === "ios" ? 32 : 12,
-                    borderTopWidth: 0.5,
-                    borderTopColor: colors.border,
-                    backgroundColor: colors.bg,
+                    backgroundColor: colors.surfaceElevated,
+                    borderRadius: 16,
+                    padding: 20,
+                    shadowColor: colors.shadow,
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.08,
+                    shadowRadius: 8,
                   }}
                 >
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "flex-end",
-                      backgroundColor: colors.inputBg,
-                      borderRadius: 24,
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      shadowColor: colors.shadow,
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.08,
-                      shadowRadius: 8,
-                    }}
-                  >
-                    <TextInput
-                      value={input}
-                      onChangeText={(t) => {
-                        setInput(t);
-
-                        if (socket && communityId) {
-                          const now = Date.now();
-                          if (now - (typingPingRef.current.lastSent || 0) > 2000) {
-                            typingPingRef.current.lastSent = now;
-                            console.log("🟢 [TYPING] Emitting community:typing=true for community:", communityId);
-                            socket.emit?.("community:typing", { communityId, isTyping: true });
-                          }
-                          clearTimeout(typingPingRef.current.timer);
-                          typingPingRef.current.timer = setTimeout(() => {
-                            console.log("🔴 [TYPING] Emitting community:typing=false for community:", communityId);
-                            socket.emit?.("community:typing", { communityId, isTyping: false });
-                          }, 5000);
-                        }
-                      }}
-                      placeholder="Message"
-                      placeholderTextColor={colors.textSecondary}
-                      style={{
-                        color: colors.text,
-                        fontSize: 17,
-                        flex: 1,
-                        minHeight: 36,
-                        maxHeight: 100,
-                        height: Math.max(36, inputHeight),
-                        paddingVertical: 8,
-                        textAlignVertical: "top",
-                      }}
-                      onContentSizeChange={(e) => {
-                        const h = e.nativeEvent.contentSize.height;
-                        setInputHeight(Math.min(100, Math.max(36, h)));
-                      }}
-                      editable={!sending}
-                      multiline
-                    />
-
-                    <TouchableOpacity
-                      onPress={sendMessage}
-                      disabled={sending || input.trim().length === 0}
-                      style={{
-                        marginLeft: 8,
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        overflow: "hidden",
-                        opacity: sending || input.trim().length === 0 ? 0.4 : 1,
-                      }}
-                    >
-                      <LinearGradient
-                        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-                      >
-                        {sending ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <Ionicons name="arrow-up" size={20} color="#fff" />
-                        )}
-                      </LinearGradient>
-                    </TouchableOpacity>
+                  <View style={{ alignItems: "center", marginBottom: 12 }}>
+                    <Ionicons name="lock-closed-outline" size={40} color={colors.textSecondary} />
                   </View>
+                  <Text style={{ color: colors.text, fontSize: 17, textAlign: "center", fontWeight: "600" }}>
+                    Members Only
+                  </Text>
+                  <Text style={{ color: colors.textSecondary, marginTop: 8, textAlign: "center" }}>
+                    Join this community to chat and view members.
+                  </Text>
                 </View>
               </View>
+            ) : (
+              <ScrollView
+                ref={pagerRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={onMomentumEnd}
+              >
+                {/* CHAT */}
+                <View style={{ width: SCREEN_W, flex: 1 }}>
+                  {!!chatError && (
+                    <View
+                      style={{
+                        marginHorizontal: 16,
+                        marginTop: 12,
+                        backgroundColor: isDark ? "rgba(255, 59, 48, 0.15)" : "#FFEBEE",
+                        borderLeftWidth: 3,
+                        borderLeftColor: colors.destructive,
+                        borderRadius: 12,
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                      }}
+                    >
+                      <Text style={{ color: colors.destructive, fontSize: 14, fontWeight: "500" }}>{chatError}</Text>
+                    </View>
+                  )}
 
-              {/* MEMBERS */}
-              <View style={{ width: SCREEN_W }}>
-                <MemberFilters />
-                <FlatList
-                  data={members}
-                  keyExtractor={(m) => String(m._id)}
-                  renderItem={({ item }) => <MemberRowCard item={item} />}
-                  onEndReachedThreshold={0.3}
-                  onEndReached={loadMoreMembers}
-                  refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={refreshMembers} tintColor={colors.primary} />
-                  }
-                  ListEmptyComponent={
-                    !fetchingRef.current ? (
-                      <View style={{ paddingVertical: 40, alignItems: "center" }}>
-                        <View
+                  <View style={{ flex: 1, marginTop: 8 }}>
+                    {chatLoading ? (
+                      <View className="flex-1 items-center justify-center">
+                        <ActivityIndicator size="large" color={colors.primary} />
+                      </View>
+                    ) : (
+                      <FlatList
+                        ref={chatListRef}
+                        data={messages}
+                        keyExtractor={(m) => String(m._id)}
+                        renderItem={renderMessage}
+                        onContentSizeChange={handleChatContentSizeChange}
+                        onScroll={handleChatScroll}
+                        scrollEventThrottle={16}
+                        ListHeaderComponent={
+                          chatHasMore ? (
+                            <TouchableOpacity
+                              onPress={fetchOlderChat}
+                              disabled={fetchingMoreChatRef.current}
+                              style={{ paddingVertical: 16, alignItems: "center" }}
+                            >
+                              {fetchingMoreChatRef.current ? (
+                                <ActivityIndicator color={colors.primary} />
+                              ) : (
+                                <View
+                                  style={{
+                                    backgroundColor: colors.surface,
+                                    paddingHorizontal: 16,
+                                    paddingVertical: 8,
+                                    borderRadius: 20,
+                                  }}
+                                >
+                                  <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
+                                    Load earlier messages
+                                  </Text>
+                                </View>
+                              )}
+                            </TouchableOpacity>
+                          ) : (
+                            <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                              <View style={{ alignItems: "center" }}>
+                                <View
+                                  style={{
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: 24,
+                                    backgroundColor: colors.surface,
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    marginBottom: 8,
+                                  }}
+                                >
+                                  <Ionicons name="chatbubbles-outline" size={24} color={colors.textSecondary} />
+                                </View>
+                                <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: "500" }}>
+                                  Start of conversation
+                                </Text>
+                              </View>
+                            </View>
+                          )
+                        }
+                        contentContainerStyle={{ paddingBottom: 110, paddingTop: 8 }}
+                        showsVerticalScrollIndicator={false}
+                      />
+                    )}
+                  </View>
+
+                  {typingLabel ? (
+                    <View style={{ paddingHorizontal: 16, marginTop: 6 }}>
+                      <View
+                        style={{
+                          alignSelf: "flex-start",
+                          backgroundColor: isDark ? "rgba(52, 199, 89, 0.15)" : "#E8F8EF",
+                          borderRadius: 12,
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                        }}
+                      >
+                        <Text style={{ color: isDark ? "#34C759" : "#0F8C4C", fontSize: 13, fontWeight: "600" }}>
+                          {typingLabel}
+                        </Text>
+                      </View>
+                    </View>
+                  ) : null}
+
+                  <View
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      paddingBottom: Platform.OS === "ios" ? 32 : 12,
+                      borderTopWidth: 0.5,
+                      borderTopColor: colors.border,
+                      backgroundColor: colors.bg,
+                    }}
+                  >
+                    {/* Animated Attachment Menu */}
+                    {showAttachmentMenu && (
+                      <Animated.View
+                        style={{
+                          position: 'absolute',
+                          bottom: 95,
+                          left: 5,
+                          backgroundColor: colors.surfaceElevated,
+                          borderRadius: 16,
+                          padding: 8,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 4 },
+                          shadowOpacity: 0.3,
+                          shadowRadius: 12,
+                          elevation: 8,
+                          transform: [
+                            {
+                              translateY: attachmentMenuAnim.interpolate({
+                                inputRange: [0, 1],
+                                outputRange: [20, 0],
+                              }),
+                            },
+                          ],
+                          opacity: attachmentMenuAnim,
+                        }}
+                      >
+                        <TouchableOpacity
+                          onPress={handlePickPhoto}
                           style={{
-                            width: 64,
-                            height: 64,
-                            borderRadius: 32,
-                            backgroundColor: colors.surface,
-                            alignItems: "center",
-                            justifyContent: "center",
-                            marginBottom: 12,
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            paddingHorizontal: 16,
+                            paddingVertical: 12,
+                            marginBottom: 4,
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <View
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 18,
+                              backgroundColor: '#5E5CE6',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              marginRight: 12,
+                            }}
+                          >
+                            <Ionicons name="image" size={20} color="#fff" />
+                          </View>
+                          <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Photo</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          onPress={handlePickVideo}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            paddingHorizontal: 16,
+                            paddingVertical: 12,
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <View
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 18,
+                              backgroundColor: '#007AFF',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              marginRight: 12,
+                            }}
+                          >
+                            <Ionicons name="videocam" size={20} color="#fff" />
+                          </View>
+                          <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>Video</Text>
+                        </TouchableOpacity>
+                      </Animated.View>
+                    )}
+
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      {/* + button outside input */}
+                      <TouchableOpacity
+                        onPress={showAttachmentOptions}
+                        style={{
+                          width: 40,
+                          height: 40,
+                          borderRadius: 20,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons name="add-circle" size={32} color={colors.primary} />
+                      </TouchableOpacity>
+
+                      <View
+                        style={{
+                          flex: 1,
+                          flexDirection: "row",
+                          alignItems: "flex-end",
+                          backgroundColor: colors.inputBg,
+                          borderRadius: 24,
+                          paddingHorizontal: 16,
+                          paddingVertical: 8,
+                          shadowColor: colors.shadow,
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.08,
+                          shadowRadius: 8,
+                        }}
+                      >
+                        <TextInput
+                          value={input}
+                          onChangeText={(t) => {
+                            setInput(t);
+
+                            if (socket && communityId) {
+                              const now = Date.now();
+                              if (now - (typingPingRef.current.lastSent || 0) > 2000) {
+                                typingPingRef.current.lastSent = now;
+                                console.log("🟢 [TYPING] Emitting community:typing=true for community:", communityId);
+                                socket.emit?.("community:typing", { communityId, isTyping: true });
+                              }
+                              clearTimeout(typingPingRef.current.timer);
+                              typingPingRef.current.timer = setTimeout(() => {
+                                console.log("🔴 [TYPING] Emitting community:typing=false for community:", communityId);
+                                socket.emit?.("community:typing", { communityId, isTyping: false });
+                              }, 5000);
+                            }
+                          }}
+                          placeholder="Message"
+                          placeholderTextColor={colors.textSecondary}
+                          style={{
+                            color: colors.text,
+                            fontSize: 17,
+                            flex: 1,
+                            minHeight: 36,
+                            maxHeight: 100,
+                            height: Math.max(36, inputHeight),
+                            paddingVertical: 8,
+                            textAlignVertical: "top",
+                          }}
+                          onContentSizeChange={(e) => {
+                            const h = e.nativeEvent.contentSize.height;
+                            setInputHeight(Math.min(100, Math.max(36, h)));
+                          }}
+                          editable={!sending}
+                          multiline
+                        />
+
+                        <TouchableOpacity
+                          onPress={sendMessage}
+                          disabled={sending || input.trim().length === 0}
+                          style={{
+                            marginLeft: 8,
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            overflow: "hidden",
+                            opacity: sending || input.trim().length === 0 ? 0.4 : 1,
                           }}
                         >
-                          <Ionicons name="people-outline" size={32} color={colors.textSecondary} />
-                        </View>
-                        <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>No members found</Text>
-                        <Text style={{ color: colors.textSecondary, fontSize: 15, marginTop: 4 }}>
-                          Try adjusting your filters
-                        </Text>
+                          <LinearGradient
+                            colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+                          >
+                            {sending ? (
+                              <ActivityIndicator color="#fff" size="small" />
+                            ) : (
+                              <Ionicons name="arrow-up" size={20} color="#fff" />
+                            )}
+                          </LinearGradient>
+                        </TouchableOpacity>
                       </View>
-                    ) : null
-                  }
-                  ListFooterComponent={
-                    hasMore && members.length > 0 ? (
-                      <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                        <ActivityIndicator color={colors.primary} />
-                      </View>
-                    ) : members.length > 0 ? (
-                      <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                        <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "500" }}>
-                          • • •
-                        </Text>
-                      </View>
-                    ) : null
-                  }
-                  contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}
-                  showsVerticalScrollIndicator={false}
-                />
-              </View>
-            </ScrollView>
-          )}
-        </>
-      )}
-    </KeyboardAvoidingView>
+                    </View>
+                  </View>
+                </View>
 
-    {/* Emoji Picker Modal */}
-    {showEmojiPicker && (
-      <TouchableOpacity
-        activeOpacity={1}
-        onPress={() => setShowEmojiPicker(false)}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.6)',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <View
+                {/* MEMBERS */}
+                <View style={{ width: SCREEN_W }}>
+                  <MemberFilters />
+                  <FlatList
+                    data={members}
+                    keyExtractor={(m) => String(m._id)}
+                    renderItem={({ item }) => <MemberRowCard item={item} />}
+                    onEndReachedThreshold={0.3}
+                    onEndReached={loadMoreMembers}
+                    refreshControl={
+                      <RefreshControl refreshing={refreshing} onRefresh={refreshMembers} tintColor={colors.primary} />
+                    }
+                    ListEmptyComponent={
+                      !fetchingRef.current ? (
+                        <View style={{ paddingVertical: 40, alignItems: "center" }}>
+                          <View
+                            style={{
+                              width: 64,
+                              height: 64,
+                              borderRadius: 32,
+                              backgroundColor: colors.surface,
+                              alignItems: "center",
+                              justifyContent: "center",
+                              marginBottom: 12,
+                            }}
+                          >
+                            <Ionicons name="people-outline" size={32} color={colors.textSecondary} />
+                          </View>
+                          <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>No members found</Text>
+                          <Text style={{ color: colors.textSecondary, fontSize: 15, marginTop: 4 }}>
+                            Try adjusting your filters
+                          </Text>
+                        </View>
+                      ) : null
+                    }
+                    ListFooterComponent={
+                      hasMore && members.length > 0 ? (
+                        <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                          <ActivityIndicator color={colors.primary} />
+                        </View>
+                      ) : members.length > 0 ? (
+                        <View style={{ paddingVertical: 20, alignItems: "center" }}>
+                          <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "500" }}>
+                            • • •
+                          </Text>
+                        </View>
+                      ) : null
+                    }
+                    contentContainerStyle={{ paddingBottom: 24, paddingTop: 8 }}
+                    showsVerticalScrollIndicator={false}
+                  />
+                </View>
+              </ScrollView>
+            )}
+          </>
+        )}
+      </KeyboardAvoidingView>
+
+      {/* Emoji Picker Modal */}
+      {showEmojiPicker && (
+        <TouchableOpacity
+          activeOpacity={1}
+          onPress={() => setShowEmojiPicker(false)}
           style={{
-            backgroundColor: colors.surface,
-            borderRadius: 20,
-            padding: 16,
-            flexDirection: 'row',
-            gap: 12,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 5,
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.6)',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
         >
-          {QUICK_EMOJIS.map(emoji => (
-            <TouchableOpacity
-              key={emoji}
-              onPress={() => selectedMessageId && toggleReaction(selectedMessageId, emoji)}
-              style={{
-                width: 52,
-                height: 52,
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderRadius: 26,
-                backgroundColor: colors.surfaceElevated,
-              }}
-            >
-              <Text style={{ fontSize: 32 }}>{emoji}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </TouchableOpacity>
-    )}
-  </>
-);
+          <View
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: 20,
+              padding: 16,
+              flexDirection: 'row',
+              gap: 12,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 5,
+            }}
+          >
+            {QUICK_EMOJIS.map(emoji => (
+              <TouchableOpacity
+                key={emoji}
+                onPress={() => selectedMessageId && toggleReaction(selectedMessageId, emoji)}
+                style={{
+                  width: 52,
+                  height: 52,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderRadius: 26,
+                  backgroundColor: colors.surfaceElevated,
+                }}
+              >
+                <Text style={{ fontSize: 32 }}>{emoji}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      )}
+    </>
+  );
 }

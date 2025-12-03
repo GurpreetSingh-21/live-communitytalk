@@ -215,7 +215,7 @@ export default function DMThreadScreen() {
   // ✅ Recording State
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
-  
+
   // Typing indicator state
   const [partnerTyping, setPartnerTyping] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
@@ -398,9 +398,9 @@ export default function DMThreadScreen() {
 
   /* ─────── Consolidated Upload & Send Logic ─────── */
   const uploadAndSend = async (
-    fileUri: string, 
-    fileType: string, 
-    fileName: string, 
+    fileUri: string,
+    fileType: string,
+    fileName: string,
     msgType: "photo" | "video" | "audio" | "file"
   ) => {
     setSending(true);
@@ -416,11 +416,11 @@ export default function DMThreadScreen() {
       clientMessageId,
       fileName: fileName
     };
-    
-    setMessages((prev) => 
-        finalizeUnique(upsertMessages(prev, optimistic, { prefer: "local" }))
+
+    setMessages((prev) =>
+      finalizeUnique(upsertMessages(prev, optimistic, { prefer: "local" }))
     );
-    
+
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
 
     try {
@@ -452,7 +452,7 @@ export default function DMThreadScreen() {
         // Fallback to body-only route
         await api.post(`/api/direct-messages`, { ...payload, to: partnerId });
       }
-      
+
       if (clientMessageId) resolvedClientIdsRef.current.add(clientMessageId);
 
     } catch (err) {
@@ -485,7 +485,7 @@ export default function DMThreadScreen() {
       const type = asset.type === 'video' ? 'video' : 'photo';
       const mime = asset.mimeType || (type === 'video' ? 'video/mp4' : 'image/jpeg');
       const name = asset.fileName || `media_${Date.now()}.${type === 'video' ? 'mp4' : 'jpg'}`;
-      
+
       uploadAndSend(asset.uri, mime, name, type);
     }
   };
@@ -540,7 +540,7 @@ export default function DMThreadScreen() {
   const cancelRecording = async () => {
     if (!recording) return;
     setIsRecording(false);
-    try { await recording.stopAndUnloadAsync(); } catch {}
+    try { await recording.stopAndUnloadAsync(); } catch { }
     setRecording(null);
   };
 
@@ -575,7 +575,7 @@ export default function DMThreadScreen() {
 
   const handleTextChange = useCallback((text: string) => {
     setInput(text);
-    
+
     if (text.trim()) {
       emitTyping(true);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -615,7 +615,7 @@ export default function DMThreadScreen() {
     try {
       let data: any;
       const payload = { content: text, type: 'text', clientMessageId };
-      
+
       try {
         ({ data } = await api.post(`/api/direct-messages/${partnerId}`, payload));
       } catch (e: any) {
@@ -668,11 +668,11 @@ export default function DMThreadScreen() {
     if (currentType === 'photo') {
       contentNode = (
         <TouchableOpacity activeOpacity={0.9} onPress={() => {
-            if(item.content.startsWith('http')) Linking.openURL(item.content);
+          if (item.content.startsWith('http')) Linking.openURL(item.content);
         }}>
-          <Image 
-            source={{ uri: item.content }} 
-            style={{ width: 220, height: 220, borderRadius: 12, backgroundColor: '#eee' }} 
+          <Image
+            source={{ uri: item.content }}
+            style={{ width: 220, height: 220, borderRadius: 12, backgroundColor: '#eee' }}
             resizeMode="cover"
           />
         </TouchableOpacity>
@@ -701,8 +701,8 @@ export default function DMThreadScreen() {
         <TouchableOpacity onPress={() => Linking.openURL(item.content)} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Ionicons name="mic-circle" size={32} color={mine ? '#fff' : colors.text} />
           <View>
-             <Text style={{ color: mine ? '#fff' : colors.text, fontWeight: '600' }}>Voice Note</Text>
-             <Text style={{ color: mine ? '#rgba(255,255,255,0.7)' : colors.textSecondary, fontSize: 10 }}>Tap to listen</Text>
+            <Text style={{ color: mine ? '#fff' : colors.text, fontWeight: '600' }}>Voice Note</Text>
+            <Text style={{ color: mine ? '#rgba(255,255,255,0.7)' : colors.textSecondary, fontSize: 10 }}>Tap to listen</Text>
           </View>
         </TouchableOpacity>
       );
@@ -763,7 +763,7 @@ export default function DMThreadScreen() {
           status={status}
           onPressBack={() => router.back()}
           onPressProfile={() => router.push({ pathname: "/profile/[id]", params: { id: partnerId } } as never)}
-          onPressMore={() => {}}
+          onPressMore={() => { }}
           themeBg={colors.headerBg}
           themeBorder={colors.border}
           dark={isDark}

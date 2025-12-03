@@ -71,14 +71,35 @@ router.post("/", async (req, res) => {
     const gate = await assertCommunityAndMembership(communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
-    // 3) Save message
+    // 3) Parse attachments if it's a stringified JSON
+    console.log('[Message] Raw attachments type:', typeof attachments);
+    console.log('[Message] Raw attachments value:', attachments);
+
+    let parsedAttachments = [];
+    if (typeof attachments === 'string' && attachments.trim()) {
+      console.log('[Message] Attempting to parse attachments string...');
+      try {
+        parsedAttachments = JSON.parse(attachments);
+        console.log('[Message] Successfully parsed attachments:', parsedAttachments);
+      } catch (e) {
+        console.warn('[Message] Failed to parse attachments string:', e.message);
+        parsedAttachments = [];
+      }
+    } else if (Array.isArray(attachments)) {
+      console.log('[Message] Attachments is already an array');
+      parsedAttachments = attachments;
+    }
+
+    console.log('[Message] Final parsedAttachments:', parsedAttachments);
+
+    // 4) Save message
     const msg = await Message.create({
-      sender: req.user.fullName || req.user.email || "Unknown", 
+      sender: req.user.fullName || req.user.email || "Unknown",
       senderId: req.user.id,
       avatar: req.user.avatar || "/default-avatar.png",
       content: content.trim(),
       communityId: OID(communityId),
-      attachments: Array.isArray(attachments) ? attachments : [],
+      attachments: parsedAttachments,
     });
 
     // 4) Payload
@@ -122,7 +143,7 @@ router.post("/", async (req, res) => {
 
     // 6) Push notifications (EXPO)
     // Run in background, catch errors so they don't crash the request
-    sendPushNotificationsAsync(communityId, req.user, msg).catch(() => {});
+    sendPushNotificationsAsync(communityId, req.user, msg).catch(() => { });
 
     // 7) Done
     return res.status(201).json(payload);
@@ -333,7 +354,7 @@ router.delete("/:messageId", async (req, res) => {
       senderId: String(doc.senderId),
     };
 
-      req.io?.to(ROOM(doc.communityId)).emit("message:deleted", payload);
+    req.io?.to(ROOM(doc.communityId)).emit("message:deleted", payload);
     return res.json(payload);
   } catch (error) {
     console.error("DELETE /api/messages/:messageId error:", error);
@@ -346,7 +367,7 @@ router.post("/:messageId/reactions", async (req, res) => {
   try {
     const { messageId } = req.params;
     const { emoji } = req.body || {};
-    
+
     if (!isValidId(messageId))
       return res.status(400).json({ error: "Invalid messageId" });
     if (!emoji || typeof emoji !== "string")
@@ -396,7 +417,7 @@ router.post("/:messageId/reactions", async (req, res) => {
 router.delete("/:messageId/reactions/:emoji", async (req, res) => {
   try {
     const { messageId, emoji } = req.params;
-    
+
     if (!isValidId(messageId))
       return res.status(400).json({ error: "Invalid messageId" });
 

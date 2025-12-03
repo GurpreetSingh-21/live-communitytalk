@@ -106,6 +106,10 @@ subClient.on("connect", () => console.log("✅ Redis SubClient connected."));
 subClient.on("error", (err) => console.error("❌ Redis SubClient error:", err));
 
 // ───────────────────────── Middleware ─────────────────────────
+// 🔧 Trust proxy settings (for ngrok, load balancers, reverse proxies)
+// This enables Express to read X-Forwarded-* headers correctly
+app.set('trust proxy', true);
+
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
@@ -254,12 +258,12 @@ io.on("connection", async (socket) => {
     const roomName = communityRoom(cid);
     console.log(`🔵 [BACKEND] User ${uid} joining community room: ${roomName}`);
     console.log(`   Before join - Socket rooms:`, Array.from(socket.rooms));
-    
+
     socket.join(roomName);
-    
+
     console.log(`   After join - Socket rooms:`, Array.from(socket.rooms));
     console.log(`   Verification - InRoom: ${socket.rooms.has(roomName)}`);
-    
+
     // ✅ Sync socket user state so typing checks pass
     if (socket.user && socket.user.communityIds && !socket.user.communityIds.includes(cid)) {
       console.log(`🔄 [BACKEND] Adding ${cid} to socket.user.communityIds for ${uid}`);
@@ -273,9 +277,9 @@ io.on("connection", async (socket) => {
     const roomName = communityRoom(cid);
     console.log(`🔴 [BACKEND] User ${uid} leaving community room: ${roomName}`);
     console.log(`   Before leave - Socket rooms:`, Array.from(socket.rooms));
-    
+
     socket.leave(roomName);
-    
+
     console.log(`   After leave - Socket rooms:`, Array.from(socket.rooms));
     await presence.leaveCommunity(uid, cid);
   });
@@ -381,11 +385,11 @@ io.on("connection", async (socket) => {
   socket.on("community:typing", ({ communityId, isTyping }) => {
     try {
       console.log(`⌨️ [BACKEND] Received typing event: user=${uid}, community=${communityId} (${typeof communityId}), isTyping=${isTyping}`);
-      
+
       // Ensure communityIds exists
       const userCommunities = socket.user.communityIds || [];
       const isMember = userCommunities.includes(communityId);
-      
+
       // DEBUG: Check if user is actually in the room
       const roomName = communityRoom(communityId);
       const inRoom = socket.rooms.has(roomName);
