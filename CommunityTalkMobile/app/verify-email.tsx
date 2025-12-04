@@ -35,11 +35,18 @@ export default function VerifyEmailScreen() {
     try {
       console.log("1. Starting verification...");
       
-      // Call the verify-code route
-      const { data } = await api.post("/api/verify-code", {
+      // Add 15 second timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Request timed out")), 15000)
+      );
+      
+      const apiPromise = api.post("/api/verify-code", {
         email: email,
         code: code,
       });
+
+      // Call the verify-code route with timeout
+      const { data } = await Promise.race([apiPromise, timeoutPromise]) as any;
 
       console.log("2. Verification response:", data);
 
@@ -49,36 +56,61 @@ export default function VerifyEmailScreen() {
 
       console.log("3. Setting token...");
       
-      // Set the token
+      // Set the token - this is critical
       if (typeof auth.setToken === "function") {
         await auth.setToken(data.token);
         console.log("4. Token set successfully");
+      } else {
+        throw new Error("setToken function not available");
       }
 
-      // DON'T AWAIT bootstrap - let it run in the background
-      // This prevents push notification registration from blocking navigation
-      if (typeof auth.bootstrap === "function") {
-        console.log("5. Starting bootstrap (not waiting)...");
-        auth.bootstrap().catch(err => {
-          console.error("Bootstrap error (non-blocking):", err);
-        });
-      }
-
-      console.log("6. Stopping loading and navigating...");
-      
-      // Stop loading immediately
+      // IMMEDIATELY stop loading before any async operations
+      console.log("5. Clearing loading state...");
       setLoading(false);
-      
-      // Navigate to home - bootstrap will complete in background
-      router.replace("/(tabs)");
-      
-      console.log("7. Navigation called");
+
+      // Start bootstrap in background without blocking navigation
+      if (typeof auth.bootstrap === "function") {
+        console.log("6. Starting bootstrap (background)...");
+        // Fire and forget - don't block on this
+        setTimeout(() => {
+          auth.bootstrap().catch(err => {
+            console.error("Bootstrap error (non-blocking):", err);
+          });
+        }, 0);
+      }
+
+      // Force navigation immediately after a tiny delay
+      console.log("7. Navigating to home...");
+      setTimeout(() => {
+        try {
+          router.replace("/(tabs)");
+          console.log("8. Navigation executed");
+        } catch (navError) {
+          console.error("Navigation error:", navError);
+          // If replace fails, try push as fallback
+          if (router.push) {
+            router.push("/(tabs)");
+          }
+        }
+      }, 50);
 
     } catch (err: any) {
       console.error("Verification error:", err);
       console.error("Error details:", err?.response?.data);
-      setError(err?.response?.data?.error || "Verification failed. Please try again.");
+      
+      // CRITICAL: Always clear loading state
       setLoading(false);
+      
+      // User-friendly error messages
+      if (err.message === "Request timed out") {
+        setError("Request timed out. Please check your connection and try again.");
+      } else if (err?.response?.status === 400) {
+        setError("Invalid or expired code. Please try again.");
+      } else if (err?.response?.status === 401) {
+        setError("Invalid or expired code. Please try again.");
+      } else {
+        setError(err?.response?.data?.error || err.message || "Verification failed. Please try again.");
+      }
     }
   };
 

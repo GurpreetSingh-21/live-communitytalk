@@ -302,9 +302,23 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   /* --------------------- Compatibility wrappers --------------------- */
   const setTokenCompat = useCallback(
     async (token: string) => {
-      await completeLoginFromToken(token);
+      // CRITICAL: Only await the bare minimum for email verification
+      // to avoid blocking the UI
+      await setAccessToken(token);
+      await refreshSocketAuth(token);
+      
+      // Run bootstrap and push notifications in background
+      // These should not block the verify-email screen navigation
+      setTimeout(() => {
+        refreshBootstrap().catch(err => {
+          console.error("[AuthContext] Background bootstrap failed:", err);
+        });
+        registerForPushNotificationsAsync().catch(err => {
+          console.error("[AuthContext] Background push registration failed:", err);
+        });
+      }, 0);
     },
-    [completeLoginFromToken]
+    [refreshBootstrap]
   );
 
   const bootstrapCompat = useCallback(async () => {

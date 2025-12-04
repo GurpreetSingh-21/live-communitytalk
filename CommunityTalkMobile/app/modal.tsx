@@ -429,9 +429,24 @@ export default function ModalScreen() {
 
   const auth = React.useContext(AuthContext) as any;
   const isAuthed = !!auth?.isAuthed;
+  const isLoading = auth?.isLoading ?? true;
+
+  console.log("📱 [Modal] Rendering - isAuthed:", isAuthed, "isLoading:", isLoading);
+
+  // Show loading state while auth is initializing
+  if (isLoading) {
+    const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
+    return (
+      <View style={{ flex: 1, backgroundColor: pageBg, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color="#8B5CF6" />
+        <Text style={{ color: isDark ? "white" : "black", marginTop: 16 }}>Loading...</Text>
+      </View>
+    );
+  }
 
   // not signed in → show login
   if (!isAuthed) {
+    console.log("📱 [Modal] Showing LoginGateway");
     return (
       <LoginGateway
         onDone={() => {
@@ -444,6 +459,7 @@ export default function ModalScreen() {
     );
   }
 
+  console.log("📱 [Modal] Showing Quick Actions");
   const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
 
   const handleClose = () => {
