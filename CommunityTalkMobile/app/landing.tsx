@@ -17,14 +17,19 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { AuthContext } from "@/src/context/AuthContext";
 
 const useTokens = (isDark: boolean) => ({
-  pageBg: isDark ? "#000000" : "#FAFBFC",
-  cardBg: isDark ? "#0A0A0A" : "#FFFFFF",
-  textPrimary: isDark ? "#FFFFFF" : "#0A0A0A",
-  textSecondary: isDark ? "#9CA3AF" : "#6B7280",
-  border: isDark ? "#1F1F1F" : "#E5E7EB",
-  shadow: Platform.OS === "ios" ? (isDark ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.03)") : undefined,
+  pageBg: isDark ? "#000000" : "#FFFFFF",
+  cardBg: isDark ? "#0F0F0F" : "#FAFBFC",
+  textPrimary: isDark ? "#FFFFFF" : "#111827",
+  textSecondary: isDark ? "#A1A1AA" : "#71717A",
+  textTertiary: isDark ? "#71717A" : "#A1A1AA",
+  border: isDark ? "#27272A" : "#F4F4F5",
+  borderSubtle: isDark ? "#18181B" : "#FAFAFA",
+  shadow: Platform.OS === "ios" ? (isDark ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.04)") : undefined,
   primary: "#6366F1",
+  primaryLight: isDark ? "#818CF8" : "#6366F1",
   primaryAlt: "#10B981",
+  accentPurple: "#8B5CF6",
+  accentPink: "#EC4899",
 });
 
 type Feature = {
@@ -48,14 +53,15 @@ const AnimatedCard: React.FC<AnimatedCardProps> = ({ children, delay = 0, style 
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 700,
+        duration: 600,
         delay,
         useNativeDriver: true,
       }),
-      Animated.timing(slideAnim, {
+      Animated.spring(slideAnim, {
         toValue: 0,
-        duration: 700,
         delay,
+        tension: 50,
+        friction: 7,
         useNativeDriver: true,
       }),
     ]).start();
@@ -76,6 +82,113 @@ const AnimatedCard: React.FC<AnimatedCardProps> = ({ children, delay = 0, style 
   );
 };
 
+interface InteractiveCardProps {
+  children: React.ReactNode;
+  onPress?: () => void;
+}
+
+const InteractiveCard: React.FC<InteractiveCardProps> = ({ children, onPress }) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const shadowAnim = useRef(new Animated.Value(4)).current;
+
+  const handlePressIn = () => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 0.98,
+        useNativeDriver: true,
+      }),
+      Animated.timing(shadowAnim, {
+        toValue: 2,
+        duration: 150,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        friction: 4,
+        tension: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(shadowAnim, {
+        toValue: 4,
+        duration: 150,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  };
+
+  if (onPress) {
+    return (
+      <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+        <Animated.View
+          style={{
+            transform: [{ scale: scaleAnim }],
+          }}
+        >
+          {children}
+        </Animated.View>
+      </Pressable>
+    );
+  }
+
+  return <>{children}</>;
+};
+
+interface AnimatedEmojiProps {
+  emoji: string;
+  delay?: number;
+}
+
+const AnimatedEmoji: React.FC<AnimatedEmojiProps> = ({ emoji, delay = 0 }) => {
+  const bounceAnim = useRef(new Animated.Value(0)).current;
+  const rotateAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.parallel([
+        Animated.spring(bounceAnim, {
+          toValue: 1,
+          friction: 3,
+          tension: 40,
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.timing(rotateAnim, {
+            toValue: 1,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+          Animated.timing(rotateAnim, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true,
+          }),
+        ]),
+      ]),
+    ]).start();
+  }, [delay, bounceAnim, rotateAnim]);
+
+  const rotate = rotateAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '10deg'],
+  });
+
+  return (
+    <Animated.View
+      style={{
+        transform: [{ scale: bounceAnim }, { rotate }],
+      }}
+    >
+      <ThemedText style={{ fontSize: 22 }}>{emoji}</ThemedText>
+    </Animated.View>
+  );
+};
+
 interface PulseButtonProps {
   children: React.ReactNode;
   onPress: () => void;
@@ -84,10 +197,29 @@ interface PulseButtonProps {
 
 const PulseButton: React.FC<PulseButtonProps> = ({ children, onPress, style }) => {
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const glowAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    // Subtle pulse glow effect
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(glowAnim, {
+          toValue: 1.02,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(glowAnim, {
+          toValue: 1,
+          duration: 2000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [glowAnim]);
 
   const handlePressIn = () => {
     Animated.spring(scaleAnim, {
-      toValue: 0.97,
+      toValue: 0.96,
       useNativeDriver: true,
     }).start();
   };
@@ -95,8 +227,8 @@ const PulseButton: React.FC<PulseButtonProps> = ({ children, onPress, style }) =
   const handlePressOut = () => {
     Animated.spring(scaleAnim, {
       toValue: 1,
-      friction: 3,
-      tension: 40,
+      friction: 4,
+      tension: 100,
       useNativeDriver: true,
     }).start();
   };
@@ -119,6 +251,79 @@ const PulseButton: React.FC<PulseButtonProps> = ({ children, onPress, style }) =
         {children}
       </Animated.View>
     </Pressable>
+  );
+};
+
+const PulsingLogo: React.FC = () => {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.05,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1500,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, [pulseAnim]);
+
+  return (
+    <Animated.View
+      style={{
+        transform: [{ scale: pulseAnim }],
+      }}
+    >
+      <ThemedText style={{ fontSize: 18, fontWeight: "700", color: "#FFFFFF" }}>
+        CT
+      </ThemedText>
+    </Animated.View>
+  );
+};
+
+interface StaggeredTextProps {
+  text: string;
+  delay?: number;
+  style?: any;
+}
+
+const StaggeredText: React.FC<StaggeredTextProps> = ({ text, delay = 0, style }) => {
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        delay,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        delay,
+        tension: 60,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [delay, fadeAnim, slideAnim]);
+
+  return (
+    <Animated.View
+      style={{
+        opacity: fadeAnim,
+        transform: [{ translateY: slideAnim }],
+      }}
+    >
+      <ThemedText style={style}>{text}</ThemedText>
+    </Animated.View>
   );
 };
 
@@ -186,37 +391,30 @@ export default function Landing() {
       <StatusBar style={isDark ? "light" : "dark"} translucent={false} />
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
+        {/* Clean Minimal Header */}
         <AnimatedCard>
-          <View className="px-5 pt-4 pb-6 flex-row items-center justify-between">
-          <View className="flex-row items-start gap-4">
+          <View className="px-6 pt-2 pb-6 flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2.5">
               <View
                 className="items-center justify-center"
                 style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 18,
+                  width: 40,
+                  height: 40,
+                  borderRadius: 10,
                   backgroundColor: t.primary,
-                  shadowColor: t.primary,
-                  shadowOpacity: 0.35,
-                  shadowRadius: 14,
-                  shadowOffset: { width: 0, height: 6 },
-                  elevation: 6,
                 }}
               >
-                <ThemedText style={{ fontSize: 26, fontWeight: "900", color: "#FFFFFF" }}>
-                  CT
-                </ThemedText>
+                <PulsingLogo />
               </View>
               <ThemedText
                 style={{
                   color: t.textPrimary,
-                  fontSize: 22,
-                  fontWeight: "900",
-                  letterSpacing: -0.6,
+                  fontSize: 18,
+                  fontWeight: "600",
+                  letterSpacing: -0.3,
                 }}
               >
                 CommunityTalk
@@ -225,14 +423,14 @@ export default function Landing() {
 
             <PulseButton onPress={() => router.push("/modal")}>
               <View
-                className="px-6 py-2.5 rounded-xl"
+                className="px-4 py-1.5 rounded-lg"
                 style={{
-                  borderWidth: 1.5,
-                  borderColor: t.border,
-                  backgroundColor: t.cardBg,
+                  backgroundColor: isDark ? t.cardBg : "#F5F5F5",
+                  borderWidth: 1,
+                  borderColor: isDark ? t.border : "transparent",
                 }}
               >
-                <ThemedText style={{ color: t.primary, fontWeight: "700", fontSize: 15 }}>
+                <ThemedText style={{ color: t.textPrimary, fontWeight: "500", fontSize: 14 }}>
                   Sign in
                 </ThemedText>
               </View>
@@ -240,169 +438,171 @@ export default function Landing() {
           </View>
         </AnimatedCard>
 
-        {/* Hero Section */}
-        <AnimatedCard delay={100}>
-          <View className="px-5 pb-10">
-            <ThemedText
+        {/* Clean Minimal Hero Section */}
+        <View className="px-6 pb-20">
+          <View style={{ marginBottom: 14 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
+              <StaggeredText
+                text="Connect "
+                delay={150}
+                style={{
+                  color: t.textPrimary,
+                  fontSize: 46,
+                  fontWeight: "700",
+                  lineHeight: 52,
+                  letterSpacing: -1.4,
+                }}
+              />
+              <StaggeredText
+                text="campus"
+                delay={250}
+                style={{
+                  color: t.primary,
+                  fontSize: 46,
+                  fontWeight: "700",
+                  lineHeight: 52,
+                  letterSpacing: -1.4,
+                }}
+              />
+            </View>
+            <StaggeredText
+              text="and faith groups"
+              delay={350}
               style={{
                 color: t.textPrimary,
-                fontSize: 44,
-                fontWeight: "900",
-                lineHeight: 50,
-                marginBottom: 18,
-                letterSpacing: -1.2,
+                fontSize: 46,
+                fontWeight: "700",
+                lineHeight: 52,
+                letterSpacing: -1.4,
               }}
-            >
-              Connect{" "}
-              <ThemedText style={{ fontSize: 44, fontWeight: "900", color: t.primary }}>
-                campus
-              </ThemedText>
-              {"\n"}and faith groups
-            </ThemedText>
+            />
+          </View>
 
+          <AnimatedCard delay={450}>
             <ThemedText
               style={{
                 color: t.textSecondary,
-                fontSize: 18,
-                lineHeight: 28,
+                fontSize: 16,
+                lineHeight: 24,
                 marginBottom: 32,
                 fontWeight: "400",
               }}
             >
               NYC's hub for verified student communities
             </ThemedText>
+          </AnimatedCard>
 
+          <AnimatedCard delay={550}>
             <PulseButton onPress={() => router.push("/register")}>
               <View
-                className="rounded-2xl py-5 items-center"
+                className="rounded-xl py-3.5 items-center"
                 style={{
                   backgroundColor: t.primary,
-                  shadowColor: t.primary,
-                  shadowOpacity: 0.4,
-                  shadowRadius: 18,
-                  shadowOffset: { width: 0, height: 10 },
-                  elevation: 10,
+                  shadowColor: "#000000",
+                  shadowOpacity: isDark ? 0.3 : 0.08,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 2 },
+                  elevation: 2,
                 }}
               >
-                <ThemedText style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 18 }}>
+                <ThemedText style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 16 }}>
                   Get Started →
                 </ThemedText>
               </View>
             </PulseButton>
-          </View>
-        </AnimatedCard>
+          </AnimatedCard>
+        </View>
 
-        {/* Features Section */}
-        <View className="px-5">
-          <AnimatedCard delay={200}>
+        {/* Clean Features Section */}
+        <View className="px-6" style={{ marginTop: 12 }}>
+          <AnimatedCard delay={650}>
             <ThemedText
               style={{
                 color: t.textPrimary,
-                fontSize: 30,
-                fontWeight: "900",
-                marginBottom: 24,
+                fontSize: 26,
+                fontWeight: "600",
                 letterSpacing: -0.6,
+                marginBottom: 20,
               }}
             >
               Why students love us
             </ThemedText>
           </AnimatedCard>
 
-          <View style={{ gap: 16 }}>
+          <View style={{ gap: 10 }}>
             {FEATURES.map((f, i) => (
-              <AnimatedCard key={i} delay={300 + i * 60}>
-                <View
-                  className="rounded-3xl p-6"
-                  style={{
-                    backgroundColor: t.cardBg,
-                    borderWidth: 1,
-                    borderColor: t.border,
-                    shadowColor: t.shadow,
-                    shadowOpacity: isDark ? 0.5 : 1,
-                    shadowRadius: 24,
-                    shadowOffset: { width: 0, height: 12 },
-                    elevation: 4,
-                    overflow: "hidden",
-                  }}
-                >
-                  <LinearGradient
-                    colors={[f.gradient[0], f.gradient[1]]}
+              <AnimatedCard key={i} delay={750 + i * 40}>
+                <InteractiveCard>
+                  <View
+                    className="rounded-xl p-4"
                     style={{
-                      position: "absolute",
-                      left: 0,
-                      top: 0,
-                      bottom: 0,
-                      width: 6,
-                      opacity: 0.85,
+                      backgroundColor: t.cardBg,
+                      borderWidth: 1,
+                      borderColor: t.border,
                     }}
-                  />
-
-                  <View className="flex-row items-center gap-4">
-                    <View
-                      className="items-center justify-center"
-                      style={{
-                        width: 56,
-                        height: 56,
-                        borderRadius: 18,
-                        backgroundColor: isDark ? "#141414" : "#F9FAFB",
-                      }}
-                    >
-                      <ThemedText style={{ fontSize: 28 }}>{f.emoji}</ThemedText>
-                    </View>
-
-                    <View className="flex-1">
-                      <ThemedText
+                  >
+                    <View className="flex-row items-start gap-3">
+                      <View
+                        className="items-center justify-center"
                         style={{
-                          color: t.textPrimary,
-                          fontSize: 19,
-                          fontWeight: "800",
-                          marginBottom: 6,
-                          letterSpacing: -0.3,
+                          width: 44,
+                          height: 44,
+                          borderRadius: 10,
+                          backgroundColor: isDark ? "#1C1C1C" : "#F5F5F5",
                         }}
                       >
-                        {f.title}
-                      </ThemedText>
-                      <ThemedText
-                        style={{
-                          color: t.textSecondary,
-                          fontSize: 15,
-                          lineHeight: 22,
-                          fontWeight: "400",
-                        }}
-                      >
-                        {f.desc}
-                      </ThemedText>
+                        <AnimatedEmoji emoji={f.emoji} delay={750 + i * 40 + 200} />
+                      </View>
+
+                      <View className="flex-1" style={{ paddingTop: 1 }}>
+                        <ThemedText
+                          style={{
+                            color: t.textPrimary,
+                            fontSize: 16,
+                            fontWeight: "600",
+                            marginBottom: 3,
+                            letterSpacing: -0.1,
+                          }}
+                        >
+                          {f.title}
+                        </ThemedText>
+                        <ThemedText
+                          style={{
+                            color: t.textSecondary,
+                            fontSize: 14,
+                            lineHeight: 19,
+                            fontWeight: "400",
+                          }}
+                        >
+                          {f.desc}
+                        </ThemedText>
+                      </View>
                     </View>
                   </View>
-                </View>
+                </InteractiveCard>
               </AnimatedCard>
             ))}
           </View>
         </View>
 
-        {/* Footer CTA */}
-        <AnimatedCard delay={900}>
-          <View className="px-5 mt-8">
+        {/* Clean Footer CTA */}
+        <AnimatedCard delay={1100}>
+          <View className="px-6 mt-12">
             <View
-              className="rounded-3xl p-7"
+              className="rounded-xl p-5"
               style={{
-                backgroundColor: t.cardBg,
+                backgroundColor: isDark ? "#0F0F0F" : "#FAFAFA",
                 borderWidth: 1,
                 borderColor: t.border,
-                shadowColor: t.shadow,
-                shadowOpacity: isDark ? 0.5 : 1,
-                shadowRadius: 28,
-                shadowOffset: { width: 0, height: 14 },
-                elevation: 5,
               }}
             >
               <ThemedText
                 style={{
                   color: t.textPrimary,
-                  fontSize: 28,
-                  fontWeight: "900",
-                  marginBottom: 12,
-                  letterSpacing: -0.6,
+                  fontSize: 22,
+                  fontWeight: "600",
+                  marginBottom: 8,
+                  letterSpacing: -0.4,
                 }}
               >
                 Ready to connect?
@@ -410,9 +610,9 @@ export default function Landing() {
               <ThemedText
                 style={{
                   color: t.textSecondary,
-                  lineHeight: 26,
-                  marginBottom: 24,
-                  fontSize: 17,
+                  lineHeight: 22,
+                  marginBottom: 20,
+                  fontSize: 14,
                   fontWeight: "400",
                 }}
               >
@@ -421,17 +621,17 @@ export default function Landing() {
 
               <PulseButton onPress={() => router.push("/register")}>
                 <View
-                  className="rounded-2xl py-5 items-center"
+                  className="rounded-xl py-3.5 items-center"
                   style={{
-                    backgroundColor: t.primaryAlt,
-                    shadowColor: t.primaryAlt,
-                    shadowOpacity: 0.4,
-                    shadowRadius: 18,
-                    shadowOffset: { width: 0, height: 10 },
-                    elevation: 10,
+                    backgroundColor: t.primary,
+                    shadowColor: "#000000",
+                    shadowOpacity: isDark ? 0.3 : 0.08,
+                    shadowRadius: 8,
+                    shadowOffset: { width: 0, height: 2 },
+                    elevation: 2,
                   }}
                 >
-                  <ThemedText style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 18 }}>
+                  <ThemedText style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 16 }}>
                     Create Account
                   </ThemedText>
                 </View>

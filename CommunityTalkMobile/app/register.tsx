@@ -42,6 +42,210 @@ type CommunityLite = {
   tags?: string[];
 };
 
+/* ---------------- Components ---------------- */
+const InputField = ({
+  label,
+  placeholder: placeholderText,
+  value,
+  onChangeText,
+  icon,
+  error,
+  rightIcon,
+  onRightIconPress,
+  inputRef,
+  labelColor,
+  inputBg,
+  inputBorder,
+  placeholderColor,
+  textColor,
+  ...props
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  icon: string;
+  error?: string | null;
+  rightIcon?: string;
+  onRightIconPress?: () => void;
+  inputRef?: any;
+  labelColor: string;
+  inputBg: string;
+  inputBorder: string;
+  placeholderColor: string;
+  textColor: string;
+  [key: string]: any;
+}) => {
+  const [focused, setFocused] = useState(false);
+
+  return (
+    <View style={{ marginBottom: 20 }}>
+      <Text style={{ fontSize: 13, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
+        {label}
+      </Text>
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          backgroundColor: inputBg,
+          borderRadius: 12,
+          height: 50,
+          paddingHorizontal: 14,
+          borderWidth: focused && !error ? 2 : 1,
+          borderColor: error ? "#EF4444" : focused ? "#6366F1" : inputBorder,
+        }}
+      >
+        <Ionicons name={icon as any} size={20} color={focused ? "#6366F1" : placeholderColor} />
+        <TextInput
+          ref={inputRef}
+          placeholder={placeholderText}
+          placeholderTextColor={placeholderColor}
+          value={value}
+          onChangeText={onChangeText}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            flex: 1,
+            marginLeft: 10,
+            fontSize: 15,
+            color: textColor,
+            fontWeight: "500",
+          }}
+          {...props}
+        />
+        {rightIcon && (
+          <TouchableOpacity onPress={onRightIconPress}>
+            <Ionicons name={rightIcon as any} size={20} color={placeholderColor} />
+          </TouchableOpacity>
+        )}
+      </View>
+      {!!error && (
+        <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6, marginLeft: 4 }}>
+          {error}
+        </Text>
+      )}
+    </View>
+  );
+};
+
+const Pill = ({
+  active,
+  label,
+  onPress,
+  isDark,
+  textColor,
+}: {
+  active: boolean;
+  label: string;
+  onPress: () => void;
+  isDark: boolean;
+  textColor: string;
+}) => {
+  const scale = useSharedValue(1);
+  const anim = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Pressable
+      onPressIn={() => (scale.value = withSpring(0.96))}
+      onPressOut={() => {
+        scale.value = withSpring(1);
+        onPress();
+      }}
+      style={{ marginRight: 8, marginBottom: 10 }}
+    >
+      <Animated.View
+        style={[
+          anim,
+          {
+            paddingHorizontal: 14,
+            paddingVertical: 9,
+            borderRadius: 12,
+            backgroundColor: active ? "#6366F1" : isDark ? "#18181B" : "#F5F5F5",
+            borderWidth: 1,
+            borderColor: active ? "#6366F1" : isDark ? "#27272A" : "#E5E7EB",
+            flexDirection: "row",
+            alignItems: "center",
+          },
+        ]}
+      >
+        {active && (
+          <Ionicons
+            name="checkmark-circle"
+            size={14}
+            color="#fff"
+            style={{ marginRight: 5 }}
+          />
+        )}
+        <Text
+          style={{
+            fontSize: 14,
+            fontWeight: active ? "600" : "500",
+            color: active ? "#fff" : textColor,
+          }}
+        >
+          {label}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
+const SubmitButton = ({
+  loading,
+  disabled,
+  onPress,
+}: {
+  loading: boolean;
+  disabled: boolean;
+  onPress: () => void;
+}) => {
+  const scale = useSharedValue(1);
+
+  const anim = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Pressable
+      disabled={disabled}
+      onPressIn={() => {
+        if (!disabled) scale.value = withSpring(0.96);
+      }}
+      onPressOut={() => {
+        if (!disabled) {
+          scale.value = withSpring(1);
+          onPress();
+        }
+      }}
+    >
+      <Animated.View style={anim}>
+        <View
+          style={{
+            height: 52,
+            borderRadius: 12,
+            justifyContent: "center",
+            alignItems: "center",
+            backgroundColor: disabled ? "#9CA3AF" : "#6366F1",
+          }}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+                Create Account
+              </Text>
+              <Ionicons name="arrow-forward" size={18} color="#fff" />
+            </View>
+          )}
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+};
+
 export default function RegisterScreen() {
   const { register } = (React.useContext(AuthContext) as any) ?? {};
   const insets = useSafeAreaInsets();
@@ -233,141 +437,15 @@ export default function RegisterScreen() {
     }
   };
 
-  /* ---------------- Components ---------------- */
-  const Pill = ({
-    active,
-    label,
-    onPress,
-  }: {
-    active: boolean;
-    label: string;
-    onPress: () => void;
-  }) => {
-    const scale = useSharedValue(1);
-    const anim = useAnimatedStyle(() => ({
-      transform: [{ scale: scale.value }],
-    }));
-
-    return (
-      <Pressable
-        onPressIn={() => (scale.value = withSpring(0.95))}
-        onPressOut={() => {
-          scale.value = withSpring(1);
-          onPress();
-        }}
-        style={{ marginRight: 8, marginBottom: 10 }}
-      >
-        <Animated.View
-          style={[
-            anim,
-            {
-              paddingHorizontal: 16,
-              paddingVertical: 10,
-              borderRadius: 16,
-              backgroundColor: active
-                ? "#6366F1"
-                : isDark
-                ? "#1F2937"
-                : "#F3F4F6",
-              borderWidth: active ? 0 : 1,
-              borderColor: isDark ? "#374151" : "#E5E7EB",
-              flexDirection: "row",
-              alignItems: "center",
-            },
-          ]}
-        >
-          {active && (
-            <Ionicons
-              name="checkmark-circle"
-              size={16}
-              color="#fff"
-              style={{ marginRight: 6 }}
-            />
-          )}
-          <Text
-            style={{
-              fontSize: 13,
-              fontWeight: active ? "600" : "500",
-              color: active ? "#fff" : isDark ? "#D1D5DB" : "#374151",
-            }}
-          >
-            {label}
-          </Text>
-        </Animated.View>
-      </Pressable>
-    );
-  };
-
-  const SubmitButton = ({
-    loading,
-    disabled,
-    onPress,
-  }: {
-    loading: boolean;
-    disabled: boolean;
-    onPress: () => void;
-  }) => {
-    const scale = useSharedValue(1);
-    const op = useSharedValue(1);
-
-    const anim = useAnimatedStyle(() => ({
-      opacity: op.value,
-      transform: [{ scale: scale.value }],
-    }));
-
-    return (
-      <Pressable
-        disabled={disabled}
-        onPressIn={() => {
-          if (!disabled) {
-            scale.value = withSpring(0.97);
-            op.value = withTiming(0.9);
-          }
-        }}
-        onPressOut={() => {
-          if (!disabled) {
-            scale.value = withSpring(1);
-            op.value = withTiming(1);
-            onPress();
-          }
-        }}
-      >
-        <Animated.View style={anim}>
-          <LinearGradient
-            colors={disabled ? ["#9CA3AF", "#6B7280"] : ["#6366F1", "#8B5CF6"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{
-              height: 56,
-              borderRadius: 16,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            {loading ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700" }}>
-                  Create Account
-                </Text>
-                <Ionicons name="arrow-forward" size={20} color="#fff" />
-              </View>
-            )}
-          </LinearGradient>
-        </Animated.View>
-      </Pressable>
-    );
-  };
-
-  // theme
-  const bgColor = isDark ? "#0B0F19" : "#F8FAFC";
-  const cardBg = isDark ? "#111827" : "#FFFFFF";
-  const labelColor = isDark ? "#D1D5DB" : "#374155";
-  const inputBg = isDark ? "#1F2937" : "#F9FAFB";
-  const inputBorder = isDark ? "#374151" : "#E5E7EB";
-  const placeholder = isDark ? "#6B7280" : "#9CA3AF";
-  const textColor = isDark ? "#F3F4F6" : "#111827";
+  // Modern theme
+  const bgColor = isDark ? "#000000" : "#FFFFFF";
+  const cardBg = isDark ? "#0F0F0F" : "#FAFBFC";
+  const labelColor = isDark ? "#A1A1AA" : "#71717A";
+  const inputBg = isDark ? "#18181B" : "#FFFFFF";
+  const inputBorder = isDark ? "#27272A" : "#F4F4F5";
+  const inputBorderFocus = isDark ? "#6366F1" : "#6366F1";
+  const placeholder = isDark ? "#71717A" : "#A1A1AA";
+  const textColor = isDark ? "#FFFFFF" : "#111827";
   const eduDetected = useMemo(() => email.toLowerCase().includes(".edu"), [email]);
 
   /* ---------------- UI ---------------- */
@@ -380,330 +458,294 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: insets.top + 8,
           paddingBottom: insets.bottom + 32,
           paddingHorizontal: 20,
         }}
       >
-        {/* Back */}
+        {/* Back Button */}
         <TouchableOpacity
           onPress={() => router.back()}
-          style={{ flexDirection: "row", alignItems: "center", marginBottom: 20 }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            marginBottom: 24,
+            alignSelf: "flex-start",
+          }}
         >
-          <Ionicons name="chevron-back" size={24} color={textColor} />
-          <Text style={{ fontSize: 16, fontWeight: "600", color: textColor, marginLeft: 4 }}>
+          <Ionicons name="chevron-back" size={22} color={textColor} />
+          <Text style={{ fontSize: 16, fontWeight: "600", color: textColor, marginLeft: 2 }}>
             Back
           </Text>
         </TouchableOpacity>
 
-        {/* Hero */}
-        <View style={{ alignItems: "center", marginBottom: 32 }}>
+        {/* Modern Hero */}
+        <View style={{ alignItems: "center", marginBottom: 40 }}>
           <View
             style={{
-              width: 88,
-              height: 88,
-              borderRadius: 24,
+              width: 72,
+              height: 72,
+              borderRadius: 18,
               overflow: "hidden",
-              marginBottom: 20,
+              marginBottom: 18,
+              backgroundColor: "#6366F1",
+              justifyContent: "center",
+              alignItems: "center",
             }}
           >
-            <LinearGradient
-              colors={["#6366F1", "#8B5CF6", "#EC4899"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-            >
-              <Ionicons name="people" size={44} color="#fff" />
-            </LinearGradient>
+            <Ionicons name="people" size={36} color="#fff" />
           </View>
 
-          <Text style={{ fontSize: 32, fontWeight: "800", color: textColor }}>
+          <Text style={{ fontSize: 28, fontWeight: "700", color: textColor, letterSpacing: -0.6 }}>
             Join CommunityTalk
           </Text>
           <Text
             style={{
               marginTop: 8,
-              fontSize: 15,
-              color: isDark ? "#9CA3AF" : "#6B7280",
+              fontSize: 14,
+              color: labelColor,
               textAlign: "center",
+              lineHeight: 20,
             }}
           >
             Connect with campus & faith communities{"\n"}across NYC 🚀
           </Text>
         </View>
 
-        {/* Card */}
+        {/* Modern Card */}
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 24,
-            padding: 24,
+            borderRadius: 20,
+            padding: 20,
+            borderWidth: 1,
+            borderColor: isDark ? "#27272A" : "#F4F4F5",
           }}
         >
-          {/* Name */}
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
-              Full Name
-            </Text>
-            <View
-              style={{
-                marginTop: 8,
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: inputBg,
-                borderColor: inputBorder,
-                borderWidth: 1.5,
-                borderRadius: 14,
-                height: 52,
-                paddingHorizontal: 16,
-              }}
-            >
-              <Ionicons name="person-outline" size={20} color={placeholder} />
-              <TextInput
-                placeholder="Your full name"
-                placeholderTextColor={placeholder}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                style={{
-                  flex: 1,
-                  marginLeft: 12,
-                  fontSize: 15,
-                  color: textColor,
-                  fontWeight: "500",
-                }}
-              />
-            </View>
-            {!!errName && (
-              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errName}</Text>
-            )}
-          </View>
+          {/* Name Input */}
+          <InputField
+            label="Full Name"
+            placeholder="Your full name"
+            value={name}
+            onChangeText={setName}
+            icon="person-outline"
+            error={errName}
+            autoCapitalize="words"
+            labelColor={labelColor}
+            inputBg={inputBg}
+            inputBorder={inputBorder}
+            placeholderColor={placeholder}
+            textColor={textColor}
+          />
 
-          {/* Email */}
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
-              Email Address
-            </Text>
-            <View
-              style={{
-                marginTop: 8,
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: inputBg,
-                borderColor: inputBorder,
-                borderWidth: 1.5,
-                borderRadius: 14,
-                height: 52,
-                paddingHorizontal: 16,
-              }}
-            >
-              <Ionicons name="mail-outline" size={20} color={placeholder} />
-              <TextInput
-                placeholder="you@college.edu"
-                placeholderTextColor={placeholder}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                style={{
-                  flex: 1,
-                  marginLeft: 12,
-                  fontSize: 15,
-                  color: textColor,
-                  fontWeight: "500",
-                }}
-              />
-            </View>
+          {/* Email Input */}
+          <View>
+            <InputField
+              label="Email Address"
+              placeholder="you@college.edu"
+              value={email}
+              onChangeText={setEmail}
+              icon="mail-outline"
+              error={errEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              labelColor={labelColor}
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              placeholderColor={placeholder}
+              textColor={textColor}
+            />
 
             {eduDetected && (
               <View
                 style={{
-                  marginTop: 8,
-                  backgroundColor: isDark ? "#064E3B" : "#D1FAE5",
-                  padding: 8,
-                  borderRadius: 8,
+                  marginTop: -12,
+                  marginBottom: 20,
+                  backgroundColor: isDark ? "#064E3B" : "#ECFDF5",
+                  padding: 10,
+                  borderRadius: 10,
                   flexDirection: "row",
                   alignItems: "center",
                 }}
               >
                 <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                <Text style={{ marginLeft: 6, color: "#10B981", fontWeight: "600", fontSize: 12 }}>
+                <Text style={{ marginLeft: 6, color: "#10B981", fontWeight: "600", fontSize: 13 }}>
                   .edu email verified ✓
                 </Text>
               </View>
             )}
-
-            {!!errEmail && (
-              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errEmail}</Text>
-            )}
           </View>
 
-          {/* Password */}
-          <View style={{ marginBottom: 20 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
-              Password
-            </Text>
-            <View
-              style={{
-                marginTop: 8,
-                flexDirection: "row",
-                alignItems: "center",
-                backgroundColor: inputBg,
-                borderColor: inputBorder,
-                borderWidth: 1.5,
-                borderRadius: 14,
-                height: 52,
-                paddingHorizontal: 16,
-              }}
-            >
-              <Ionicons name="lock-closed-outline" size={20} color={placeholder} />
-              <TextInput
-                placeholder="Create a strong password"
-                placeholderTextColor={placeholder}
-                value={pw}
-                onChangeText={setPw}
-                secureTextEntry={!showPw}
-                style={{
-                  flex: 1,
-                  marginLeft: 12,
-                  fontSize: 15,
-                  color: textColor,
-                  fontWeight: "500",
-                }}
-              />
-              <TouchableOpacity onPress={() => setShowPw((v) => !v)}>
-                <Ionicons
-                  name={showPw ? "eye-outline" : "eye-off-outline"}
-                  size={20}
-                  color={placeholder}
-                />
-              </TouchableOpacity>
-            </View>
+          {/* Password Input */}
+          <View>
+            <InputField
+              label="Password"
+              placeholder="Create a strong password"
+              value={pw}
+              onChangeText={setPw}
+              icon="lock-closed-outline"
+              error={errPw}
+              secureTextEntry={!showPw}
+              rightIcon={showPw ? "eye-outline" : "eye-off-outline"}
+              onRightIconPress={() => setShowPw((v) => !v)}
+              labelColor={labelColor}
+              inputBg={inputBg}
+              inputBorder={inputBorder}
+              placeholderColor={placeholder}
+              textColor={textColor}
+            />
 
             {pwStrength && (
-              <Text
-                style={{
-                  color: strengthColors[pwStrength],
-                  marginTop: 8,
-                  fontWeight: "600",
-                  fontSize: 12,
-                }}
-              >
-                Password strength: {pwStrength}
-              </Text>
-            )}
-
-            {!!errPw && (
-              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errPw}</Text>
+              <View style={{ marginTop: -12, marginBottom: 20 }}>
+                <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
+                  {["weak", "medium", "strong"].map((level, i) => (
+                    <View
+                      key={level}
+                      style={{
+                        flex: 1,
+                        height: 3,
+                        borderRadius: 2,
+                        backgroundColor:
+                          pwStrength === "weak" && i === 0
+                            ? "#EF4444"
+                            : pwStrength === "medium" && i <= 1
+                            ? "#F59E0B"
+                            : pwStrength === "strong"
+                            ? "#10B981"
+                            : isDark
+                            ? "#27272A"
+                            : "#E5E7EB",
+                      }}
+                    />
+                  ))}
+                </View>
+                <Text
+                  style={{
+                    color: strengthColors[pwStrength],
+                    fontWeight: "600",
+                    fontSize: 12,
+                  }}
+                >
+                  {pwStrength.charAt(0).toUpperCase() + pwStrength.slice(1)} password
+                </Text>
+              </View>
             )}
           </View>
 
-          {/* College */}
+          {/* College Selection */}
           <View style={{ marginBottom: 24 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
+            <Text style={{ fontSize: 13, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
               Select College
             </Text>
 
             {autoDetectedCollege ? (
               <View
                 style={{
-                  marginTop: 12,
-                  backgroundColor: isDark ? "rgba(16,185,129,0.1)" : "#ECFDF5",
-                  borderColor: isDark ? "rgba(16,185,129,0.2)" : "#D1FAE5",
+                  backgroundColor: isDark ? "#064E3B" : "#ECFDF5",
+                  borderColor: isDark ? "#059669" : "#10B981",
                   borderWidth: 1,
-                  borderRadius: 16,
-                  padding: 16,
+                  borderRadius: 12,
+                  padding: 14,
                   flexDirection: "row",
                   alignItems: "center",
                 }}
               >
                 <View
                   style={{
-                    width: 40,
-                    height: 40,
-                    borderRadius: 20,
-                    backgroundColor: isDark ? "rgba(16,185,129,0.2)" : "#D1FAE5",
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: isDark ? "#059669" : "#D1FAE5",
                     alignItems: "center",
                     justifyContent: "center",
                     marginRight: 12,
                   }}
                 >
-                  <Ionicons name="school" size={20} color="#10B981" />
+                  <Ionicons name="school" size={18} color="#10B981" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "700", color: isDark ? "#fff" : "#065F46" }}>
+                  <Text style={{ fontWeight: "600", color: textColor, fontSize: 15 }}>
                     {autoDetectedCollege.name}
                   </Text>
-                  <Text style={{ color: "#10B981", fontWeight: "600", fontSize: 13 }}>
+                  <Text style={{ color: "#10B981", fontWeight: "500", fontSize: 12, marginTop: 2 }}>
                     Auto-detected via email
                   </Text>
                 </View>
-                <Ionicons name="checkmark-circle" size={24} color="#10B981" />
+                <Ionicons name="checkmark-circle" size={22} color="#10B981" />
               </View>
             ) : loadingLists ? (
               <ActivityIndicator size="small" color="#6366F1" style={{ marginTop: 12 }} />
             ) : (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 12 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                 {colleges.map((c) => (
                   <Pill
                     key={c._id}
                     label={c.name}
                     active={collegeId === c._id}
                     onPress={() => setCollegeId(c._id)}
+                    isDark={isDark}
+                    textColor={textColor}
                   />
                 ))}
               </View>
             )}
 
             {!!errCollege && !autoDetectedCollege && (
-              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errCollege}</Text>
+              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6, marginLeft: 4 }}>
+                {errCollege}
+              </Text>
             )}
           </View>
 
-          {/* STRICT FILTER Community */}
+          {/* Community Selection */}
           <View style={{ marginBottom: 24 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: labelColor }}>
+            <Text style={{ fontSize: 13, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
               Select Your Community
             </Text>
 
             {loadingLists ? (
               <ActivityIndicator size="small" color="#6366F1" style={{ marginTop: 12 }} />
             ) : filteredCommunities.length > 0 ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 12 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
                 {filteredCommunities.map((r) => (
                   <Pill
                     key={r._id}
                     label={r.name}
                     active={religionId === r._id}
                     onPress={() => setReligionId(r._id)}
+                    isDark={isDark}
+                    textColor={textColor}
                   />
                 ))}
               </View>
             ) : (
               <View
                 style={{
-                  marginTop: 12,
-                  padding: 16,
-                  backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#F3F4F6",
-                  borderRadius: 12,
+                  padding: 14,
+                  backgroundColor: isDark ? "#18181B" : "#F9FAFB",
+                  borderRadius: 10,
+                  borderWidth: 1,
+                  borderColor: isDark ? "#27272A" : "#F4F4F5",
                 }}
               >
                 <Text
                   style={{
                     textAlign: "center",
-                    color: isDark ? "#9CA3AF" : "#6B7280",
-                    fontStyle: "italic",
+                    color: labelColor,
+                    fontSize: 13,
                   }}
                 >
                   {collegeId
-                    ? "No communities found for this college yet. More are coming soon."
+                    ? "No communities found for this college yet. More coming soon!"
                     : "Select a college above to see available communities."}
                 </Text>
               </View>
             )}
 
             {!!errReligion && (
-              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6 }}>{errReligion}</Text>
+              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6, marginLeft: 4 }}>
+                {errReligion}
+              </Text>
             )}
           </View>
 
@@ -712,27 +754,30 @@ export default function RegisterScreen() {
             <View
               style={{
                 backgroundColor: isDark ? "#7F1D1D" : "#FEE2E2",
-                borderColor: isDark ? "#991B1B" : "#FECACA",
+                borderColor: "#EF4444",
                 borderWidth: 1,
                 padding: 12,
-                borderRadius: 12,
+                borderRadius: 10,
                 marginBottom: 20,
               }}
             >
-              <Text style={{ color: "#EF4444", fontSize: 13 }}>{serverError}</Text>
+              <Text style={{ color: "#EF4444", fontSize: 13, fontWeight: "500" }}>
+                {serverError}
+              </Text>
             </View>
           )}
 
-          {/* Submit */}
+          {/* Submit Button */}
           <SubmitButton onPress={handleRegister} loading={submitting} disabled={submitting} />
 
           {/* Terms */}
           <Text
             style={{
-              marginTop: 16,
+              marginTop: 14,
               textAlign: "center",
-              color: isDark ? "#6B7280" : "#9CA3AF",
+              color: labelColor,
               fontSize: 11,
+              lineHeight: 16,
             }}
           >
             By creating an account, you agree to our{" "}
@@ -742,28 +787,40 @@ export default function RegisterScreen() {
         </View>
 
         {/* Divider */}
-        <View style={{ marginVertical: 28, flexDirection: "row", alignItems: "center" }}>
-          <View style={{ flex: 1, height: 1, backgroundColor: isDark ? "#374151" : "#E5E7EB" }} />
-          <Text style={{ marginHorizontal: 16, color: isDark ? "#6B7280" : "#9CA3AF" }}>or</Text>
-          <View style={{ flex: 1, height: 1, backgroundColor: isDark ? "#374151" : "#E5E7EB" }} />
+        <View style={{ marginVertical: 24, flexDirection: "row", alignItems: "center" }}>
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: isDark ? "#27272A" : "#F4F4F5",
+            }}
+          />
+          <Text style={{ marginHorizontal: 16, color: labelColor, fontSize: 13 }}>or</Text>
+          <View
+            style={{
+              flex: 1,
+              height: 1,
+              backgroundColor: isDark ? "#27272A" : "#F4F4F5",
+            }}
+          />
         </View>
 
-        {/* Login */}
+        {/* Login Link */}
         <TouchableOpacity
           onPress={() => router.push("/modal")}
           style={{
-            backgroundColor: isDark ? "#1F2937" : "#F9FAFB",
-            borderColor: isDark ? "#374151" : "#E5E7EB",
-            borderWidth: 1.5,
-            paddingVertical: 16,
-            borderRadius: 16,
+            backgroundColor: isDark ? "#18181B" : "#F9FAFB",
+            borderColor: isDark ? "#27272A" : "#E5E7EB",
+            borderWidth: 1,
+            paddingVertical: 14,
+            borderRadius: 12,
             flexDirection: "row",
             justifyContent: "center",
             alignItems: "center",
           }}
         >
-          <Ionicons name="log-in-outline" size={20} color={textColor} />
-          <Text style={{ marginLeft: 8, color: textColor, fontWeight: "600" }}>
+          <Ionicons name="log-in-outline" size={18} color={textColor} />
+          <Text style={{ marginLeft: 8, color: textColor, fontWeight: "600", fontSize: 15 }}>
             Already have an account? Log in
           </Text>
         </TouchableOpacity>

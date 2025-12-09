@@ -107,33 +107,46 @@ const UnreadBadge = ({ count, pulseKey }: { count: number; pulseKey?: number }) 
 
 const SmartPreview = ({ msg, isUnread }: { msg: MessageContent; isUnread: boolean }) => {
   const isDark = useColorScheme() === 'dark';
-  const baseColor = isUnread ? (isDark ? '#fafafa' : '#111827') : (isDark ? '#9ca3af' : '#475569');
-  const baseWeight: any = isUnread ? '700' : '400';
+  const baseColor = isUnread ? (isDark ? '#A1A1AA' : '#71717A') : (isDark ? '#71717A' : '#A1A1AA');
+  const baseWeight: any = isUnread ? '600' : '400';
 
   if (msg.type === 'text') {
     return (
       <Text
-        className="truncate"
         numberOfLines={1}
-        style={{ color: baseColor, fontWeight: baseWeight as any }}
+        style={{ color: baseColor, fontWeight: baseWeight, fontSize: 14, letterSpacing: 0 }}
       >
         {msg.content}
       </Text>
     );
   }
   return (
-    // FIX 2: Removed 'self-start' from className
-    <View className="flex-row items-center gap-1.5 px-2 py-1 rounded-lg" style={{ backgroundColor: isDark ? '#27272a' : '#e5e7eb' }}>
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        backgroundColor: isDark ? '#18181B' : '#F9FAFB',
+        alignSelf: 'flex-start',
+      }}
+    >
       <Ionicons
-        name={(msg.type === 'photo' ? 'camera-outline' : 'mic-outline') as any}
+        name={(msg.type === 'photo' ? 'image-outline' : 'mic-outline') as any}
         size={14}
-        color={isDark ? '#e5e7eb' : '#374151'}
-        style={{ opacity: 0.8 }}
+        color={isDark ? '#71717A' : '#A1A1AA'}
       />
       <Text
-        className="text-xs font-medium"
-        style={{ flexShrink: 1, color: baseColor, fontWeight: baseWeight as any }} // ADDED flexShrink: 1
-        numberOfLines={1} // ADDED numberOfLines: 1
+        style={{
+          flexShrink: 1,
+          color: baseColor,
+          fontWeight: baseWeight,
+          fontSize: 13,
+          letterSpacing: 0,
+        }}
+        numberOfLines={1}
       >
         {msg.content}
       </Text>
@@ -230,64 +243,87 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
             </Pressable>
           </View>
 
-          {/* Row */}
+          {/* Modern Row */}
           <Animated.View style={animatedRowStyle}>
             <Pressable
-              className="flex-row items-center gap-4 px-4 h-[93px]"
+              className="flex-row items-center px-5 h-[88px]"
               onPress={() => onOpen(item.id)}
               style={{
-                backgroundColor: isUnread ? (isDark ? '#0b0b0b' : '#ffffff') : (isDark ? '#000' : '#ffffff'),
+                backgroundColor: isDark ? '#000000' : '#FFFFFF',
               }}
             >
-              {/* left unread accent */}
-              {isUnread && <View style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, backgroundColor: accentBar, borderTopRightRadius: 3, borderBottomRightRadius: 3 }} />}
+              {/* Subtle unread indicator */}
+              {isUnread && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    bottom: 0,
+                    width: 3,
+                    backgroundColor: '#6366F1',
+                    borderTopRightRadius: 2,
+                    borderBottomRightRadius: 2,
+                  }}
+                />
+              )}
 
-              {/* subtle pulse overlay when new unread lands */}
+              {/* Subtle pulse overlay */}
               <Animated.View
-                style={[{ position: 'absolute', left: 3, right: 0, top: 0, bottom: 0, backgroundColor: bgTint, borderRadius: 0 }, pulseStyle]}
+                style={[
+                  {
+                    position: 'absolute',
+                    left: 3,
+                    right: 0,
+                    top: 0,
+                    bottom: 0,
+                    backgroundColor: isDark ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.04)',
+                    borderRadius: 0,
+                  },
+                  pulseStyle,
+                ]}
                 pointerEvents="none"
               />
 
-              {/* avatar */}
-              <View>
-                <View className="w-14 h-14 rounded-full items-center justify-center overflow-hidden">
-                  <LinearGradient colors={['#4f46e5', '#a855f7']} className="absolute inset-0" />
-                  <View className="w-[52px] h-[52px] rounded-full bg-slate-200 dark:bg-zinc-800 items-center justify-center">
-                    <Text className="text-3xl">{item.avatar || '🏛️'}</Text>
-                  </View>
-                </View>
+              {/* Modern Avatar */}
+              <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: isDark ? '#18181B' : '#F9FAFB', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                <Text style={{ fontSize: 28 }}>{item.avatar || '🏛️'}</Text>
               </View>
 
-              {/* content */}
-              <View className="flex-1 py-4 border-b border-slate-100 dark:border-zinc-800 h-full justify-center">
-                <View className="flex-row items-center justify-between">
+              {/* Content */}
+              <View style={{ flex: 1, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: isDark ? '#18181B' : '#F9FAFB', height: '100%', justifyContent: 'center' }}>
+                <View className="flex-row items-center justify-between mb-1">
                   <View className="flex-1">
                     <Text
                       numberOfLines={1}
                       style={{
-                        color: isDark ? '#fff' : '#000',
+                        color: isDark ? '#FFFFFF' : '#111827',
                         fontSize: 16,
-                        fontWeight: isUnread ? '800' : '700',
+                        fontWeight: isUnread ? '700' : '600',
+                        letterSpacing: -0.2,
                       }}
                     >
                       {item.name}
                     </Text>
                     {!!item.memberCount && (
-                      <Text className="text-xs text-slate-400 dark:text-zinc-500">
+                      <Text style={{ fontSize: 12, color: isDark ? '#71717A' : '#A1A1AA', marginTop: 2 }}>
                         {item.memberCount} members
                       </Text>
                     )}
                   </View>
                   <Text
-                    className="text-xs ml-2"
-                    style={{ color: isUnread ? (isDark ? '#e5e7eb' : '#111827') : (isDark ? '#9ca3af' : '#94a3b8'), fontWeight: isUnread ? '700' as any : '500' as any }}
+                    style={{
+                      fontSize: 12,
+                      marginLeft: 8,
+                      color: isUnread ? (isDark ? '#A1A1AA' : '#71717A') : (isDark ? '#71717A' : '#A1A1AA'),
+                      fontWeight: isUnread ? '600' : '500',
+                    }}
                   >
                     {timeAgoLabel(item.lastAt, now)}
                   </Text>
                 </View>
 
-                {/* FIX 1: ADDED flex-1 WRAPPER */}
-                <View className="flex-row items-center justify-between mt-1">
+                <View className="flex-row items-center justify-between mt-0.5">
                   <View className="flex-1">
                     <SmartPreview msg={item.lastMsg} isUnread={isUnread} />
                   </View>
@@ -569,15 +605,17 @@ export default function CommunitiesScreen(): React.JSX.Element {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, paddingTop: insets.top }} className="bg-white dark:bg-black">
-        <Text className="text-3xl font-extrabold text-black dark:text-white px-4 mt-2 mb-4">Communities</Text>
+      <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: isDark ? '#000000' : '#FFFFFF' }}>
+        <Text style={{ fontSize: 32, fontWeight: '700', color: isDark ? '#FFFFFF' : '#111827', paddingHorizontal: 20, marginTop: 4, marginBottom: 16, letterSpacing: -1 }}>
+          Communities
+        </Text>
         {[...Array(8)].map((_, i) => (<CommunityRowSkeleton key={i} />))}
       </View>
     );
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#000' : '#F3F4F6' }}>
+    <View className="flex-1" style={{ backgroundColor: isDark ? '#000000' : '#FFFFFF' }}>
       <AnimatedFlatList
         data={filteredThreads}
         keyExtractor={(item) => item.id}
@@ -597,34 +635,56 @@ export default function CommunitiesScreen(): React.JSX.Element {
         ListEmptyComponent={
           <View className="items-center mt-20">
             <Text className="text-2xl">🏛️</Text>
-            <Text className="font-bold text-lg mt-2 text-black dark:text-white">No Communities</Text>
-            <Text className="text-slate-500 dark:text-zinc-400 mt-1 text-center px-6">
+            <Text style={{ fontWeight: '700', fontSize: 18, marginTop: 8, color: isDark ? '#FFFFFF' : '#111827' }}>
+              No Communities
+            </Text>
+            <Text style={{ color: isDark ? '#71717A' : '#A1A1AA', marginTop: 4, textAlign: 'center', paddingHorizontal: 24, fontSize: 14 }}>
               {searchQuery ? 'No communities match your search' : 'Join a community to get started'}
             </Text>
           </View>
         }
       />
 
-      {/* Frosted header */}
-      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }, animatedHeaderStyle]} className="px-4 pb-2">
-        <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
-        {/* TYPO FIX: isDarks -> isDark */}
-        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }, animatedHeaderBorderStyle]} />
+      {/* Modern Frosted Header */}
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }, animatedHeaderStyle]} className="px-5 pb-3">
+        <BlurView intensity={100} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
+        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }, animatedHeaderBorderStyle]} />
+
         <Animated.View style={animatedHeaderTitleStyle}>
-          <View className="flex-row items-center justify-between mt-2 mb-5">
-            <Text className="text-3xl font-extrabold text-black dark:text-white">Communities</Text>
+          <View className="flex-row items-center justify-between mt-1 mb-4">
+            <Text style={{ fontSize: 32, fontWeight: '700', color: isDark ? '#FFFFFF' : '#111827', letterSpacing: -1 }}>
+              Communities
+            </Text>
           </View>
         </Animated.View>
 
-        {/* Search */}
-        <View className="flex-row items-center gap-2 rounded-xl bg-slate-200/80 dark:bg-zinc-800/80 px-3 mt-2">
-          <IconSymbol name="magnifyingglass" size={20} color={isDark ? '#9ca3af' : '#64748b'} />
+        {/* Modern Search Bar */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            borderRadius: 12,
+            paddingHorizontal: 14,
+            height: 44,
+            borderWidth: 1,
+            borderColor: isDark ? '#27272A' : '#F4F4F5',
+          }}
+        >
+          <Ionicons name="search-outline" size={20} color={isDark ? '#71717A' : '#A1A1AA'} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search communities..."
-            className="flex-1 h-11 text-base text-black dark:text-white"
-            placeholderTextColor={isDark ? '#9ca3af' : '#64748b'}
+            placeholder="Search communities"
+            style={{
+              flex: 1,
+              marginLeft: 10,
+              fontSize: 15,
+              color: isDark ? '#FFFFFF' : '#111827',
+              fontWeight: '500',
+              letterSpacing: 0,
+            }}
+            placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
           />
         </View>
       </Animated.View>
