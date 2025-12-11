@@ -1,10 +1,7 @@
 // backend/routes/reactionRoutes.js
 const express = require("express");
 const router = express.Router();
-const mongoose = require("mongoose");
-
-const Message = require("../models/Message");
-const DirectMessage = require("../models/DirectMessage");
+const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
 
 router.use(authenticate);
@@ -23,48 +20,54 @@ router.post("/messages/:messageId", async (req, res) => {
       return res.status(400).json({ error: "Emoji is required" });
     }
 
-    if (!mongoose.isValidObjectId(messageId)) {
-      return res.status(400).json({ error: "Invalid message ID" });
-    }
-
-    const message = await Message.findById(messageId);
+    const message = await prisma.message.findUnique({
+        where: { id: messageId }
+    });
     if (!message) {
       return res.status(404).json({ error: "Message not found" });
     }
 
-    // Check if user already reacted with this emoji
-    const existingReaction = message.reactions.find(
-      (r) => String(r.userId) === userId && r.emoji === emoji
-    );
+    // Check existing
+    const existing = await prisma.reaction.findFirst({
+        where: {
+            messageId,
+            userId,
+            emoji
+        }
+    });
 
-    if (existingReaction) {
+    if (existing) {
       return res.status(400).json({ error: "Already reacted with this emoji" });
     }
 
-    // Add reaction
-    message.reactions.push({
-      emoji,
-      userId,
-      userName,
-      createdAt: new Date()
+    // Create reaction
+    const reaction = await prisma.reaction.create({
+        data: {
+            emoji,
+            messageId,
+            userId
+        }
     });
 
-    await message.save();
+    // Populate user/message? No, we just need payload.
+    // Frontend expects { emoji, userId, userName, createdAt }
+    // We can return the created reaction + userName from helper
+    
+    const reactionPayload = {
+        emoji: reaction.emoji,
+        userId: reaction.userId,
+        userName: userName, // Pass from Auth context
+        createdAt: reaction.createdAt
+    };
 
-    // Emit real-time reaction event
     req.io?.to(`community:${message.communityId}`).emit("reaction:added", {
       messageId,
-      reaction: {
-        emoji,
-        userId,
-        userName,
-        createdAt: message.reactions[message.reactions.length - 1].createdAt
-      }
+      reaction: reactionPayload
     });
 
     return res.status(201).json({
       message: "Reaction added",
-      reaction: message.reactions[message.reactions.length - 1]
+      reaction: reactionPayload
     });
   } catch (err) {
     console.error("💥 POST /api/reactions/messages/:messageId ERROR:", err);
@@ -78,31 +81,29 @@ router.delete("/messages/:messageId/:emoji", async (req, res) => {
     const { messageId, emoji } = req.params;
     const userId = req.user.id;
 
-    if (!mongoose.isValidObjectId(messageId)) {
-      return res.status(400).json({ error: "Invalid message ID" });
-    }
-
-    const message = await Message.findById(messageId);
+    const message = await prisma.message.findUnique({ where: { id: messageId } });
     if (!message) {
       return res.status(404).json({ error: "Message not found" });
     }
+    
+    const decodedEmoji = decodeURIComponent(emoji);
 
-    // Find and remove reaction
-    const reactionIndex = message.reactions.findIndex(
-      (r) => String(r.userId) === userId && r.emoji === decodeURIComponent(emoji)
-    );
+    const result = await prisma.reaction.deleteMany({
+        where: {
+            messageId,
+            userId,
+            emoji: decodedEmoji
+        }
+    });
 
-    if (reactionIndex === -1) {
+    if (result.count === 0) {
       return res.status(404).json({ error: "Reaction not found" });
     }
-
-    message.reactions.splice(reactionIndex, 1);
-    await message.save();
 
     // Emit real-time reaction removal event
     req.io?.to(`community:${message.communityId}`).emit("reaction:removed", {
       messageId,
-      emoji: decodeURIComponent(emoji),
+      emoji: decodedEmoji,
       userId
     });
 
@@ -127,56 +128,55 @@ router.post("/dm/:messageId", async (req, res) => {
       return res.status(400).json({ error: "Emoji is required" });
     }
 
-    if (!mongoose.isValidObjectId(messageId)) {
-      return res.status(400).json({ error: "Invalid message ID" });
-    }
-
-    const message = await DirectMessage.findById(messageId);
+    const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
     if (!message) {
       return res.status(404).json({ error: "Message not found" });
     }
 
     // Ensure user is part of the conversation
-    const isParticipant = 
-      String(message.from) === userId || String(message.to) === userId;
+    const isParticipant = (message.fromId === userId || message.toId === userId);
     if (!isParticipant) {
       return res.status(403).json({ error: "Unauthorized" });
     }
 
-    // Check if user already reacted with this emoji
-    const existingReaction = message.reactions.find(
-      (r) => String(r.userId) === userId && r.emoji === emoji
-    );
+    // Check existing
+    const existing = await prisma.directMessageReaction.findFirst({
+        where: {
+            dmId: messageId,
+            userId,
+            emoji
+        }
+    });
 
-    if (existingReaction) {
+    if (existing) {
       return res.status(400).json({ error: "Already reacted with this emoji" });
     }
 
-    // Add reaction
-    message.reactions.push({
-      emoji,
-      userId,
-      userName,
-      createdAt: new Date()
+    const reaction = await prisma.directMessageReaction.create({
+        data: {
+            emoji,
+            dmId: messageId,
+            userId
+        }
     });
-
-    await message.save();
+    
+    const reactionPayload = {
+        emoji: reaction.emoji,
+        userId: reaction.userId,
+        userName,
+        createdAt: reaction.createdAt
+    };
 
     // Emit real-time reaction event to both participants
-    const otherUserId = String(message.from) === userId ? String(message.to) : String(message.from);
+    const otherUserId = message.fromId === userId ? message.toId : message.fromId;
     req.io?.to(userId).to(otherUserId).emit("dm:reaction:added", {
       messageId,
-      reaction: {
-        emoji,
-        userId,
-        userName,
-        createdAt: message.reactions[message.reactions.length - 1].createdAt
-      }
+      reaction: reactionPayload
     });
 
     return res.status(201).json({
       message: "Reaction added",
-      reaction: message.reactions[message.reactions.length - 1]
+      reaction: reactionPayload
     });
   } catch (err) {
     console.error("💥 POST /api/reactions/dm/:messageId ERROR:", err);
@@ -190,39 +190,37 @@ router.delete("/dm/:messageId/:emoji", async (req, res) => {
     const { messageId, emoji } = req.params;
     const userId = req.user.id;
 
-    if (!mongoose.isValidObjectId(messageId)) {
-      return res.status(400).json({ error: "Invalid message ID" });
-    }
-
-    const message = await DirectMessage.findById(messageId);
+    const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
     if (!message) {
       return res.status(404).json({ error: "Message not found" });
     }
 
     // Ensure user is part of the conversation
-    const isParticipant = 
-      String(message.from) === userId || String(message.to) === userId;
+    const isParticipant = (message.fromId === userId || message.toId === userId);
     if (!isParticipant) {
       return res.status(403).json({ error: "Unauthorized" });
     }
+    
+    const decodedEmoji = decodeURIComponent(emoji);
 
     // Find and remove reaction
-    const reactionIndex = message.reactions.findIndex(
-      (r) => String(r.userId) === userId && r.emoji === decodeURIComponent(emoji)
-    );
+    const result = await prisma.directMessageReaction.deleteMany({
+        where: {
+            dmId: messageId,
+            userId,
+            emoji: decodedEmoji
+        }
+    });
 
-    if (reactionIndex === -1) {
+    if (result.count === 0) {
       return res.status(404).json({ error: "Reaction not found" });
     }
 
-    message.reactions.splice(reactionIndex, 1);
-    await message.save();
-
     // Emit real-time reaction removal event
-    const otherUserId = String(message.from) === userId ? String(message.to) : String(message.from);
+    const otherUserId = message.fromId === userId ? message.toId : message.fromId;
     req.io?.to(userId).to(otherUserId).emit("dm:reaction:removed", {
       messageId,
-      emoji: decodeURIComponent(emoji),
+      emoji: decodedEmoji,
       userId
     });
 

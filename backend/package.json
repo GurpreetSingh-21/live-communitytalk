@@ -10,6 +10,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3.0.2",
     "body-parser": "^2.2.0",
@@ -36,9 +37,13 @@
     "nodemon": "^3.1.10",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
+    "pg": "^8.16.3",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "speakeasy": "^2.0.0"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
   }
 }

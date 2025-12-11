@@ -1,22 +1,15 @@
 const express = require("express");
 const router = express.Router();
-const mongoose = require("mongoose");
-
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
 const authenticate = require("../middleware/authenticate");
 const requireAdmin = require("../middleware/requireAdmin");
-const Person = require("../person");
-const Community = require("../models/Community");
-const Member = require("../models/Member");
-const DatingProfile = require("../models/DatingProfile"); // ⬅️ NEW: for dating admin
+const prisma = require("../prisma/client");
 
-const Report = require("../models/Report"); // ⬅️ IMPORTED
-
-const AUTO_DELETE_THRESHOLD = 7; // ⬅️ DEFINED
-
+const AUTO_DELETE_THRESHOLD = 7;
 const ROOM = (id) => `community:${id}`;
+
 const slugify = (s = "") =>
     String(s)
         .toLowerCase()
@@ -38,85 +31,43 @@ console.log("[adminRoutes] Loaded. JWT_SECRET present:", !!JWT_SECRET);
 router.post("/login", async (req, res) => {
     console.log("========================================");
     console.log("🔥 [/api/admin/login] HIT");
-    console.log("Headers.authorization:", req.headers?.authorization || null);
-    console.log("Body (raw):", req.body);
 
     try {
         const { email, password } = req.body || {};
 
-        console.log("[/api/admin/login] Parsed email:", email);
-        console.log(
-            "[/api/admin/login] Password length:",
-            password ? String(password).length : 0
-        );
-
         if (!email || !password) {
-            console.log("[/api/admin/login] Missing email or password");
-            return res
-                .status(400)
-                .json({ error: "Email and password are required" });
+            return res.status(400).json({ error: "Email and password are required" });
         }
 
         const em = String(email).trim().toLowerCase();
-        console.log("[/api/admin/login] Normalized email:", em);
 
-        const user = await Person.findOne({ email: em }).select("+password").lean();
+        // 1. Find user by email
+        const user = await prisma.user.findUnique({
+            where: { email: em }
+        });
 
         if (!user) {
-            console.log("[/api/admin/login] No user found for email:", em);
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
-        console.log("[/api/admin/login] Found user:", {
-            id: user._id,
-            email: user.email,
-            role: user.role,
-            hasPassword: !!user.password,
-            passwordLength: user.password ? user.password.length : 0,
-        });
-
         if (user.role !== "admin") {
-            console.log(
-                "[/api/admin/login] User is not admin. role =",
-                user.role
-            );
             return res.status(403).json({ error: "Not an admin account" });
         }
 
-        const pwHashPreview = (user.password || "").slice(0, 10) + "...";
-        console.log(
-            "[/api/admin/login] Stored hash preview:",
-            user.password ? pwHashPreview : "NO PASSWORD FIELD"
-        );
-        console.log("[/api/admin/login] Full stored hash:", user.password);
-        console.log("[/api/admin/login] Incoming password:", password);
-
-        const ok = await bcrypt.compare(password, user.password || "");
-        console.log("[/api/admin/login] bcrypt.compare result:", ok);
-
+        // 2. Validate password
+        const ok = await bcrypt.compare(password, user.passwordHash || "");
         if (!ok) {
-            console.log(
-                "[/api/admin/login] Password mismatch for email:",
-                em
-            );
-            console.log("[/api/admin/login] Expected hash:", user.password);
             return res.status(401).json({ error: "Invalid email or password" });
         }
 
-        const tokenPayload = { id: user._id, role: user.role };
-        console.log("[/api/admin/login] Signing JWT with payload:", tokenPayload);
-
-        const token = jwt.sign(tokenPayload, JWT_SECRET, {
-            expiresIn: "7d",
-        });
-
-        console.log("[/api/admin/login] SUCCESS. Returning token.");
-        console.log("========================================");
+        // 3. Generate Token
+        const tokenPayload = { id: user.id, role: user.role };
+        const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: "7d" });
 
         return res.json({
             token,
             user: {
-                id: user._id,
+                id: user.id,
                 fullName: user.fullName,
                 email: user.email,
                 role: user.role,
@@ -124,28 +75,19 @@ router.post("/login", async (req, res) => {
         });
     } catch (e) {
         console.error("💥 POST /api/admin/login ERROR:", e);
-        console.log("========================================");
         res.status(500).json({ error: "Server error" });
     }
 });
 
 // 🔐 Everything below this line requires a valid admin JWT
-// Admin-only
-router.use((req, _res, next) => {
-    console.log("🔐 [adminRoutes] Entering admin-only middleware");
-    next();
-});
 router.use(authenticate, requireAdmin);
 
 /* ------------------------------------------------------------------ *
  * Communities: list / create / update / delete
  * ------------------------------------------------------------------ */
 
-// GET /api/admin/communities?q=&type=&page=&limit=&includePrivate=true|false
+// GET /api/admin/communities
 router.get("/communities", async (req, res) => {
-    console.log("📡 [GET /api/admin/communities] Query:", req.query);
-    console.log("👤 Admin user:", req.user && { id: req.user.id, role: req.user.role });
-
     try {
         const {
             q = "",
@@ -155,44 +97,49 @@ router.get("/communities", async (req, res) => {
             includePrivate = "true",
         } = req.query;
 
-        const filter = {};
-        if (q) {
-            const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-            filter.$or = [
-                { name: rx },
-                { key: rx },
-                { slug: rx },
-                { description: rx },
-                { tags: rx },
-            ];
-        }
-        if (type) filter.type = type;
-        if (includePrivate !== "true") filter.isPrivate = { $ne: true };
-
-        console.log("[GET /api/admin/communities] Mongo filter:", filter);
-
         const pg = Math.max(parseInt(page, 10) || 1, 1);
         const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
 
+        const where = {};
+        if (q) {
+            where.OR = [
+                { name: { contains: q, mode: 'insensitive' } },
+                { key: { contains: q, mode: 'insensitive' } },
+                { slug: { contains: q, mode: 'insensitive' } },
+                { description: { contains: q, mode: 'insensitive' } },
+            ];
+        }
+        if (type) where.type = type;
+        if (includePrivate !== "true") where.isPrivate = false;
+
         const [items, total] = await Promise.all([
-            Community.find(filter)
-                .select("_id name type key slug isPrivate tags createdAt updatedAt")
-                .sort({ createdAt: -1 })
-                .skip((pg - 1) * lim)
-                .limit(lim)
-                .lean(),
-            Community.countDocuments(filter),
+            prisma.community.findMany({
+                where,
+                skip: (pg - 1) * lim,
+                take: lim,
+                orderBy: { createdAt: 'desc' },
+                select: {
+                    id: true,
+                    name: true,
+                    type: true,
+                    key: true,
+                    slug: true,
+                    isPrivate: true,
+                    tags: true,
+                    createdAt: true,
+                    updatedAt: true
+                }
+            }),
+            prisma.community.count({ where })
         ]);
 
-        console.log(
-            "[GET /api/admin/communities] Returning",
-            items.length,
-            "items of total",
-            total
-        );
+        const mapped = items.map(c => ({
+            _id: c.id, 
+            ...c
+        }));
 
         res.json({
-            items,
+            items: mapped,
             page: pg,
             limit: lim,
             total,
@@ -206,9 +153,6 @@ router.get("/communities", async (req, res) => {
 
 // POST /api/admin/communities
 router.post("/communities", async (req, res) => {
-    console.log("📡 [POST /api/admin/communities] Body:", req.body);
-    console.log("👤 Admin user:", req.user && { id: req.user.id, role: req.user.role });
-
     try {
         let {
             name,
@@ -220,135 +164,69 @@ router.post("/communities", async (req, res) => {
             collegeKey,
         } = req.body || {};
 
-        if (!name?.trim())
-            return res.status(400).json({ error: "Name is required" });
+        if (!name?.trim()) return res.status(400).json({ error: "Name is required" });
         if (!["college", "religion", "custom"].includes(type)) {
             return res.status(400).json({ error: "Invalid type" });
         }
 
         const baseTags = Array.isArray(tags) ? tags.slice(0, 20) : [];
 
-        if (type === "college") {
-            const k = key?.trim() || slugify(name);
-            console.log("[POST /communities] Creating college community with key:", k);
-
-            const created = await Community.create({
-                name: name.trim(),
-                type,
-                key: k,
-                isPrivate: !!isPrivate,
-                tags: baseTags,
-                createdBy: req.user.id,
-            });
-
-            console.log("[POST /communities] Created college community:", created._id);
-
-            req.io?.emit("admin:communityChanged", {
-                action: "create",
-                community: {
-                    _id: created._id,
-                    name: created.name,
-                    type: created.type,
-                    key: created.key,
-                    isPrivate: created.isPrivate,
-                    slug: created.slug,
-                    tags: created.tags,
-                },
-            });
-            return res.status(201).json(created);
-        }
+        let finalKey = key?.trim() || slugify(name);
+        let finalName = name.trim();
 
         if (type === "religion") {
             const religionName = name.trim();
             const religionKey = slugify(key?.trim() || religionName);
+            finalName = religionName;
+            finalKey = religionKey;
 
-            let finalName = religionName;
-            let finalKey = religionKey;
             const tagset = new Set(baseTags);
 
-            console.log("[POST /communities] Creating religion community:", {
-                religionName,
-                religionKey,
-                collegeId,
-                collegeKey,
-            });
-
             if (collegeId || collegeKey) {
-                const colFilter = collegeId
-                    ? { _id: collegeId }
-                    : { key: slugify(collegeKey) };
-                console.log("[POST /communities] Looking up college with:", colFilter);
-
-                const college = await Community.findOne({
-                    ...colFilter,
-                    type: "college",
-                }).lean();
-                if (!college)
+                const colFilter = collegeId 
+                    ? { id: collegeId, type: "college" } 
+                    : { key: slugify(collegeKey), type: "college" };
+                
+                const college = await prisma.community.findFirst({ where: colFilter });
+                
+                if (!college) {
                     return res.status(400).json({ error: "College not found" });
+                }
 
                 finalName = `${religionName} @ ${college.name}`;
                 finalKey = `${college.key}__${religionKey}`;
                 tagset.add(`college:${college.key}`);
             }
+            tags = Array.from(tagset).slice(0, 20);
+        } else {
+            tags = baseTags;
+        }
 
-            const created = await Community.create({
+        const created = await prisma.community.create({
+            data: {
                 name: finalName,
                 type,
                 key: finalKey,
+                slug: finalKey,
                 isPrivate: !!isPrivate,
-                tags: Array.from(tagset).slice(0, 20),
-                createdBy: req.user.id,
-            });
+                tags: tags,
+            }
+        });
 
-            console.log("[POST /communities] Created religion community:", created._id);
+        const commObj = {
+            _id: created.id,
+            ...created
+        };
 
-            req.io?.emit("admin:communityChanged", {
-                action: "create",
-                community: {
-                    _id: created._id,
-                    name: created.name,
-                    type: created.type,
-                    key: created.key,
-                    isPrivate: created.isPrivate,
-                    slug: created.slug,
-                    tags: created.tags,
-                },
-            });
-            return res.status(201).json(created);
-        }
+        req.io?.emit("admin:communityChanged", {
+            action: "create",
+            community: commObj,
+        });
+        return res.status(201).json(commObj);
 
-        if (type === "custom") {
-            const k = key?.trim() || slugify(name);
-            console.log("[POST /communities] Creating custom community with key:", k);
-
-            const created = await Community.create({
-                name: name.trim(),
-                type,
-                key: k,
-                isPrivate: !!isPrivate,
-                tags: baseTags,
-                createdBy: req.user.id,
-            });
-
-            console.log("[POST /communities] Created custom community:", created._id);
-
-            req.io?.emit("admin:communityChanged", {
-                action: "create",
-                community: {
-                    _id: created._id,
-                    name: created.name,
-                    type: created.type,
-                    key: created.key,
-                    isPrivate: created.isPrivate,
-                    slug: created.slug,
-                    tags: created.tags,
-                },
-            });
-            return res.status(201).json(created);
-        }
     } catch (e) {
         console.error("💥 POST /api/admin/communities ERROR", e);
-        if (e?.code === 11000) {
+        if (e.code === 'P2002') {
             return res.status(400).json({ error: "Duplicate (type,key) or slug" });
         }
         res.status(500).json({ error: "Server error" });
@@ -357,83 +235,64 @@ router.post("/communities", async (req, res) => {
 
 // PATCH /api/admin/communities/:id
 router.patch("/communities/:id", async (req, res) => {
-    console.log("📡 [PATCH /api/admin/communities/:id] Params:", req.params);
-    console.log("Body:", req.body);
-
     try {
         const { id } = req.params;
-        const update = {};
+        const data = {};
 
         if (typeof req.body.name === "string" && req.body.name.trim()) {
-            update.name = req.body.name.trim();
+            data.name = req.body.name.trim();
         }
         if (typeof req.body.key === "string") {
-            update.key = req.body.key.trim();
+            data.key = req.body.key.trim();
         }
         if (typeof req.body.isPrivate === "boolean") {
-            update.isPrivate = req.body.isPrivate;
+            data.isPrivate = req.body.isPrivate;
         }
         if (Array.isArray(req.body.tags)) {
-            update.tags = req.body.tags.slice(0, 20);
+            data.tags = req.body.tags.slice(0, 20);
         }
 
-        console.log("[PATCH /communities/:id] Update payload:", update);
+        const saved = await prisma.community.update({
+            where: { id },
+            data
+        });
 
-        const saved = await Community.findByIdAndUpdate(id, update, {
-            new: true,
-            runValidators: true,
-        })
-            .select("_id name type key slug isPrivate tags")
-            .lean();
-
-        if (!saved) {
-            console.log("[PATCH /communities/:id] Not found:", id);
-            return res.status(404).json({ error: "Not found" });
-        }
+        const commObj = {
+            _id: saved.id,
+            ...saved
+        };
 
         req.io?.emit("admin:communityChanged", {
             action: "update",
-            community: {
-                _id: saved._id,
-                name: saved.name,
-                type: saved.type,
-                key: saved.key,
-                isPrivate: saved.isPrivate,
-                slug: saved.slug,
-                tags: saved.tags,
-            },
+            community: commObj,
         });
 
-        res.json(saved);
+        res.json(commObj);
     } catch (e) {
         console.error("💥 PATCH /api/admin/communities/:id ERROR", e);
-        if (e?.code === 11000) {
-            return res.status(400).json({ error: "Duplicate (type,key) or slug" });
-        }
+        if (e.code === 'P2002') return res.status(400).json({ error: "Duplicate (type,key) or slug" });
+        if (e.code === 'P2025') return res.status(404).json({ error: "Not found" });
         res.status(500).json({ error: "Server error" });
     }
 });
 
 // DELETE /api/admin/communities/:id
 router.delete("/communities/:id", async (req, res) => {
-    console.log("📡 [DELETE /api/admin/communities/:id] Params:", req.params);
-
     try {
         const { id } = req.params;
-        const cc = await Community.findByIdAndDelete(id).lean();
-        if (!cc) {
-            console.log("[DELETE /communities/:id] Not found:", id);
-            return res.status(404).json({ error: "Not found" });
-        }
 
-        console.log("[DELETE /communities/:id] Deleted community:", id);
-        await Member.deleteMany({ community: id });
+        try {
+             await prisma.community.delete({ where: { id } });
+        } catch (e) {
+            if (e.code === 'P2025') return res.status(404).json({ error: "Not found" });
+            throw e;
+        }
 
         req.io?.emit("admin:communityChanged", {
             action: "delete",
-            communityId: String(id),
+            communityId: id,
         });
-        req.io?.to(ROOM(id)).emit("community:deleted", { communityId: String(id) });
+        req.io?.to(ROOM(id)).emit("community:deleted", { communityId: id });
 
         res.json({ message: "Deleted" });
     } catch (e) {
@@ -448,85 +307,72 @@ router.delete("/communities/:id", async (req, res) => {
 
 // GET /api/admin/reports
 router.get("/reports", async (req, res) => {
-    console.log("📡 [GET /api/admin/reports] Query:", req.query);
-
     try {
         const { q = "", page = 1, limit = 50 } = req.query;
-
         const pg = Math.max(parseInt(page, 10) || 1, 1);
         const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
 
-        // 1. Aggregate reports: Group by reportedUser and count unique reports/reasons
-        const reportsData = await Report.aggregate([
-            // ⭐ FIX 1: Only process reports that are still pending review.
-            { $match: { status: 'pending' } }, 
-            {
-                $group: {
-                    _id: "$reportedUser",
-                    reportCount: { $sum: 1 }, // Total unique reports received (by default)
-                    lastReportedAt: { $max: "$createdAt" },
-                    // Collect reasons (assumes Report model has a 'reason' field)
-                    reasons: { $push: "$reason" },
+        const groups = await prisma.report.groupBy({
+            by: ['reportedId'],
+            where: { status: 'pending' },
+            _count: { reportedId: true },
+            _max: { createdAt: true },
+        });
+
+        let reportSummaries = groups.map(g => ({
+            reportedId: g.reportedId,
+            reportCount: g._count.reportedId,
+            lastReportedAt: g._max.createdAt,
+        })).sort((a, b) => b.reportCount - a.reportCount || new Date(b.lastReportedAt) - new Date(a.lastReportedAt));
+
+        const total = reportSummaries.length;
+        const pagedSummaries = reportSummaries.slice((pg - 1) * lim, (pg - 1) * lim + lim);
+
+        const items = await Promise.all(pagedSummaries.map(async (summary) => {
+            const user = await prisma.user.findUnique({
+                where: { id: summary.reportedId },
+                select: {
+                    id: true,
+                    fullName: true,
+                    email: true,
+                    role: true,
+                    reportsReceivedCount: true,
+                    isPermanentlyDeleted: true,
+                    isActive: true
                 }
-            },
-            // Filter to only include users with 1 or more reports (to keep queue manageable)
-            { $match: { reportCount: { $gte: 1 } } },
-            { $sort: { reportCount: -1, lastReportedAt: -1 } },
-            // Pagination is done after aggregation
-            { $skip: (pg - 1) * lim },
-            { $limit: lim },
-        ]);
+            });
 
-        // 2. Fetch reported user details using the IDs from aggregation
-        // We need the new reportsReceivedCount and isPermanentlyDeleted fields
-        const reportedUserIds = reportsData.map(r => r._id);
-        const users = await Person.find({ _id: { $in: reportedUserIds } })
-            .select("_id fullName email role isActive reportsReceivedCount isPermanentlyDeleted") // ⬅️ Includes new status fields
-            .lean();
+            if (!user) return null;
 
-        const userMap = new Map(users.map(u => [String(u._id), u]));
+            const recentReports = await prisma.report.findMany({
+                where: { reportedId: summary.reportedId, status: 'pending' },
+                select: { reason: true },
+                distinct: ['reason'],
+                take: 10
+            });
+            const uniqueReasons = recentReports.map(r => r.reason);
 
-        // 3. Merge report data with user details and map to frontend format
-        const items = reportsData
-            .map(r => {
-                const user = userMap.get(String(r._id));
-                if (!user) return null; // Skip if user record was deleted
+            return {
+                _id: summary.reportedId,
+                reportCount: summary.reportCount,
+                reasons: uniqueReasons,
+                lastReportedAt: summary.lastReportedAt,
+                reportedUser: {
+                    _id: user.id,
+                    fullName: user.fullName || "",
+                    email: user.email,
+                    role: user.role,
+                    reportsReceivedCount: user.reportsReceivedCount,
+                    isPermanentlyDeleted: user.isPermanentlyDeleted,
+                    isActive: user.isActive
+                }
+            };
+        }));
 
-                // Simple filter to get unique reasons for the dialog display
-                const uniqueReasons = [...new Set(r.reasons)].slice(0, 10);
+        const finalItems = items.filter(Boolean);
 
-                return {
-                    _id: String(r._id), // Reported User ID
-                    reportCount: r.reportCount,
-                    reasons: uniqueReasons,
-                    lastReportedAt: r.lastReportedAt,
-                    reportedUser: {
-                        _id: String(user._id),
-                        fullName: user.fullName,
-                        email: user.email,
-                        role: user.role || 'user',
-                        reportsReceivedCount: user.reportsReceivedCount || 0,
-                        isPermanentlyDeleted: !!user.isPermanentlyDeleted,
-                        isActive: user.isActive !== false, // ⬅️ Fetch isActive
-                    }
-                };
-            })
-            .filter(Boolean); // Filter out nulls (deleted/banned users)
-
-        // 4. Get total count for pagination (for the header metrics)
-        const totalResult = await Report.aggregate([
-            // ⭐ FIX 2: Match only pending reports here as well
-            { $match: { status: 'pending' } }, 
-            { $group: { _id: "$reportedUser", reportCount: { $sum: 1 } } },
-            { $match: { reportCount: { $gte: 1 } } },
-            { $count: "total" }
-        ]);
-        const total = totalResult[0]?.total || 0;
-
-        console.log(`[GET /reports] Returning ${items.length} items of total ${total}`);
-
-        return res.json({
-            items,
+        res.json({
+            items: finalItems,
             page: pg,
             limit: lim,
             total,
@@ -540,59 +386,59 @@ router.get("/reports", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ *
- * People: list / update
+ * Users/People: list / update
  * ------------------------------------------------------------------ */
 
-// ✅ NEW: Users list for /admin/users panel
+// GET /api/admin/users
 router.get("/users", async (req, res) => {
-    console.log("📡 [GET /api/admin/users] Query:", req.query);
-
     try {
         const { q = "", role, page = 1, limit = 50 } = req.query;
 
-        const filter = {};
+        const where = {};
         if (q) {
-            const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-            filter.$or = [{ fullName: rx }, { email: rx }];
+            where.OR = [
+                { fullName: { contains: q, mode: 'insensitive' } },
+                { email: { contains: q, mode: 'insensitive' } }
+            ];
         }
-        if (role && ["user", "mod", "admin"].includes(String(role))) {
-            filter.role = String(role);
+        if (role && ["user", "mod", "admin"].includes(role)) {
+            where.role = role;
         }
 
         const pg = Math.max(parseInt(page, 10) || 1, 1);
         const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
 
-        const [people, total] = await Promise.all([
-            Person.find(filter)
-                .select(
-                    "_id fullName email role isActive collegeSlug religionKey hasDatingProfile datingProfileId communityIds createdAt reportsReceivedCount isPermanentlyDeleted"
-                )
-                .sort({ createdAt: -1 })
-                .skip((pg - 1) * lim)
-                .limit(lim)
-                .lean(),
-            Person.countDocuments(filter),
+        const [users, total] = await Promise.all([
+            prisma.user.findMany({
+                where,
+                skip: (pg - 1) * lim,
+                take: lim,
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    members: { select: { communityId: true } },
+                    datingProfile: { select: { id: true } }
+                }
+            }),
+            prisma.user.count({ where })
         ]);
 
-        const items = people.map((p) => ({
-            _id: String(p._id),
+        const items = users.map(p => ({
+            _id: p.id,
             fullName: p.fullName,
             email: p.email,
             role: p.role || "user",
-            isActive: p.isActive !== false,
-            collegeSlug: p.collegeSlug || null,
-            religionKey: p.religionKey || null,
-            hasDatingProfile: !!p.hasDatingProfile,
-            datingProfileId: p.datingProfileId || null,
+            isActive: p.isActive,
+            collegeSlug: p.collegeSlug,
+            religionKey: p.religionKey,
+            hasDatingProfile: !!p.datingProfile,
+            datingProfileId: p.datingProfile?.id || null,
             createdAt: p.createdAt,
-            reportsReceivedCount: p.reportsReceivedCount || 0, // ⬅️ NEW
-            isPermanentlyDeleted: !!p.isPermanentlyDeleted, // ⬅️ NEW
-            communitiesCount: Array.isArray(p.communityIds)
-                ? p.communityIds.length
-                : 0,
+            reportsReceivedCount: p.reportsReceivedCount,
+            isPermanentlyDeleted: p.isPermanentlyDeleted,
+            communitiesCount: p.members.length
         }));
 
-        return res.json({
+        res.json({
             items,
             page: pg,
             limit: lim,
@@ -601,43 +447,46 @@ router.get("/users", async (req, res) => {
         });
     } catch (e) {
         console.error("💥 GET /api/admin/users ERROR", e);
-        return res.status(500).json({ error: "Server error" });
+        res.status(500).json({ error: "Server error" });
     }
 });
 
 // GET /api/admin/people
 router.get("/people", async (req, res) => {
-    console.log("📡 [GET /api/admin/people] Query:", req.query);
-
     try {
         const { q = "", page = 1, limit = 50 } = req.query;
-        const filter = {};
-        if (q) {
-            const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-            filter.$or = [{ fullName: rx }, { email: rx }];
-        }
-
-        console.log("[GET /people] Filter:", filter);
-
         const pg = Math.max(parseInt(page, 10) || 1, 1);
         const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
 
-        const [items, total] = await Promise.all([
-            Person.find(filter)
-                .select("_id fullName email role communityIds createdAt")
-                .sort({ createdAt: -1 })
-                .skip((pg - 1) * lim)
-                .limit(lim)
-                .lean(),
-            Person.countDocuments(filter),
+        const where = {};
+        if (q) {
+            where.OR = [
+                { fullName: { contains: q, mode: 'insensitive' } },
+                { email: { contains: q, mode: 'insensitive' } }
+            ];
+        }
+
+        const [users, total] = await Promise.all([
+            prisma.user.findMany({
+                where,
+                skip: (pg - 1) * lim,
+                take: lim,
+                orderBy: { createdAt: 'desc' },
+                include: {
+                    members: { select: { communityId: true } }
+                }
+            }),
+            prisma.user.count({ where })
         ]);
 
-        console.log(
-            "[GET /people] Returning",
-            items.length,
-            "items of total",
-            total
-        );
+        const items = users.map(p => ({
+            _id: p.id,
+            fullName: p.fullName,
+            email: p.email,
+            role: p.role,
+            communityIds: p.members.map(m => m.communityId),
+            createdAt: p.createdAt
+        }));
 
         res.json({
             items,
@@ -654,170 +503,135 @@ router.get("/people", async (req, res) => {
 
 // PATCH /api/admin/people/:id
 router.patch("/people/:id", async (req, res) => {
-    console.log("📡 [PATCH /api/admin/people/:id] Params:", req.params);
-    console.log("Body:", req.body);
-
     try {
         const { id } = req.params;
-        const update = {};
+        const data = {};
 
-        if (typeof req.body.fullName === "string") {
-            update.fullName = req.body.fullName.trim();
-        }
-        if (typeof req.body.email === "string") {
-            update.email = req.body.email.trim().toLowerCase();
-        }
+        if (typeof req.body.fullName === "string") data.fullName = req.body.fullName.trim();
+        if (typeof req.body.email === "string") data.email = req.body.email.trim().toLowerCase();
         if (typeof req.body.role === "string") {
-            if (!["user", "mod", "admin"].includes(req.body.role)) {
-                console.log("[PATCH /people/:id] Invalid role:", req.body.role);
-                return res.status(400).json({ error: "Invalid role" });
-            }
-            update.role = req.body.role;
+             if (["user", "mod", "admin"].includes(req.body.role)) {
+                 data.role = req.body.role;
+             }
         }
 
-        console.log("[PATCH /people/:id] Update payload:", update);
+        const saved = await prisma.user.update({
+            where: { id },
+            data,
+            include: { members: { select: { communityId: true } }}
+        });
 
-        const saved = await Person.findByIdAndUpdate(id, update, {
-            new: true,
-            runValidators: true,
-        })
-            .select("_id fullName email role communityIds")
-            .lean();
+        const userObj = {
+            _id: saved.id,
+            fullName: saved.fullName,
+            email: saved.email,
+            role: saved.role,
+            communityIds: saved.members.map(m => m.communityId)
+        };
 
-        if (!saved) {
-            console.log("[PATCH /people/:id] Not found:", id);
-            return res.status(404).json({ error: "Not found" });
-        }
+        req.io?.emit("admin:userChanged", { action: "update", user: userObj });
+        res.json(userObj);
 
-        req.io?.emit("admin:userChanged", { action: "update", user: saved });
-        res.json(saved);
     } catch (e) {
         console.error("💥 PATCH /api/admin/people/:id ERROR", e);
+        if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
         res.status(500).json({ error: "Server error" });
     }
 });
 
-// PATCH /api/admin/people/:id/ban - Permanent deletion / Ban
+// PATCH /api/admin/people/:id/ban
 router.patch("/people/:id/ban", async (req, res) => {
-    console.log("📡 [PATCH /api/admin/people/:id/ban] Params:", req.params);
-
     try {
         const { id } = req.params;
-
-        if (!mongoose.isValidObjectId(id)) {
-            return res.status(400).json({ error: "Invalid user id" });
-        }
-        if (String(id) === String(req.user.id)) {
+        if (id === req.user.id) {
             return res.status(400).json({ error: "You cannot ban your own account." });
         }
 
-        // 1. Update Person status to permanently banned and inactive
-        const saved = await Person.findByIdAndUpdate(
-            id,
-            {
-                $set: {
-                    isActive: false,
-                    isPermanentlyDeleted: true // The definitive ban flag
-                }
-            },
-            { new: true }
-        )
-            .select("_id fullName email role isActive isPermanentlyDeleted")
-            .lean();
+        const saved = await prisma.user.update({
+            where: { id },
+            data: {
+                isActive: false,
+                isPermanentlyDeleted: true
+            }
+        });
 
-        if (!saved) {
-            return res.status(404).json({ error: "User not found" });
-        }
+        const userObj = {
+            _id: saved.id,
+            fullName: saved.fullName,
+            email: saved.email,
+            role: saved.role,
+            isActive: saved.isActive,
+            isPermanentlyDeleted: saved.isPermanentlyDeleted
+        };
 
-        // 2. Notify clients (admin panel and potentially the user's app instance)
-        req.io?.emit("admin:userChanged", { action: "ban", user: saved });
-
-        console.log(`[PATCH /people/:id/ban] Banned user: ${id}`);
-        res.json({ message: "User permanently banned/deleted.", user: saved });
+        req.io?.emit("admin:userChanged", { action: "ban", user: userObj });
+        res.json({ message: "User permanently banned/deleted.", user: userObj });
 
     } catch (e) {
         console.error("💥 PATCH /api/admin/people/:id/ban ERROR:", e);
+        if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
         res.status(500).json({ error: "Server error" });
     }
 });
 
-// PATCH /api/admin/people/:id/unban - Unban/Reactivate (Resets both ban and active flags)
+// PATCH /api/admin/people/:id/unban
 router.patch("/people/:id/unban", async (req, res) => {
-    console.log("📡 [PATCH /api/admin/people/:id/unban] Params:", req.params);
-
     try {
         const { id } = req.params;
 
-        if (!mongoose.isValidObjectId(id)) {
-            return res.status(400).json({ error: "Invalid user id" });
-        }
+        const saved = await prisma.user.update({
+            where: { id },
+            data: {
+                isActive: true,
+                isPermanentlyDeleted: false
+            }
+        });
 
-        // 1. Reset ban flag and reactivate the account
-        // This is an atomic $set operation, guaranteeing the flags are updated.
-        const saved = await Person.findByIdAndUpdate(
-            id,
-            {
-                $set: {
-                    isActive: true, // ⭐ Sets the user as ACTIVE
-                    isPermanentlyDeleted: false // ⭐ Clears the permanent ban flag
-                }
-            },
-            { new: true }
-        )
-            // Ensure the response includes the fields the frontend uses to update the table row
-            .select("_id fullName email role isActive isPermanentlyDeleted reportsReceivedCount") 
-            .lean();
+        const userObj = {
+             _id: saved.id,
+             fullName: saved.fullName,
+             email: saved.email,
+             role: saved.role,
+             isActive: saved.isActive,
+             isPermanentlyDeleted: saved.isPermanentlyDeleted,
+             reportsReceivedCount: saved.reportsReceivedCount
+        };
 
-        if (!saved) {
-            return res.status(404).json({ error: "User not found" });
-        }
-
-        // 2. Notify the admin panel and other connected clients
-        req.io?.emit("admin:userChanged", { action: "unban", user: saved });
-
-        console.log(`[PATCH /people/:id/unban] Reactivated user: ${id}. New isActive: true`);
-        
-        // Return the updated user object
-        res.json({ message: "User account reactivated.", user: saved });
+        req.io?.emit("admin:userChanged", { action: "unban", user: userObj });
+        res.json({ message: "User account reactivated.", user: userObj });
 
     } catch (e) {
-        console.error("💥 PATCH /api/admin/people/:id/unban ERROR:", e);
-        res.status(500).json({ error: "Server error" });
+         console.error("💥 PATCH /api/admin/people/:id/unban ERROR:", e);
+         if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
+         res.status(500).json({ error: "Server error" });
     }
 });
 
-// PATCH /api/admin/people/:id/deactivate - Mute/Freeze (Sets isActive: false)
+// PATCH /api/admin/people/:id/deactivate
 router.patch("/people/:id/deactivate", async (req, res) => {
-    console.log("📡 [PATCH /api/admin/people/:id/deactivate] Params:", req.params);
-
     try {
         const { id } = req.params;
+        const saved = await prisma.user.update({
+            where: { id },
+            data: { isActive: false }
+        });
 
-        if (!mongoose.isValidObjectId(id)) {
-            return res.status(400).json({ error: "Invalid user id" });
-        }
+        const userObj = {
+            _id: saved.id,
+            fullName: saved.fullName,
+            email: saved.email,
+            role: saved.role,
+            isActive: saved.isActive,
+            isPermanentlyDeleted: saved.isPermanentlyDeleted
+        };
 
-        // Deactivate the user account (soft ban/mute)
-        const saved = await Person.findByIdAndUpdate(
-            id,
-            { $set: { isActive: false } },
-            { new: true }
-        )
-            .select("_id fullName email role isActive isPermanentlyDeleted")
-            .lean();
-
-        if (!saved) {
-            return res.status(404).json({ error: "User not found" });
-        }
-
-        req.io?.emit("admin:userChanged", { action: "deactivate", user: saved });
-
-        console.log(`[PATCH /people/:id/deactivate] Deactivated user (Muted): ${id}`);
-        res.json({ message: "User account deactivated (muted).", user: saved });
+        req.io?.emit("admin:userChanged", { action: "deactivate", user: userObj });
+        res.json({ message: "User account deactivated (muted).", user: userObj });
 
     } catch (e) {
-        console.error("💥 PATCH /api/admin/people/:id/deactivate ERROR:", e);
-        res.status(500).json({ error: "Server error" });
+         console.error("💥 PATCH /api/admin/people/:id/deactivate ERROR:", e);
+         if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
+         res.status(500).json({ error: "Server error" });
     }
 });
 
@@ -826,160 +640,115 @@ router.patch("/people/:id/deactivate", async (req, res) => {
  * ------------------------------------------------------------------ */
 
 router.post("/memberships", async (req, res) => {
-    console.log("📡 [POST /api/admin/memberships] Body:", req.body);
-
     try {
         const { personId, communityId } = req.body || {};
-        if (
-            !mongoose.isValidObjectId(personId) ||
-            !mongoose.isValidObjectId(communityId)
-        ) {
-            console.log(
-                "[POST /memberships] Invalid ids:",
-                "personId=",
-                personId,
-                "communityId=",
-                communityId
-            );
-            return res.status(400).json({ error: "Invalid ids" });
+        
+        if (!personId || !communityId) {
+             return res.status(400).json({ error: "Invalid ids" });
         }
 
-        const [person, community] = await Promise.all([
-            Person.findById(personId).select("_id fullName email avatar").lean(),
-            Community.findById(communityId).select("_id name").lean(),
-        ]);
-        if (!person || !community) {
-            console.log("[POST /memberships] User or community not found");
-            return res.status(404).json({ error: "User or community not found" });
-        }
-
-        const member = await Member.findOneAndUpdate(
-            { person: person._id, community: community._id },
-            {
-                $setOnInsert: {
-                    person: person._id,
-                    community: community._id,
-                    memberStatus: "active",
-                    role: "member",
-                },
-                $set: {
-                    name: person.fullName || person.email,
-                    email: person.email,
-                    avatar: person.avatar || "/default-avatar.png",
-                },
+        const member = await prisma.member.upsert({
+            where: {
+                userId_communityId: { userId: personId, communityId }
             },
-            { new: true, upsert: true }
-        ).lean();
+            create: {
+                userId: personId,
+                communityId,
+                memberStatus: "active",
+                role: "member"
+            },
+            update: {
+                memberStatus: "active"
+            },
+            include: {
+                user: true,
+                community: true
+            }
+        });
 
-        console.log("[POST /memberships] Upserted member:", member?._id);
-
-        await Person.updateOne(
-            { _id: person._id },
-            { $addToSet: { communityIds: community._id } }
-        );
+        const memberObj = {
+            _id: member.id,
+            person: member.userId,
+            community: member.communityId,
+            memberStatus: member.memberStatus,
+            role: member.role,
+            name: member.user.fullName,
+            email: member.user.email,
+            avatar: "/default-avatar.png",
+        };
 
         req.io?.to(ROOM(communityId)).emit("members:changed", {
             communityId: String(communityId),
             action: "upsert",
-            member,
+            member: memberObj,
         });
-        req.io?.emit("admin:membershipChanged", { action: "upsert", member });
+        req.io?.emit("admin:membershipChanged", { action: "upsert", member: memberObj });
 
-        res.status(201).json(member);
+        res.status(201).json(memberObj);
+
     } catch (e) {
         console.error("💥 POST /api/admin/memberships ERROR", e);
+        if (e.code === 'P2003') return res.status(404).json({ error: "User or community not found" });
         res.status(500).json({ error: "Server error" });
     }
 });
 
 router.delete("/memberships/:memberId", async (req, res) => {
-    console.log("📡 [DELETE /api/admin/memberships/:memberId] Params:", req.params);
-
     try {
         const { memberId } = req.params;
-        const m = await Member.findByIdAndDelete(memberId).lean();
-        if (!m) {
-            console.log("[DELETE /memberships/:memberId] Membership not found");
-            return res.status(404).json({ error: "Membership not found" });
-        }
+        
+        const m = await prisma.member.delete({
+            where: { id: memberId }
+        });
 
-        console.log("[DELETE /memberships/:memberId] Deleted membership:", memberId);
-
-        await Person.updateOne(
-            { _id: m.person },
-            { $pull: { communityIds: m.community } }
-        );
-
-        req.io?.to(ROOM(m.community)).emit("members:changed", {
-            communityId: String(m.community),
+        req.io?.to(ROOM(m.communityId)).emit("members:changed", {
+            communityId: String(m.communityId),
             action: "delete",
-            memberId: String(m._id),
+            memberId: String(m.id),
         });
         req.io?.emit("admin:membershipChanged", {
             action: "delete",
-            memberId: String(m._id),
+            memberId: String(m.id),
         });
 
         res.json({ message: "Removed" });
+
     } catch (e) {
         console.error("💥 DELETE /api/admin/memberships/:memberId ERROR", e);
+        if (e.code === 'P2025') return res.status(404).json({ error: "Membership not found" });
         res.status(500).json({ error: "Server error" });
     }
 });
 
 // DELETE /api/admin/people/:id
 router.delete("/people/:id", async (req, res) => {
-    console.log("📡 [DELETE /api/admin/people/:id] Params:", req.params);
-
     try {
         const { id } = req.params;
-
-        if (!mongoose.isValidObjectId(id)) {
-            console.log("[DELETE /people/:id] Invalid user id:", id);
-            return res.status(400).json({ error: "Invalid user id" });
+        if (id === req.user.id) {
+            return res.status(400).json({ error: "You cannot delete your own account." });
         }
 
-        if (String(id) === String(req.user.id)) {
-            console.log("[DELETE /people/:id] Attempt to delete self:", id);
-            return res
-                .status(400)
-                .json({ error: "You cannot delete your own account." });
-        }
-
-        const target = await Person.findById(id).select("_id role").lean();
-        if (!target) {
-            console.log("[DELETE /people/:id] User not found:", id);
-            return res.status(404).json({ error: "User not found" });
-        }
+        const target = await prisma.user.findUnique({ where: { id } });
+        if (!target) return res.status(404).json({ error: "User not found" });
 
         if (target.role === "admin") {
-            const adminsLeft = await Person.countDocuments({
-                role: "admin",
-                _id: { $ne: id },
+            const adminsLeft = await prisma.user.count({ 
+                where: { role: "admin", id: { not: id } } 
             });
             if (adminsLeft === 0) {
-                console.log(
-                    "[DELETE /people/:id] Attempt to delete last remaining admin"
-                );
-                return res
-                    .status(400)
-                    .json({ error: "Cannot delete the last remaining admin." });
+                return res.status(400).json({ error: "Cannot delete the last remaining admin." });
             }
         }
 
-        const removedMemberships = await Member.find({ person: id })
-            .select("_id community")
-            .lean();
-        await Member.deleteMany({ person: id });
+        const memberships = await prisma.member.findMany({ where: { userId: id } });
 
-        await Person.findByIdAndDelete(id);
-        console.log("[DELETE /people/:id] Deleted user and memberships:", id);
+        await prisma.user.delete({ where: { id } });
 
-        for (const m of removedMemberships) {
-            req.io?.to(ROOM(m.community)).emit("members:changed", {
-                communityId: String(m.community),
+        for (const m of memberships) {
+            req.io?.to(ROOM(m.communityId)).emit("members:changed", {
+                communityId: String(m.communityId),
                 action: "delete",
-                memberId: String(m._id),
+                memberId: String(m.id),
             });
         }
 
@@ -989,6 +758,7 @@ router.delete("/people/:id", async (req, res) => {
         });
 
         res.json({ message: "User deleted" });
+
     } catch (e) {
         console.error("💥 DELETE /api/admin/people/:id ERROR", e);
         res.status(500).json({ error: "Server error" });
@@ -1000,83 +770,54 @@ router.delete("/people/:id", async (req, res) => {
  * ------------------------------------------------------------------ */
 
 router.get("/dating/profiles/pending", async (req, res) => {
-    console.log("📡 [GET /api/admin/dating/profiles/pending] Query:", req.query);
-
     try {
         const { q = "", page = 1, limit = 50 } = req.query;
-
         const pg = Math.max(parseInt(page, 10) || 1, 1);
         const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
 
-        const baseFilter = {
-            $or: [
-                { isPhotoApproved: { $ne: true } },
-                { isProfileVisible: { $ne: true } },
+        const where = {
+            OR: [
+                { isPhotoApproved: false },
+                { isProfileVisible: false }
             ],
-            isSuspended: { $ne: true },
+            isSuspended: false
         };
 
-        console.log("[GET /dating/profiles/pending] Base filter:", baseFilter);
-
-        const allProfiles = await DatingProfile.find(baseFilter)
-            .sort({ createdAt: -1 })
-            .populate({
-                path: "person",
-                select: "_id fullName email role collegeSlug religionKey",
-            })
-            .lean();
-
-        console.log(
-            "[GET /dating/profiles/pending] Found profiles:",
-            allProfiles.length
-        );
-
-        let filtered = allProfiles;
-
         if (q) {
-            const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-            filtered = allProfiles.filter((p) => {
-                const fullName = p.person?.fullName || "";
-                const email = p.person?.email || "";
-                return rx.test(fullName) || rx.test(email);
-            });
-            console.log(
-                "[GET /dating/profiles/pending] After q filter:",
-                filtered.length
-            );
+            where.user = {
+                OR: [
+                    { fullName: { contains: q, mode: 'insensitive' } },
+                    { email: { contains: q, mode: 'insensitive' } }
+                ]
+            };
         }
 
-        filtered = filtered.filter((p) => !!p.person);
-        console.log(
-            "[GET /dating/profiles/pending] After person exists filter:",
-            filtered.length
-        );
+        const [profiles, total] = await Promise.all([
+            prisma.datingProfile.findMany({
+                where,
+                skip: (pg - 1) * lim,
+                take: lim,
+                orderBy: { createdAt: 'desc' },
+                include: { user: true }
+            }),
+            prisma.datingProfile.count({ where })
+        ]);
 
-        const total = filtered.length;
-        const start = (pg - 1) * lim;
-        const pageItems = filtered.slice(start, start + lim);
-
-        const items = pageItems.map((p) => ({
-            _id: p._id,
-            person: p.person?._id,
-            personName: p.person?.fullName || p.person?.email || "Unknown",
-            personEmail: p.person?.email || "",
-            photos: p.photos || [],
-            bio: p.bio || "",
-            gender: p.gender || null,
-            seeking: Array.isArray(p.seeking) ? p.seeking : [],
-            yearOfStudy: p.yearOfStudy || null,
-            isPhotoApproved: !!p.isPhotoApproved,
-            isProfileVisible: !!p.isProfileVisible,
-            isSuspended: !!p.isSuspended,
-            createdAt: p.createdAt,
+        const items = profiles.map(p => ({
+            _id: p.id,
+            person: p.userId,
+            personName: p.user.fullName || p.user.email || "Unknown",
+            personEmail: p.user.email,
+            photos: p.photos,
+            bio: p.bio,
+            gender: p.gender,
+            seeking: p.seeking,
+            yearOfStudy: p.yearOfStudy,
+            isPhotoApproved: p.isPhotoApproved,
+            isProfileVisible: p.isProfileVisible,
+            isSuspended: p.isSuspended,
+            createdAt: p.createdAt
         }));
-
-        console.log(
-            "[GET /dating/profiles/pending] Returning",
-            items.length,
-            "items"
-        );
 
         res.json({
             items,
@@ -1091,101 +832,79 @@ router.get("/dating/profiles/pending", async (req, res) => {
     }
 });
 
-// PATCH /api/admin/dating/profiles/:id/approve
 router.patch("/dating/profiles/:id/approve", async (req, res) => {
-    console.log(
-        "📡 [PATCH /api/admin/dating/profiles/:id/approve] Params:",
-        req.params
-    );
-
     try {
         const { id } = req.params;
-        if (!mongoose.isValidObjectId(id)) {
-            console.log("[PATCH /dating/profiles/:id/approve] Invalid profile id");
-            return res.status(400).json({ error: "Invalid profile id" });
-        }
-
-        const profile = await DatingProfile.findByIdAndUpdate(
-            id,
-            {
-                $set: {
-                    isPhotoApproved: true,
-                    isProfileVisible: true,
-                    isSuspended: false,
-                },
+        const profile = await prisma.datingProfile.update({
+            where: { id },
+            data: {
+                isPhotoApproved: true,
+                isProfileVisible: true,
+                isSuspended: false
             },
-            { new: true }
-        )
-            .populate("person", "_id fullName email role collegeSlug religionKey")
-            .lean();
+            include: { user: true }
+        });
 
-        if (!profile) {
-            console.log("[PATCH /dating/profiles/:id/approve] Profile not found");
-            return res.status(404).json({ error: "Profile not found" });
-        }
-
-        console.log(
-            "[PATCH /dating/profiles/:id/approve] Approved profile:",
-            profile._id
-        );
+        const pObj = {
+            ...profile,
+             person: {
+                 _id: profile.user.id,
+                 fullName: profile.user.fullName,
+                 email: profile.user.email,
+                 role: profile.user.role,
+                 collegeSlug: profile.user.collegeSlug,
+                 religionKey: profile.user.religionKey
+             }
+        };
 
         req.io?.emit("admin:datingProfileChanged", {
             action: "approve",
-            profile,
+            profile: pObj,
         });
 
-        res.json({ message: "Profile approved", profile });
+        res.json({ message: "Profile approved", profile: pObj });
+
     } catch (e) {
         console.error("💥 PATCH /api/admin/dating/profiles/:id/approve ERROR", e);
+        if (e.code === 'P2025') return res.status(404).json({ error: "Profile not found" });
         res.status(500).json({ error: "Server error" });
     }
 });
 
-// PATCH /api/admin/dating/profiles/:id/suspend
 router.patch("/dating/profiles/:id/suspend", async (req, res) => {
-    console.log(
-        "📡 [PATCH /api/admin/dating/profiles/:id/suspend] Params:",
-        req.params
-    );
-
     try {
         const { id } = req.params;
-        if (!mongoose.isValidObjectId(id)) {
-            console.log("[PATCH /dating/profiles/:id/suspend] Invalid profile id");
-            return res.status(400).json({ error: "Invalid profile id" });
-        }
-
-        const profile = await DatingProfile.findByIdAndUpdate(
-            id,
-            {
-                $set: {
-                    isSuspended: true,
-                    isProfileVisible: false,
-                },
+        const profile = await prisma.datingProfile.update({
+            where: { id },
+            data: {
+                isSuspended: true,
+                isProfileVisible: false
             },
-            { new: true }
-        )
-            .populate("person", "_id fullName email role collegeSlug religionKey")
-            .lean();
+            include: { user: true }
+        });
 
-        if (!profile) {
-            console.log("[PATCH /dating/profiles/:id/suspend] Profile not found");
-            return res.status(404).json({ error: "Profile not found" });
-        }
-
-        console.log(
-            "[PATCH /dating/profiles/:id/suspend] Suspended profile:",
-            profile._id
-        );
+        const pObj = {
+            ...profile,
+             person: {
+                 _id: profile.user.id,
+                 fullName: profile.user.fullName,
+                 email: profile.user.email,
+                 role: profile.user.role,
+                 collegeSlug: profile.user.collegeSlug,
+                 religionKey: profile.user.religionKey
+             }
+        };
 
         req.io?.emit("admin:datingProfileChanged", {
             action: "suspend",
-            profile,
+            profile: pObj,
         });
 
-        res.json({ message: "Profile suspended", profile });
+        res.json({ message: "Profile suspended", profile: pObj });
+
     } catch (e) {
         console.error("💥 PATCH /api/admin/dating/profiles/:id/suspend ERROR", e);
+        if (e.code === 'P2025') return res.status(404).json({ error: "Profile not found" });
         res.status(500).json({ error: "Server error" });
     }
 });

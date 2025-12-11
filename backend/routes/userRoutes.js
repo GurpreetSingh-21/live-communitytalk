@@ -1,8 +1,7 @@
 // backend/routes/userRoutes.js
 const express = require("express");
 const router = express.Router();
-const Person = require("../person"); // Your Person model
-const Member = require("../models/Member"); // ✅ Import Member model for sync
+const prisma = require("../prisma/client");
 const { uploadToImageKit } = require("../services/imagekitService");
 const authenticate = require("../middleware/authenticate");
 
@@ -22,39 +21,49 @@ router.post("/avatar", async (req, res) => {
       return res.status(400).json({ error: "No image data provided" });
     }
 
-    // 1. Prepare file name (e.g., avatar_USERID_TIMESTAMP.jpg)
+    // 1. Prepare file name
     const fileName = `avatar_${userId}_${Date.now()}.${fileExtension || "jpg"}`;
 
     // 2. Upload to ImageKit
-    // Note: imageData should be the base64 string
     const uploadResponse = await uploadToImageKit(imageData, fileName);
 
     if (!uploadResponse || !uploadResponse.url) {
       throw new Error("Failed to get download URL from ImageKit");
     }
 
-    // 3. Update User in Person Collection (Source of Truth)
-    const updatedUser = await Person.findByIdAndUpdate(
-      userId,
-      { avatar: uploadResponse.url },
-      { new: true }
-    ).select("-password"); // Return user info but exclude password
+    // 3. Update User in DB
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { avatar: uploadResponse.url },
+    });
 
-    if (!updatedUser) {
-      return res.status(404).json({ error: "User not found" });
+    // 4. SYNC: Update all Membership records for this user
+    try {
+        await prisma.member.updateMany({
+            where: { userId: userId },
+            data: { avatar: uploadResponse.url }
+        });
+    } catch (syncErr) {
+        console.warn("Avatar sync warning:", syncErr);
+        // Don't fail the request if sync fails, but log it.
     }
 
-    // 4. ✅ SYNC: Update all Membership records for this user in Member Collection
-    // This ensures the new avatar appears immediately in community member lists
-    await Member.updateMany(
-      { person: userId },
-      { $set: { avatar: uploadResponse.url } }
-    );
+    // Return user info excluding sensitive data
+    const safeUser = {
+        id: updatedUser.id,
+        fullName: updatedUser.fullName,
+        email: updatedUser.email,
+        avatar: updatedUser.avatar,
+        role: updatedUser.role,
+        collegeSlug: updatedUser.collegeSlug,
+        religionKey: updatedUser.religionKey,
+        bio: updatedUser.bio
+    };
 
     return res.json({
       message: "Avatar updated successfully",
       avatar: updatedUser.avatar,
-      user: updatedUser,
+      user: safeUser,
     });
 
   } catch (error) {
@@ -71,15 +80,33 @@ router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await Person.findById(id)
-      .select("fullName avatar email collegeSlug religionKey bio")
-      .lean();
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+          id: true,
+          fullName: true,
+          avatar: true,
+          email: true,
+          collegeSlug: true,
+          religionKey: true,
+          bio: true
+      }
+    });
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    return res.json(user);
+    // Rename id -> _id if frontend expects it (legacy compatibility)
+    // Actually, let's keep it consistant with other routes which return _id for now
+    // But moving forward we should prefer id. 
+    // Mongoose usually returned _id.
+    const responseUser = {
+        _id: user.id, // Legacy compat
+        ...user
+    };
+
+    return res.json(responseUser);
   } catch (err) {
     console.error("[User Routes] GET error:", err);
     return res.status(500).json({ error: "Failed to fetch user" });

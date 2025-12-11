@@ -22,7 +22,8 @@ const { createAdapter } = require("@socket.io/redis-adapter");
 const Redis = require("ioredis");
 
 // 🔌 Database
-const { connectDB } = require("./db");
+// 🔌 Database (Prisma)
+const prisma = require("./prisma/client");
 
 // 👥 Presence Tracker (Redis-backed)
 const presence = require("./presence");
@@ -47,9 +48,9 @@ const reactionRoutes = require('./routes/reactionRoutes');
 const twoFactorRoutes = require('./routes/twoFactorRoutes');
 
 // 📦 Models
-const Person = require("./person");
-const Member = require("./models/Member");
-const Message = require("./models/Message");
+// const Person = require("./person");
+// const Member = require("./models/Member");
+// const Message = require("./models/Message");
 
 // ⚙️ App + Server
 const app = express();
@@ -197,22 +198,24 @@ io.use(async (socket, next) => {
 
     console.log("✅ [Socket Auth] Token decoded:", decoded);
 
-    const user = await Person.findById(decoded.id).lean();
+    // ✅ Prisma Auth
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
     if (!user) return next(new Error("User not found"));
 
     // ✅ Use Member.memberStatus + role (not legacy `status`)
-    const memberships = await Member.find({
-      person: user._id,
-      memberStatus: "active",
-    })
-      .select("community")
-      .lean();
+    const memberships = await prisma.member.findMany({
+      where: {
+        userId: user.id,
+        memberStatus: "active",
+      },
+      select: { communityId: true },
+    });
 
-    const communityIds = memberships.map((m) => String(m.community));
+    const communityIds = memberships.map((m) => m.communityId);
 
     socket.user = {
-      id: String(user._id),
-      fullName: user.fullName || user.name || "",
+      id: user.id,
+      fullName: user.fullName || "",
       email: user.email,
       communityIds,
     };
@@ -327,19 +330,23 @@ io.on("connection", async (socket) => {
         console.log('📩 [SOCKET REPLY] Processing reply to:', sanitizedReplyTo);
       }
 
-      // Save message (trusted path)
-      const saved = await Message.create({
-        communityId,
-        content: sanitizedContent,
-        senderId: uid,
-        sender: socket.user.fullName || socket.user.email,
-        timestamp: new Date(),
-        clientMessageId,
-        replyTo: sanitizedReplyTo,
+      // Save message (Prisma)
+      const saved = await prisma.message.create({
+        data: {
+          communityId,
+          content: sanitizedContent,
+          senderId: uid,
+          senderName: socket.user.fullName || socket.user.email, // Snapshot
+          clientMessageId,
+          replyToSnapshot: sanitizedReplyTo ? sanitizedReplyTo : undefined, // JSON
+          // If using relation for replyTo
+          replyToId: sanitizedReplyTo?.messageId ? sanitizedReplyTo.messageId : undefined,
+          status: "sent",
+        },
       });
 
       const payload = {
-        ...saved.toObject(),
+        ...saved,
         clientMessageId,
       };
 
@@ -360,14 +367,17 @@ io.on("connection", async (socket) => {
   // 📨 Message Delivery Receipt
   socket.on("message:delivered", async ({ messageId }) => {
     try {
-      const message = await Message.findById(messageId);
+      const message = await prisma.message.findUnique({ where: { id: messageId } });
       if (message && message.status === "sent") {
-        await message.markDelivered();
+        const updated = await prisma.message.update({
+          where: { id: messageId },
+          data: { status: "delivered", deliveredAt: new Date() },
+        });
         // Notify sender
-        io.to(String(message.senderId)).emit("message:status", {
+        io.to(updated.senderId).emit("message:status", {
           messageId,
           status: "delivered",
-          deliveredAt: message.deliveredAt
+          deliveredAt: updated.deliveredAt,
         });
       }
     } catch (err) {
@@ -378,14 +388,17 @@ io.on("connection", async (socket) => {
   // 📖 Message Read Receipt
   socket.on("message:read", async ({ messageId }) => {
     try {
-      const message = await Message.findById(messageId);
+      const message = await prisma.message.findUnique({ where: { id: messageId } });
       if (message && message.status !== "deleted") {
-        await message.markRead();
+        const updated = await prisma.message.update({
+          where: { id: messageId },
+          data: { status: "read", readAt: new Date() },
+        });
         // Notify sender
-        io.to(String(message.senderId)).emit("message:status", {
+        io.to(updated.senderId).emit("message:status", {
           messageId,
           status: "read",
-          readAt: message.readAt
+          readAt: updated.readAt,
         });
       }
     } catch (err) {
@@ -553,7 +566,9 @@ process.on("unhandledRejection", (reason) => {
 
 (async () => {
   try {
-    await connectDB();
+    // Verify Prisma Connection
+    await prisma.$connect();
+    console.log("✅ Prisma connected to Postgres.");
 
     const HOST = "0.0.0.0";
     const lanIp = getLanIPv4();

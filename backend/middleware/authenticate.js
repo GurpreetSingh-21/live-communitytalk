@@ -1,8 +1,6 @@
 // backend/middleware/authenticate.js
 const jwt = require("jsonwebtoken");
-const Person = require("../person");
-const Member = require("../models/Member");
-const Community = require("../models/Community"); // must expose { type, key/slug }
+const prisma = require("../prisma/client");
 require("dotenv").config();
 
 /** Extract a JWT from common places */
@@ -47,23 +45,26 @@ function getTokenFromRequest(req) {
 }
 
 /** Best-effort derivation of collegeSlug / religionKey from memberships */
+/** Best-effort derivation of collegeSlug / religionKey from memberships */
 async function deriveUserScope(userDoc) {
   try {
     // Find active/owner memberships
-    const memberships = await Member.find({
-      person: userDoc._id,
-      status: { $in: ["active", "owner"] },
-    })
-      .select("community")
-      .lean();
+    const memberships = await prisma.member.findMany({
+      where: {
+        userId: userDoc.id,
+        memberStatus: { in: ["active", "owner"] },
+      },
+      select: { communityId: true },
+    });
 
-    const ids = memberships.map((m) => m.community).filter(Boolean);
+    const ids = memberships.map((m) => m.communityId).filter(Boolean);
     if (!ids.length) return { collegeSlug: null, religionKey: null };
 
     // Look up the communities by id to inspect type + key/slug
-    const comms = await Community.find({ _id: { $in: ids } })
-      .select("type key slug")
-      .lean();
+    const comms = await prisma.community.findMany({
+      where: { id: { in: ids } },
+      select: { type: true, key: true, slug: true },
+    });
 
     const college = comms.find((c) => c.type === "college");
     const religion = comms.find((c) => c.type === "religion");
@@ -120,16 +121,19 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ error: "Malformed token", code: "MALFORMED_TOKEN" });
     }
 
-    // Load user (not lean so we can access instance fields if needed)
-    const userDoc = await Person.findById(decoded.id).exec();
+    // Load user
+    const userDoc = await prisma.user.findUnique({
+      where: { id: decoded.id },
+    });
+    
     if (!userDoc) {
       return res.status(401).json({ error: "User not found", code: "USER_NOT_FOUND" });
     }
 
     // Shape the user object that routes expect
     const user = {
-      id: String(userDoc._id),
-      _id: String(userDoc._id),
+      id: userDoc.id,
+      _id: userDoc.id,
       email: userDoc.email,
       fullName: userDoc.fullName || userDoc.name || "",
       name: userDoc.fullName || userDoc.name || "",
@@ -145,10 +149,6 @@ async function authenticate(req, res, next) {
       const derived = await deriveUserScope(userDoc);
       user.collegeSlug = user.collegeSlug || derived.collegeSlug;
       user.religionKey = user.religionKey || derived.religionKey;
-      // (Optional) you could persist back to the Person doc here if desired:
-      // if (derived.collegeSlug && !userDoc.collegeSlug) userDoc.collegeSlug = derived.collegeSlug;
-      // if (derived.religionKey && !userDoc.religionKey) userDoc.religionKey = derived.religionKey;
-      // await userDoc.save().catch(() => {});
     }
 
     req.user = user;

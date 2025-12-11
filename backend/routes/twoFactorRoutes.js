@@ -5,7 +5,7 @@ const speakeasy = require("speakeasy");
 const QRCode = require("qrcode");
 const bcrypt = require("bcryptjs");
 
-const Person = require("../person");
+const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
 
 router.use(authenticate);
@@ -16,7 +16,12 @@ router.post("/setup", async (req, res) => {
   try {
     const userId = req.user.id;
     
-    const user = await Person.findById(userId).select("+twoFactorSecret");
+    // Check if enabled
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { twoFactorEnabled: true, email: true }
+    });
+
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
@@ -28,12 +33,15 @@ router.post("/setup", async (req, res) => {
     // Generate secret
     const secret = speakeasy.generateSecret({
       name: `CommunityTalk (${user.email})`,
-      length: 32
+      length: 20 // Default is usually fine, 20 is standard (32 chars in base32)
     });
 
     // Temporarily store secret (not enabled yet)
-    user.twoFactorSecret = secret.base32;
-    await user.save();
+    // We update the user with the secret but flag remains false
+    await prisma.user.update({
+        where: { id: userId },
+        data: { twoFactorSecret: secret.base32 }
+    });
 
     // Generate QR code
     const qrCodeUrl = await QRCode.toDataURL(secret.otpauth_url);
@@ -61,10 +69,13 @@ router.post("/verify-setup", async (req, res) => {
       return res.status(400).json({ error: "Verification code is required" });
     }
 
-    const user = await Person.findById(userId).select("+twoFactorSecret +twoFactorBackupCodes");
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    // Retrieve secret
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { twoFactorSecret: true }
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     if (!user.twoFactorSecret) {
       return res.status(400).json({ error: "2FA setup not initiated. Call /setup first." });
@@ -85,18 +96,23 @@ router.post("/verify-setup", async (req, res) => {
     // Generate backup codes
     const backupCodes = [];
     for (let i = 0; i < 10; i++) {
-      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-      backupCodes.push(code);
+      const c = Math.random().toString(36).substring(2, 10).toUpperCase();
+      backupCodes.push(c);
     }
 
     // Hash backup codes before storing
     const hashedBackupCodes = await Promise.all(
-      backupCodes.map(code => bcrypt.hash(code, 10))
+        backupCodes.map(c => bcrypt.hash(c, 10))
     );
 
-    user.twoFactorEnabled = true;
-    user.twoFactorBackupCodes = hashedBackupCodes;
-    await user.save();
+    // Enable 2FA and save codes
+    await prisma.user.update({
+        where: { id: userId },
+        data: {
+            twoFactorEnabled: true,
+            twoFactorBackupCodes: hashedBackupCodes
+        }
+    });
 
     return res.json({
       message: "2FA successfully enabled",
@@ -119,22 +135,28 @@ router.post("/disable", async (req, res) => {
       return res.status(400).json({ error: "Password is required to disable 2FA" });
     }
 
-    const user = await Person.findById(userId).select("+password +twoFactorSecret +twoFactorBackupCodes");
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { password: true } // Need password hash
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     // Verify password
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password || "");
     if (!isMatch) {
       return res.status(401).json({ error: "Incorrect password" });
     }
 
     // Disable 2FA
-    user.twoFactorEnabled = false;
-    user.twoFactorSecret = undefined;
-    user.twoFactorBackupCodes = [];
-    await user.save();
+    await prisma.user.update({
+        where: { id: userId },
+        data: {
+            twoFactorEnabled: false,
+            twoFactorSecret: null,
+            twoFactorBackupCodes: []
+        }
+    });
 
     return res.json({ message: "2FA disabled successfully" });
   } catch (err) {
@@ -154,17 +176,22 @@ router.post("/backup-codes", async (req, res) => {
       return res.status(400).json({ error: "Password is required" });
     }
 
-    const user = await Person.findById(userId).select("+password +twoFactorBackupCodes");
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
-    }
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+            password: true,
+            twoFactorEnabled: true
+        }
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     if (!user.twoFactorEnabled) {
       return res.status(400).json({ error: "2FA is not enabled" });
     }
 
     // Verify password
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password || "");
     if (!isMatch) {
       return res.status(401).json({ error: "Incorrect password" });
     }
@@ -172,17 +199,19 @@ router.post("/backup-codes", async (req, res) => {
     // Generate new backup codes
     const backupCodes = [];
     for (let i = 0; i < 10; i++) {
-      const code = Math.random().toString(36).substring(2, 10).toUpperCase();
-      backupCodes.push(code);
+        const c = Math.random().toString(36).substring(2, 10).toUpperCase();
+        backupCodes.push(c);
     }
 
     // Hash backup codes
     const hashedBackupCodes = await Promise.all(
-      backupCodes.map(code => bcrypt.hash(code, 10))
+        backupCodes.map(c => bcrypt.hash(c, 10))
     );
 
-    user.twoFactorBackupCodes = hashedBackupCodes;
-    await user.save();
+    await prisma.user.update({
+        where: { id: userId },
+        data: { twoFactorBackupCodes: hashedBackupCodes }
+    });
 
     return res.json({
       message: "New backup codes generated",
@@ -200,7 +229,12 @@ router.get("/status", async (req, res) => {
   try {
     const userId = req.user.id;
     
-const user = await Person.findById(userId).select("twoFactorEnabled");
+    // Efficient select
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { twoFactorEnabled: true }
+    });
+
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }

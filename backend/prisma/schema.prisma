@@ -1,0 +1,337 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── User / Person ─────────────────────────
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Identity
+  fullName String?
+  email    String  @unique
+  password String // Hashed
+  avatar   String  @default("/default-avatar.png")
+  bio      String?
+
+  // Account Status
+  emailVerified    Boolean @default(false)
+  role             Role    @default(user) // user, mod, admin
+  isActive         Boolean @default(true)
+  verificationCode String?
+
+  // Moderation
+  reportsReceivedCount Int     @default(0)
+  isPermanentlyDeleted Boolean @default(false)
+
+  // College & Religion Scope
+  collegeName String?
+  collegeSlug String?
+  religionKey String?
+
+  // Preferences (JSON)
+  notificationPrefs Json? // pushEnabled, etc.
+  privacyPrefs      Json? // showOnlineStatus, etc.
+
+  // Push Tokens
+  pushTokens String[]
+
+  // Two Factor
+  twoFactorEnabled     Boolean  @default(false)
+  twoFactorSecret      String?
+  twoFactorBackupCodes String[]
+
+  // Relations
+  memberships    Member[]
+  messages       Message[]       @relation("UserMessages")
+  reactions      Reaction[]
+  directMessagesFrom DirectMessage[] @relation("DMFrom")
+  directMessagesTo   DirectMessage[] @relation("DMTo")
+  dmReactions    DirectMessageReaction[]
+  
+  // Dating
+  hasDatingProfile Boolean        @default(false)
+  datingProfile    DatingProfile?
+
+  // Reporting
+  reportsMade    Report[] @relation("Reporter")
+  reportsAgainst Report[] @relation("Reported")
+
+  @@map("users")
+}
+
+enum Role {
+  user
+  mod
+  admin
+}
+
+// ───────────────────────── Metadata / Directory ─────────────────────────
+model College {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name         String   @unique
+  key          String   @unique // qc, baruch
+  emailDomains String[] 
+  
+  // Link to the community chat
+  communityId String
+  community   Community @relation(fields: [communityId], references: [id])
+
+  @@index([emailDomains])
+  @@map("colleges")
+}
+
+// ───────────────────────── Community ─────────────────────────
+model Community {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name        String
+  type        CommunityType @default(custom) // college, religion, custom
+  key         String? // Stable identifier
+  slug        String? @unique
+  description String?
+  isPrivate   Boolean @default(false)
+  tags        String[]
+
+  createdBy   String? // ID of creator (optional)
+
+  // Relations
+  members  Member[]
+  messages Message[]
+  colleges College[]
+
+  @@index([type, key])
+  @@map("communities")
+}
+
+enum CommunityType {
+  college
+  religion
+  custom
+}
+
+// ───────────────────────── Member (Join table) ─────────────────────────
+model Member {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId      String
+  communityId String
+
+  // Profile overrides
+  name   String // Display name in this community
+  avatar String @default("/default-avatar.png")
+
+  role         MemberRole   @default(member)
+  memberStatus MemberStatus @default(active)
+
+  // Token
+  fcmToken String?
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId]) // One membership per user per community
+  @@index([communityId, memberStatus])
+  @@map("members")
+}
+
+enum MemberRole {
+  member
+  admin
+  owner
+}
+
+enum MemberStatus {
+  active
+  invited
+  banned
+  online // Legacy?
+  owner // Legacy?
+}
+
+// ───────────────────────── Messages (Community) ─────────────────────────
+model Message {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  content     String
+  attachments Json? // Array of { url, type, name, size }
+
+  // Meta
+  clientMessageId String?
+  status          MessageStatus @default(sent)
+  isDeleted       Boolean       @default(false)
+  deletedAt       DateTime?
+  editedAt        DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+
+  // Sender info (snapshot)
+  senderName String // Captured at send time
+
+  // Relations
+  senderId    String
+  communityId String
+  
+  sender    User      @relation("UserMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  // Reply
+  replyToId   String?
+  replyTo     Message?  @relation("ReplyTo", fields: [replyToId], references: [id])
+  replies     Message[] @relation("ReplyTo")
+  
+  // Reply snapshot (for performance/simplicity, as per Mongo schema)
+  replyToSnapshot Json? // { messageId, sender, content }
+
+  reactions Reaction[]
+
+  @@index([communityId, createdAt(sort: Desc)])
+  @@map("messages")
+}
+
+enum MessageStatus {
+  sent
+  delivered
+  read
+  edited
+  deleted
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  emoji String
+
+  messageId String
+  userId    String
+  
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reactions")
+}
+
+// ───────────────────────── Direct Messages ─────────────────────────
+model DirectMessage {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  content     String?
+  type        DMType  @default(text)
+  attachments Json?
+
+  status      MessageStatus @default(sent)
+  isDeleted   Boolean       @default(false)
+  deletedAt   DateTime?
+  editedAt    DateTime?
+  deliveredAt DateTime?
+  readAt      DateTime?
+
+  fromId String
+  toId   String
+
+  from User @relation("DMFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to   User @relation("DMTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  reactions DirectMessageReaction[]
+
+  @@index([fromId, toId, createdAt])
+  @@map("direct_messages")
+}
+
+enum DMType {
+  text
+  photo
+  video
+  audio
+  file
+}
+
+model DirectMessageReaction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  emoji String
+
+  dmId   String
+  userId String
+  
+  dm     DirectMessage @relation(fields: [dmId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("dm_reactions")
+}
+
+// ───────────────────────── Dating ─────────────────────────
+model DatingProfile {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name        String
+  bio         String?
+  gender      String // Enum in code
+  seeking     String[] // Array of genders
+  yearOfStudy String   @default("other")
+  
+  photos      String[] // URLs
+
+  // Scope
+  collegeSlug String
+  religionKey String?
+
+  // Moderation
+  isProfileVisible Boolean @default(false)
+  isPhotoApproved  Boolean @default(false)
+  isSuspended      Boolean @default(false)
+
+  // Matching
+  likes    String[] // IDs of liked profiles
+  dislikes String[] // IDs of disliked profiles
+  matches  String[] // IDs of matches
+
+  @@index([collegeSlug, religionKey, gender, isProfileVisible])
+  @@map("dating_profiles")
+}
+
+// ───────────────────────── Reports ─────────────────────────
+model Report {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  
+  reason    String
+  details   String?
+  status    String @default("pending") // pending, resolved, dismissed
+
+  reporterId String
+  reporter   User   @relation("Reporter", fields: [reporterId], references: [id])
+
+  reportedId String
+  reported   User   @relation("Reported", fields: [reportedId], references: [id])
+
+  targetType String // "message", "user", "post"
+  targetId   String?
+
+  @@map("reports")
+}

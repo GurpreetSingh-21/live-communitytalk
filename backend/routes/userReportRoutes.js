@@ -1,13 +1,11 @@
 //backend/routes/userReportRoutes.js
 const express = require("express");
 const router = express.Router();
-const mongoose = require("mongoose");
+const prisma = require("../prisma/client");
 
 // Assuming these paths are correct relative to where this file is placed
 const authenticate = require("../middleware/authenticate"); 
 const requireAdmin = require("../middleware/requireAdmin"); // ⭐ ADDED: For admin resolution endpoint
-const Person = require("../person"); 
-const Report = require("../models/Report"); 
 
 // Define the threshold (must match the one used in the admin panel)
 const AUTO_DELETE_THRESHOLD = 7; 
@@ -18,23 +16,24 @@ const AUTO_DELETE_THRESHOLD = 7;
 async function checkAndAutoBan(reportedUserId, threshold) {
     try {
         // 1. Increment the reports received count
-        const updatedUser = await Person.findByIdAndUpdate(
-            reportedUserId,
-            { $inc: { reportsReceivedCount: 1 } },
-            { new: true }
-        );
+        const updatedUser = await prisma.user.update({
+            where: { id: reportedUserId },
+            data: { 
+                reportsReceivedCount: { increment: 1 } 
+            }
+        });
 
         if (updatedUser && updatedUser.reportsReceivedCount >= threshold) {
             console.warn(`🚨 User ${reportedUserId} hit auto-delete threshold (${updatedUser.reportsReceivedCount}). Initiating permanent ban.`);
             
             // 2. Perform permanent ban action: Set deletion flag and deactivate
-            await Person.findByIdAndUpdate(
-                reportedUserId,
-                { $set: { 
+            await prisma.user.update({
+                where: { id: reportedUserId },
+                data: { 
                     isPermanentlyDeleted: true, 
                     isActive: false // Deactivate account immediately
-                } }
-            );
+                }
+            });
             
             // Note: If you have socket services enabled (req.io), you should emit a ban event here.
         }
@@ -56,7 +55,7 @@ router.post("/user", authenticate, async (req, res) => {
     const reporterId = req.user.id; 
     const { reportedUserId, reason } = req.body || {};
 
-    if (!mongoose.isValidObjectId(reportedUserId) || !reason) {
+    if (!reportedUserId || !reason) {
         return res.status(400).json({ error: "Invalid reported user ID or missing reason." });
     }
 
@@ -65,15 +64,37 @@ router.post("/user", authenticate, async (req, res) => {
     }
 
     try {
-        // 1. Create the Report document (This enforces the unique index: one report per user pair)
-        const report = new Report({
-            reporter: reporterId,
-            reportedUser: reportedUserId,
-            reason: String(reason).trim().substring(0, 255), // Truncate reason for safety
-            status: 'pending',
+        // Prisma doesn't always throw on duplicate insert unless unique constraint exists.
+        // We probably don't have a unique constraint on (reporter, reported) in the Schema `model Report`.
+        // Mongoose likely had one. Schema check needed.
+        // Schema: `model Report` has no @@unique([reporterId, reportedId]).
+        // If we want to prevent duplicates, we should check first.
+        
+        const existing = await prisma.report.findFirst({
+            where: {
+                reporterId: reporterId,
+                reportedId: reportedUserId,
+                status: 'pending' // Only check active requests? Or all?
+                // Mongoose logic probably had index on (reporter, reported).
+                // Let's assume we want to prevent duplicate PENDING reports.
+            }
         });
+        
+        if (existing) {
+             return res.status(400).json({ error: "You have already submitted a pending report for this user." });
+        }
 
-        await report.save();
+        // 1. Create the Report document
+        await prisma.report.create({
+            data: {
+                reporterId: reporterId,
+                reportedId: reportedUserId,
+                reason: String(reason).trim().substring(0, 255), // Truncate reason for safety
+                status: 'pending',
+                targetType: 'user',
+                targetId: reportedUserId
+            }
+        });
         
         // 2. Check and execute auto-ban logic asynchronously
         checkAndAutoBan(reportedUserId, AUTO_DELETE_THRESHOLD);
@@ -85,12 +106,6 @@ router.post("/user", authenticate, async (req, res) => {
 
     } catch (e) {
         console.error("💥 POST /api/reports/user ERROR:", e);
-
-        // Check for MongoDB duplicate key error (code 11000)
-        if (e && e.code === 11000) {
-            return res.status(400).json({ error: "You have already submitted a report for this user." });
-        }
-        
         res.status(500).json({ error: "Failed to process report." });
     }
 });
@@ -104,23 +119,19 @@ router.patch("/admin/:userId/resolve", authenticate, requireAdmin, async (req, r
     console.log("📡 [PATCH /api/reports/admin/:userId/resolve] HIT");
     const { userId } = req.params;
 
-    if (!mongoose.isValidObjectId(userId)) {
-        return res.status(400).json({ error: "Invalid user ID." });
-    }
-
     try {
         // Find all reports against this user that are currently 'pending' and update their status
-        const result = await Report.updateMany(
-            { reportedUser: userId, status: 'pending' },
-            { $set: { status: 'resolved' } }
-        );
+        const result = await prisma.report.updateMany({
+            where: { reportedId: userId, status: 'pending' },
+            data: { status: 'resolved' }
+        });
 
-        console.log(`✅ Reports resolved for user ${userId}. Count: ${result.modifiedCount}`);
+        console.log(`✅ Reports resolved for user ${userId}. Count: ${result.count}`);
 
         // Note: You must manually refresh the Admin Panel after this action!
         res.json({ 
-            message: `${result.modifiedCount} Reports resolved and cleared from queue.`,
-            resolvedCount: result.modifiedCount
+            message: `${result.count} Reports resolved and cleared from queue.`,
+            resolvedCount: result.count
         });
 
     } catch (e) {

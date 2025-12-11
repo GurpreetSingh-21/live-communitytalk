@@ -1,409 +1,306 @@
 // backend/routes/datingRoutes.js
 const express = require("express");
-const mongoose = require("mongoose");
-
 const router = express.Router();
-
+const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
-const Person = require("../person");
-const DatingProfile = require("../models/DatingProfile");
 
 // All routes require a valid JWT
 router.use(authenticate);
 
-// Helper: fields we expose to the client (no likes/dislikes arrays)
-const datingProfileProjection = {
-  person: 1,
-  name: 1,
-  collegeSlug: 1,
-  religionKey: 1,
-  photos: 1,
-  bio: 1,
-  gender: 1,
-  seeking: 1,
-  yearOfStudy: 1,
-  isProfileVisible: 1,
-  isPhotoApproved: 1,
-  isSuspended: 1,
-  createdAt: 1,
-  updatedAt: 1,
+// Helper: fields to select (Prisma select object)
+const datingProfileSelect = {
+  id: true,
+  name: true,
+  collegeSlug: true,
+  religionKey: true,
+  photos: true,
+  bio: true,
+  gender: true,
+  seeking: true,
+  yearOfStudy: true,
+  isPhotoApproved: true,
+  isProfileVisible: true,
+  isSuspended: true,
+  userId: true, // Needed for ownership checks
 };
 
-const ALL_GENDERS = ["male", "female", "nonbinary", "other"];
-
 /* ------------------------------------------------------------------ *
- * PROFILE MANAGEMENT
+ * UTILS
  * ------------------------------------------------------------------ */
 
-/**
- * GET /api/dating/profile
- * Get the current user's dating profile
- */
-router.get("/profile", async (req, res) => {
-  try {
-    const profile = await DatingProfile.findOne({ person: req.user.id })
-      .select(datingProfileProjection)
-      .lean();
+// Fisher-Yates Shuffle for random sampling
+function shuffle(array) {
+  let currentIndex = array.length, randomIndex;
+  while (currentIndex !== 0) {
+    randomIndex = Math.floor(Math.random() * currentIndex);
+    currentIndex--;
+    [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+  }
+  return array;
+}
 
-    if (!profile) {
-      return res.status(404).json({ error: "Dating profile not found" });
-    }
+/* ------------------------------------------------------------------ *
+ * ROUTES
+ * ------------------------------------------------------------------ */
 
-    return res.json(profile);
-  } catch (err) {
-    console.error("GET /api/dating/profile error:", err);
-    return res.status(500).json({ error: "Server error" });
-  }
-});
-
-/**
- * POST /api/dating/profile
- * Create or update the user's dating profile
- * Body: { photos, bio?, gender, seeking?, yearOfStudy? }
- */
+// POST /api/dating/profile - Create or Update Profile
 router.post("/profile", async (req, res) => {
-  const { photos, bio, gender, seeking, yearOfStudy } = req.body || {};
-  const userId = req.user.id;
+  try {
+    const userId = req.user.id;
+    // Basic validation
+    // Allowed fields: name, bio, gender, seeking (array), yearOfStudy, photos (array)
+    // Scope is derived from user (collegeSlug, religionKey) usually, or passed in?
+    // In Mongoose version, it might have been passed. Let's assume passed or derived.
+    // We'll trust body for now but should sanity check.
 
-  // Shallow validation (the schema will enforce the rest)
-  if (!gender) {
-    return res.status(400).json({ error: "Gender is required." });
-  }
-  if (!Array.isArray(photos) || photos.length < 1 || photos.length > 5) {
-    return res
-      .status(400)
-      .json({ error: "Photos must be an array between 1 and 5 items." });
-  }
+    const {
+      name,
+      bio,
+      gender,
+      seeking,
+      yearOfStudy,
+      photos,
+      collegeSlug,
+      religionKey
+    } = req.body;
 
-  const session = await mongoose.startSession();
+    if (!name || !gender) {
+      return res.status(400).json({ error: "Name and Gender are required" });
+    }
 
-  try {
-    session.startTransaction();
+    // Upsert profile
+    const profile = await prisma.datingProfile.upsert({
+      where: { userId },
+      create: {
+        userId,
+        name,
+        bio,
+        gender,
+        seeking: Array.isArray(seeking) ? seeking : [],
+        yearOfStudy,
+        photos: Array.isArray(photos) ? photos : [],
+        collegeSlug: collegeSlug || req.user.collegeSlug,
+        religionKey: religionKey || req.user.religionKey,
+        isProfileVisible: true, // Default to visible on create?
+      },
+      update: {
+        name,
+        bio,
+        gender,
+        seeking: Array.isArray(seeking) ? seeking : [],
+        yearOfStudy,
+        photos: Array.isArray(photos) ? photos : [],
+        // don't update slug/key unless necessary?
+        // Let's allow update if provided
+        ...(collegeSlug && { collegeSlug }),
+        ...(religionKey && { religionKey }),
+      },
+      select: datingProfileSelect
+    });
 
-    // Get base user identity + scope from Person
-    const person = await Person.findById(userId)
-      .select("_id fullName email avatar collegeSlug religionKey")
-      .session(session)
-      .lean();
-
-    if (!person) {
-      await session.abortTransaction();
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    const collegeSlug = person.collegeSlug || req.user.collegeSlug;
-    const religionKey = person.religionKey || req.user.religionKey || null;
-
-    if (!collegeSlug) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        error: "User must have a verified college to create a dating profile.",
-      });
-    }
-
-    // Normalize seeking list a bit here (schema will also normalize)
-    const normalizedSeeking = Array.isArray(seeking) && seeking.length > 0
-      ? seeking
-      : ALL_GENDERS;
-
-    // Upsert dating profile
-    const profileDoc = await DatingProfile.findOneAndUpdate(
-      { person: userId },
-      {
-        $set: {
-          person: userId,
-          name: person.fullName || person.email || "User",
-          collegeSlug,
-          religionKey,
-          photos,
-          bio: bio || "",
-          gender,
-          seeking: normalizedSeeking,
-          yearOfStudy: yearOfStudy || "other",
-
-          // Any time the photo set changes, lock visibility until re-approved
-          isProfileVisible: false,
-          isPhotoApproved: false,
-          isSuspended: false,
-        },
-      },
-      {
-        new: true,
-        upsert: true,
-        runValidators: true,
-        session,
-        setDefaultsOnInsert: true,
-      }
-    )
-      .select(datingProfileProjection)
-      .lean();
-
-    // Reflect flag on Person
-    if (profileDoc?._id) {
-      await Person.updateOne(
-        { _id: userId },
-        {
-          $set: {
-            hasDatingProfile: true,
-            datingProfileId: profileDoc._id,
-          },
-        },
-        { session }
-      );
-    }
-
-    await session.commitTransaction();
-
-    return res.json({
-      message: "Profile saved. Awaiting photo review.",
-      profile: profileDoc,
-    });
-  } catch (err) {
-    await session.abortTransaction();
-    console.error("POST /api/dating/profile error:", err);
-
-    if (err?.name === "ValidationError") {
-      return res.status(400).json({ error: err.message });
-    }
-
-    return res.status(500).json({
-      error: "An unexpected error occurred during profile setup.",
-    });
-  } finally {
-    session.endSession();
-  }
+    return res.json(profile);
+  } catch (err) {
+    console.error("POST /api/dating/profile error", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
-/* ------------------------------------------------------------------ *
- * SWIPING & MATCHING
- * ------------------------------------------------------------------ */
-
-/**
- * GET /api/dating/swipe-pool
- * Get a pool of eligible profiles to swipe on.
- */
-router.get("/swipe-pool", async (req, res) => {
-  try {
-    const userProfile = await DatingProfile.findOne({ person: req.user.id })
-      .select(
-        "collegeSlug religionKey likes dislikes matches gender seeking isProfileVisible isPhotoApproved isSuspended"
-      )
-      .lean();
-
-    // Must have a live, approved, non-suspended profile
-    if (
-      !userProfile ||
-      !userProfile.isProfileVisible ||
-      !userProfile.isPhotoApproved ||
-      userProfile.isSuspended
-    ) {
-      return res.status(400).json({
-        error:
-          "Profile is not eligible for swiping. Please ensure it is visible, approved, and not suspended.",
-      });
-    }
-
-    // Profiles already interacted with
-    const likes = Array.isArray(userProfile.likes) ? userProfile.likes : [];
-    const dislikes = Array.isArray(userProfile.dislikes)
-      ? userProfile.dislikes
-      : [];
-    const matches = Array.isArray(userProfile.matches)
-      ? userProfile.matches
-      : [];
-
-    const excludedIds = [
-      userProfile._id,
-      ...likes,
-      ...dislikes,
-      ...matches,
-    ];
-
-    // Base match criteria
-    const matchCriteria = {
-      _id: { $nin: excludedIds },
-      isProfileVisible: true,
-      isPhotoApproved: true,
-      isSuspended: { $ne: true },
-      collegeSlug: userProfile.collegeSlug,
-      // They must be seeking the current user's gender
-      seeking: userProfile.gender,
-      // And their gender must be something the current user is seeking
-      gender: { $in: userProfile.seeking || ALL_GENDERS },
-    };
-
-    // If user has a religionKey, restrict to same
-    if (userProfile.religionKey) {
-      matchCriteria.religionKey = userProfile.religionKey;
-    }
-
-    // Fetch a random sample of 15
-    const pool = await DatingProfile.aggregate([
-      { $match: matchCriteria },
-      { $sample: { size: 15 } },
-      { $project: datingProfileProjection },
-    ]);
-
-    return res.json({ pool });
-  } catch (err) {
-    console.error("GET /api/dating/swipe-pool error:", err);
-    return res.status(500).json({ error: "Could not generate swipe pool" });
-  }
+// GET /api/dating/profile/me - Get my profile
+router.get("/profile/me", async (req, res) => {
+  try {
+    const profile = await prisma.datingProfile.findUnique({
+      where: { userId: req.user.id },
+      select: datingProfileSelect
+    });
+    // Return null or empty object if not found? Frontend expects something?
+    // Usually 200 with null is fine or 404.
+    if (!profile) return res.json(null);
+    return res.json(profile);
+  } catch (err) {
+    console.error("GET /api/dating/profile/me error", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
-/**
- * POST /api/dating/swipe
- * Handle a user swipe (like or dislike)
- * Body: { targetProfileId: string, type: 'like' | 'dislike' }
- */
+// GET /api/dating/pool - Get random candidates
+router.get("/pool", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const myProfile = await prisma.datingProfile.findUnique({
+      where: { userId },
+      select: {
+          id: true,
+          gender: true,
+          seeking: true,
+          collegeSlug: true,
+          likes: true,
+          dislikes: true,
+          matches: true
+      }
+    });
+
+    if (!myProfile) {
+      return res.status(400).json({ error: "Create a profile first" });
+    }
+
+    // Filter logic:
+    // 1. Must be visible and approved
+    // 2. Not suspended
+    // 3. Not Me
+    // 4. Matches my seeking preference (Candidate Gender IN My Seeking)
+    // 5. Matches candidate's seeking preference (My Gender IN Candidate Seeking)
+    // 6. Match college/scope? (Optional, but usually yes)
+    // 7. Not in my likes/dislikes/matches
+
+    const excludeIds = [
+        myProfile.id,
+        ...myProfile.likes,
+        ...myProfile.dislikes,
+        ...myProfile.matches
+    ];
+
+    // fetch CANDIDATES
+    // Since we need RANDOM and Prisma NO random, we fetch ID list first or chunk.
+    // Optimization: If user base is huge, this is slow. 
+    // For now (MVP): Fetch larger set, shuffle in memory, take X.
+
+    const rawCandidates = await prisma.datingProfile.findMany({
+        where: {
+            id: { notIn: excludeIds },
+            isProfileVisible: true,
+            isPhotoApproved: true,
+            isSuspended: false,
+            collegeSlug: myProfile.collegeSlug, // Scope by college
+            gender: { in: myProfile.seeking }, // They are what I want
+            seeking: { has: myProfile.gender } // I am what they want
+        },
+        select: datingProfileSelect,
+        take: 100 // Fetch up to 100 potential matches
+    });
+
+    // Shuffle and pick
+    const shuffled = shuffle(rawCandidates);
+    const selected = shuffled.slice(0, 20); // Return 20
+
+    res.json(selected);
+  } catch (err) {
+    console.error("GET /api/dating/pool error", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// POST /api/dating/swipe - Like or Dislike
 router.post("/swipe", async (req, res) => {
-  const { targetProfileId, type } = req.body || {};
-  const userId = req.user.id;
+    try {
+        const userId = req.user.id;
+        const { targetId, action } = req.body; // action: 'like' | 'dislike'
 
-  if (
-    !mongoose.isValidObjectId(targetProfileId) ||
-    (type !== "like" && type !== "dislike")
-  ) {
-    return res.status(400).json({ error: "Invalid input" });
-  }
+        if (!['like', 'dislike'].includes(action)) {
+            return res.status(400).json({ error: "Invalid action" });
+        }
+        if (!targetId) return res.status(400).json({ error: "Target ID required" });
 
-  const session = await mongoose.startSession();
+        const myProfile = await prisma.datingProfile.findUnique({
+            where: { userId }
+        });
+        if (!myProfile) return res.status(400).json({ error: "No profile" });
 
-  try {
-    session.startTransaction();
+        // Check if already processed
+        if (myProfile.likes.includes(targetId) || 
+            myProfile.dislikes.includes(targetId) || 
+            myProfile.matches.includes(targetId)) {
+            return res.json({ message: "Already processed" });
+        }
 
-    const [currentUserProfile, targetUserProfile] = await Promise.all([
-      DatingProfile.findOne({ person: userId })
-        .select("_id likes isProfileVisible isPhotoApproved isSuspended")
-        .session(session),
-      DatingProfile.findById(targetProfileId)
-        .select("_id likes isProfileVisible isPhotoApproved isSuspended")
-        .session(session),
-    ]);
+        if (action === 'dislike') {
+            await prisma.datingProfile.update({
+                where: { id: myProfile.id },
+                data: { dislikes: { push: targetId } }
+            });
+            return res.json({ message: "Disliked" });
+        }
 
-    if (!currentUserProfile || !targetUserProfile) {
-      await session.abortTransaction();
-      return res
-        .status(404)
-        .json({ error: "One or both profiles not found" });
-    }
+        // Action is LIKE
+        // Check if mutual like (Target likes Me)
+        const targetProfile = await prisma.datingProfile.findUnique({
+            where: { id: targetId },
+            select: { id: true, likes: true, userId: true } // Need userId to notify
+        });
 
-    // Disallow interactions if either profile is not live
-    if (
-      !currentUserProfile.isProfileVisible ||
-      !currentUserProfile.isPhotoApproved ||
-      currentUserProfile.isSuspended
-    ) {
-      await session.abortTransaction();
-      return res.status(400).json({
-        error:
-          "Your dating profile is not eligible to swipe. Please ensure it is visible, approved, and not suspended.",
-      });
-    }
+        if (!targetProfile) return res.status(404).json({ error: "Profile not found" });
 
-    if (
-      !targetUserProfile.isProfileVisible ||
-      !targetUserProfile.isPhotoApproved ||
-      targetUserProfile.isSuspended
-    ) {
-      await session.abortTransaction();
-      return res
-        .status(400)
-        .json({ error: "Target profile is not eligible for swiping." });
-    }
+        const isMutual = targetProfile.likes.includes(myProfile.id);
 
-    let isMatch = false;
+        if (isMutual) {
+            // MATCH!
+            // 1. Add match to both
+            // 2. Remove from likes if needed? (Usually move from like to match, or just keep in likes + match list)
+            // Let's say 'matches' array stores confirmed matches.
+            
+            // Transaction for atomicity
+            await prisma.$transaction([
+                // Update Me: Add to likes AND matches
+                prisma.datingProfile.update({
+                    where: { id: myProfile.id },
+                    data: {
+                        likes: { push: targetId },
+                        matches: { push: targetId }
+                    }
+                }),
+                // Update Target: Add Me to matches (I am already in their likes)
+                prisma.datingProfile.update({
+                    where: { id: targetId },
+                    data: {
+                        matches: { push: myProfile.id }
+                    }
+                })
+            ]);
 
-    if (type === "like") {
-      // Add target to current user's likes
-      await DatingProfile.updateOne(
-        { _id: currentUserProfile._id },
-        { $addToSet: { likes: targetUserProfile._id } },
-        { session }
-      );
+            // Emit Socket event to both?
+            // "match:new"
+            // Need user IDs for sockets.
+            // myProfile.userId and targetProfile.userId
+            req.io?.to(userId).emit("match:new", { withId: targetProfile.id });
+            req.io?.to(targetProfile.userId).emit("match:new", { withId: myProfile.id });
 
-      const didTargetLikeCurrentUser =
-        Array.isArray(targetUserProfile.likes) &&
-        targetUserProfile.likes.some((id) =>
-          id.equals(currentUserProfile._id)
-        );
+            return res.json({ message: "It's a Match!", match: true });
+        } else {
+            // Just a like
+            await prisma.datingProfile.update({
+                where: { id: myProfile.id },
+                data: { likes: { push: targetId } }
+            });
+            return res.json({ message: "Liked", match: false });
+        }
 
-      if (didTargetLikeCurrentUser) {
-        isMatch = true;
-
-        // Add each other to matches
-        await Promise.all([
-          DatingProfile.updateOne(
-            { _id: currentUserProfile._id },
-            { $addToSet: { matches: targetUserProfile._id } },
-            { session }
-          ),
-          DatingProfile.updateOne(
-            { _id: targetUserProfile._id },
-            { $addToSet: { matches: currentUserProfile._id } },
-            { session }
-          ),
-        ]);
-
-        // Clean up dislikes (optional)
-        await DatingProfile.updateMany(
-          { _id: { $in: [currentUserProfile._id, targetUserProfile._id] } },
-          {
-            $pull: {
-              dislikes: { $in: [currentUserProfile._id, targetUserProfile._id] },
-            },
-          },
-          { session }
-        );
-      }
-    } else if (type === "dislike") {
-      // Add target to current user's dislikes
-      await DatingProfile.updateOne(
-        { _id: currentUserProfile._id },
-        { $addToSet: { dislikes: targetUserProfile._id } },
-        { session }
-      );
-    }
-
-    await session.commitTransaction();
-
-    return res.json({
-      status: type,
-      isMatch,
-      targetProfileId,
-    });
-  } catch (err) {
-    await session.abortTransaction();
-    console.error("POST /api/dating/swipe error:", err);
-    return res.status(500).json({ error: "Swipe failed" });
-  } finally {
-    session.endSession();
-  }
+    } catch (err) {
+        console.error("POST /api/dating/swipe error", err);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
-/**
- * GET /api/dating/matches
- * Get the list of profiles the current user has matched with.
- */
+// GET /api/dating/matches - Get list of matches
 router.get("/matches", async (req, res) => {
-  try {
-    const userProfile = await DatingProfile.findOne({ person: req.user.id })
-      .select("matches")
-      .populate({
-        path: "matches",
-        select: datingProfileProjection,
-      })
-      .lean();
+    try {
+        const userId = req.user.id;
+        const myProfile = await prisma.datingProfile.findUnique({
+            where: { userId },
+            select: { matches: true }
+        });
+        if (!myProfile) return res.json([]);
 
-    if (!userProfile) {
-      return res.json({ matches: [] });
-    }
+        if (myProfile.matches.length === 0) return res.json([]);
 
-    return res.json({ matches: userProfile.matches || [] });
-  } catch (err) {
-    console.error("GET /api/dating/matches error:", err);
-    return res.status(500).json({ error: "Could not retrieve matches" });
-  }
+        const matches = await prisma.datingProfile.findMany({
+            where: { id: { in: myProfile.matches } },
+            select: datingProfileSelect
+        });
+
+        res.json(matches);
+    } catch (err) {
+        console.error("GET /api/dating/matches error", err);
+        res.status(500).json({ error: "Server error" });
+    }
 });
 
 module.exports = router;

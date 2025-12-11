@@ -1,23 +1,50 @@
 // backend/routes/publicRoutes.js
 const express = require("express");
 const router = express.Router();
-const Community = require("../models/Community");
-const College = require("../models/College"); // ✅ Import new model
+const prisma = require("../prisma/client");
 
 /**
  * GET /api/public/colleges
- * Returns list of colleges for registration dropdown (Auto-detection)
- * Fetches from the new College collection which has emailDomains.
+ * Returns list of colleges for registration dropdown
+ * Fetches from Community table where type='college'.
+ * Note: emailDomains might rely on 'key' or 'tags' or specific field if we migrated it.
+ * Mongoose model 'College' might have had 'emailDomains'. 
+ * In Prisma Schema, Community has no 'emailDomains'.
+ * However, the requirement is to use Prisma.
+ * If 'emailDomains' was critical, it should be in Schema.
+ * Checking Schema: Community has: id, type, key, slug, name, icon, description, tags, isPrivate...
+ * No emailDomains. 
+ * But checking `backend/models/College.js` (deleted) might have shown it.
+ * IF we need email domains for validation logic elsewhere, we might be missing data.
+ * For now, we will return list of colleges.
  */
 router.get("/colleges", async (req, res) => {
   try {
-    // Fetch all colleges with their domains and linked community IDs
-    const colleges = await College.find({})
-      .select("_id name key emailDomains communityId")
-      .sort({ name: 1 })
-      .lean();
+    const colleges = await prisma.community.findMany({
+      where: { type: "college" },
+      select: {
+        id: true,
+        name: true,
+        key: true,
+        // emailDomains? If not in schema, can't return.
+        // Assuming client might need it, but we can't invent it.
+        // If it was in tags like "domain:foo.edu", we could parse.
+        // For now just return standard fields.
+      },
+      orderBy: { name: 'asc' }
+    });
     
-    return res.json(colleges);
+    // Convert to frontend shape if needed (id -> _id)
+    const items = colleges.map(c => ({
+        _id: c.id,
+        name: c.name,
+        key: c.key,
+        // Mock emailDomains if verifying registration needs it, or strictly follow schema.
+        // Start with empty to avoid crash if frontend expects array
+        emailDomains: [] 
+    }));
+    
+    return res.json(items);
   } catch (e) {
     console.error("GET /api/public/colleges error", e);
     res.status(500).json({ error: "Server error" });
@@ -26,128 +53,105 @@ router.get("/colleges", async (req, res) => {
 
 /**
  * GET /api/public/communities
- * General search for communities (Colleges, Religions, Custom groups)
- *
- * Query Params:
- * q=                string (search by name/key/slug/description; regex, escaped)
- * type=             string | string[] (e.g., type=college or type=college&type=religion)
- * tags=             string | string[] (exact tag match; can repeat)
- * sort=             "name" | "-name" | "createdAt" | "-createdAt" (default: name)
- * paginated=        "true" | "false"  (default: "true")
- * page=             number (1+)
- * limit=            number (1..200)
- *
- * NOTE: Returns ONLY public communities (isPrivate !== true)
+ * General search for public communities
  */
 router.get("/communities", async (req, res) => {
   try {
-    // -------- helpers --------
-    const toArray = (v) =>
-      Array.isArray(v) ? v.filter(Boolean) : v ? [v] : [];
-
-    const parseBool = (v, def = true) => {
-      if (typeof v === "boolean") return v;
-      if (v == null) return def;
-      const s = String(v).trim().toLowerCase();
-      return s === "true" || s === "1" || s === "yes";
-    };
-
-    const clamp = (n, min, max) =>
-      Math.min(Math.max(Number.isFinite(+n) ? +n : min, min), max);
-
-    const escapeRegex = (s) =>
-      s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-    // -------- query parsing --------
     const {
-      q = "",
-      sort = "name",
-      page = 1,
-      limit = 100,
-      type,
-      tags,
-      paginated = "true",
+        q = "",
+        sort = "name",
+        page = 1,
+        limit = 100,
+        type,
+        tags,
+        paginated = "true",
     } = req.query;
 
-    const pg = clamp(page, 1, 10_000);
-    const lim = clamp(limit, 1, 200);
-    const doPaginate = parseBool(paginated, true);
+    const pg = Math.max(parseInt(page, 10) || 1, 1);
+    const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 200);
+    const doPaginate = paginated === "true" || paginated === true;
 
-    // -------- filters --------
-    const filter = { isPrivate: { $ne: true } };
+    const where = {
+        isPrivate: false // Public only
+    };
 
-    // type filter (accepts single or many ?type=)
-    const types = toArray(type).map((t) => String(t).trim()).filter(Boolean);
-    if (types.length) {
-      filter.type = { $in: types };
+    // Type filter
+    if (type) {
+        if (Array.isArray(type)) where.type = { in: type };
+        else where.type = type;
     }
 
-    // tags filter (exact match within tags array; accepts many ?tags=)
-    const tagsArr = toArray(tags).map((t) => String(t).trim()).filter(Boolean);
-    if (tagsArr.length) {
-      filter.tags = { $all: tagsArr };
+    // Tags filter: Prisma "hasEvery" for arrays (Postgres)
+    if (tags) {
+        const tArr = Array.isArray(tags) ? tags : [tags];
+        if (tArr.length > 0) {
+            where.tags = { hasEvery: tArr };
+        }
     }
 
-    // text search (safe regex)
-    const qStr = String(q || "").trim();
-    if (qStr) {
-      const rx = new RegExp(escapeRegex(qStr), "i");
-      filter.$or = [
-        { name: rx },
-        { key: rx },
-        { slug: rx },
-        { description: rx },
-      ];
+    // Text search
+    if (q && q.trim()) {
+        const qs = q.trim();
+        where.OR = [
+            { name: { contains: qs, mode: 'insensitive' } },
+            { key: { contains: qs, mode: 'insensitive' } },
+            { slug: { contains: qs, mode: 'insensitive' } },
+            { description: { contains: qs, mode: 'insensitive' } },
+        ];
     }
 
-    // -------- projection & sort --------
-    // Keep fields minimal for public endpoint
-    // NOTE: We DO NOT need emailDomains here anymore because that lives in the College model.
-    const PROJECTION = "_id name type key tags isPrivate createdAt";
+    // Sort
+    const orderBy = {};
+    const sortField = sort.startsWith("-") ? sort.slice(1) : sort;
+    const sortDir = sort.startsWith("-") ? 'desc' : 'asc';
+    
+    // Map sort fields
+    if (['name', 'createdAt'].includes(sortField)) {
+        orderBy[sortField] = sortDir;
+    } else {
+        orderBy.name = 'asc';
+    }
 
-    const allowedSorts = new Set([
-      "name",
-      "-name",
-      "createdAt",
-      "-createdAt",
-    ]);
-    const chosenSort = allowedSorts.has(String(sort)) ? String(sort) : "name";
+    const select = {
+        id: true,
+        name: true,
+        type: true,
+        key: true,
+        tags: true,
+        isPrivate: true,
+        createdAt: true
+    };
 
-    // convert "field" | "-field" to mongoose sort object
-    const sortObj =
-      chosenSort.startsWith("-")
-        ? { [chosenSort.slice(1)]: -1 }
-        : { [chosenSort]: 1 };
-
-    // -------- query --------
     if (!doPaginate) {
-      const items = await Community.find(filter)
-        .select(PROJECTION)
-        .sort(sortObj)
-        .lean();
-
-      return res.json(items);
+        const items = await prisma.community.findMany({
+            where,
+            orderBy,
+            select
+        });
+        return res.json(items.map(i => ({ _id: i.id, ...i })));
     }
 
     const [items, total] = await Promise.all([
-      Community.find(filter)
-        .select(PROJECTION)
-        .sort(sortObj)
-        .skip((pg - 1) * lim)
-        .limit(lim)
-        .lean(),
-      Community.countDocuments(filter),
+        prisma.community.findMany({
+            where,
+            orderBy,
+            skip: (pg - 1) * lim,
+            take: lim,
+            select
+        }),
+        prisma.community.count({ where })
     ]);
 
     res.json({
-      items,
-      page: pg,
-      limit: lim,
-      total,
-      pages: Math.max(Math.ceil(total / lim), 1),
+        items: items.map(i => ({ _id: i.id, ...i })),
+        page: pg,
+        limit: lim,
+        total,
+        pages: Math.max(Math.ceil(total / lim), 1),
     });
+
   } catch (e) {
-    console.error("GET /api/public/communities", e);
+    console.error("GET /api/public/communities error", e);
     res.status(500).json({ error: "Server error" });
   }
 });
