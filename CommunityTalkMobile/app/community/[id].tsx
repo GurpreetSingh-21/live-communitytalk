@@ -1582,27 +1582,35 @@ export default function CommunityScreen() {
                 </View>
               )}
               
-              {/* Reply Preview - Contained View */}
-              {item.replyTo && (
-                <View style={{
-                  marginBottom: 6,
-                  paddingHorizontal: 10,
-                  paddingVertical: 8,
-                  borderRadius: 8,
-                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.12)',
-                  borderLeftWidth: 3,
-                  borderLeftColor: colors.primary,
-                }}>
-                  <Text style={{ color: colors.primary, fontSize: 11, fontWeight: '600', marginBottom: 3 }}>
-                    {item.replyTo.sender}
+              {/* Reply Preview - Compact Format - 10/10 Edition */}
+              {item.replyTo && item.replyTo.sender && item.replyTo.content && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    // TODO: Scroll to original message with item.replyTo.messageId
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  style={{
+                    marginBottom: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    backgroundColor: isDark ? 'rgba(66, 133, 244, 0.12)' : 'rgba(66, 133, 244, 0.08)',
+                    borderRadius: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    shadowColor: colors.primary,
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 2,
+                    elevation: 2,
+                  }}
+                >
+                  <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
+                  <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+                    Replying to {item.replyTo.sender}
                   </Text>
-                  <Text 
-                    style={{ color: isDark ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)', fontSize: 12, lineHeight: 16 }} 
-                    numberOfLines={2}
-                  >
-                    {item.replyTo.content}
-                  </Text>
-                </View>
+                </TouchableOpacity>
               )}
               
               <TouchableOpacity
@@ -1883,29 +1891,36 @@ export default function CommunityScreen() {
         ) : (
           <View style={{ alignItems: "flex-end", marginTop: isFirstOfGroup ? 0 : 2, marginBottom: isLastOfGroup ? 8 : 0 }}>
             <View style={{ maxWidth: "75%", position: 'relative' }}>
-              {/* Reply Preview for self messages - Contained View */}
-              {item.replyTo && (
-                <View style={{
-                  marginBottom: 6,
-                  paddingHorizontal: 10,
-                  paddingVertical: 8,
-                  borderRadius: 8,
-                  backgroundColor: 'rgba(0, 0, 0, 0.25)',
-                  alignSelf: 'flex-end',
-                  borderLeftWidth: 3,
-                  borderLeftColor: 'rgba(255, 255, 255, 0.9)',
-                  maxWidth: '100%',
-                }}>
-                  <Text style={{ color: "rgba(255,255,255,1)", fontSize: 11, fontWeight: '600', marginBottom: 3 }}>
-                    {item.replyTo.sender}
+              {/* Reply Preview for self messages - Compact Format - 10/10 Edition */}
+              {item.replyTo && item.replyTo.sender && item.replyTo.content && (
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    // TODO: Scroll to original message with item.replyTo.messageId
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  style={{
+                    marginBottom: 6,
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    backgroundColor: isDark ? 'rgba(66, 133, 244, 0.12)' : 'rgba(66, 133, 244, 0.08)',
+                    borderRadius: 8,
+                    alignSelf: 'flex-end',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 4,
+                    shadowColor: colors.primary,
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 2,
+                    elevation: 2,
+                  }}
+                >
+                  <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+                    Replying to {item.replyTo.sender}
                   </Text>
-                  <Text 
-                    style={{ color: "rgba(255,255,255,0.95)", fontSize: 12, lineHeight: 16 }} 
-                    numberOfLines={2}
-                  >
-                    {item.replyTo.content}
-                  </Text>
-                </View>
+                  <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
+                </TouchableOpacity>
               )}
               
               <TouchableOpacity

@@ -979,7 +979,7 @@ export default function DMThreadScreen() {
               data={data}
               keyExtractor={msgKey}
               renderItem={renderItem}
-              ListHeaderComponent={renderProfileHeader}
+              ListHeaderComponent={undefined}
               onEndReachedThreshold={0.2}
               onEndReached={loadOlder}
               contentContainerStyle={{ paddingBottom: Math.max(92, insets.bottom + 60) }}

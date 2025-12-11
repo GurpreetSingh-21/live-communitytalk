@@ -289,7 +289,7 @@ io.on("connection", async (socket) => {
     const clientMessageId = msg?.clientMessageId;
 
     try {
-      const { communityId, content } = msg;
+      const { communityId, content, replyTo } = msg;
 
       if (!content || !communityId) {
         console.warn(`[SECURITY] User ${uid} sent empty/invalid message.`);
@@ -316,6 +316,17 @@ io.on("connection", async (socket) => {
         return;
       }
 
+      // 📩 Process replyTo data if present
+      let sanitizedReplyTo = undefined;
+      if (replyTo && replyTo.messageId && replyTo.sender && replyTo.content) {
+        sanitizedReplyTo = {
+          messageId: replyTo.messageId,
+          sender: DOMPurify.sanitize(replyTo.sender),
+          content: DOMPurify.sanitize(replyTo.content.substring(0, 200)), // Truncate preview
+        };
+        console.log('📩 [SOCKET REPLY] Processing reply to:', sanitizedReplyTo);
+      }
+
       // Save message (trusted path)
       const saved = await Message.create({
         communityId,
@@ -324,6 +335,7 @@ io.on("connection", async (socket) => {
         sender: socket.user.fullName || socket.user.email,
         timestamp: new Date(),
         clientMessageId,
+        replyTo: sanitizedReplyTo,
       });
 
       const payload = {

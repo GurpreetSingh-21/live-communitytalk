@@ -8,7 +8,6 @@
     "scheme": "communitytalkmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.anonymous.CommunityTalkMobile",
@@ -19,7 +18,6 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
-
     "android": {
       "package": "com.anonymous.CommunityTalkMobile",
       "edgeToEdgeEnabled": true,
@@ -32,12 +30,10 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       }
     },
-
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-
     "plugins": [
       "expo-router",
       [
@@ -47,25 +43,26 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
-          "dark": { "backgroundColor": "#000000" }
+          "dark": {
+            "backgroundColor": "#000000"
+          }
         }
       ],
       "expo-font",
       "expo-notifications"
     ],
-
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
     },
-
     "extra": {
-      "API_URL_DEV": "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev",
+      "API_URL_DEV": "http://192.168.1.16:3000",
       "API_URL_PROD": "https://your-production-api.example.com",
       "router": {},
-      "eas": { "projectId": "fc828742-1044-46ce-a60e-65d1acd26002" }
+      "eas": {
+        "projectId": "fc828742-1044-46ce-a60e-65d1acd26002"
+      }
     },
-
     "owner": "debugdragons4"
   }
 }
