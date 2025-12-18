@@ -56,7 +56,7 @@
       "reactCompiler": true
     },
     "extra": {
-      "API_URL_DEV": "http://10.83.62.189:3000",
+      "API_URL_DEV": "https://photophilous-britney-uppishly.ngrok-free.dev",
       "API_URL_PROD": "https://your-production-api.example.com",
       "router": {},
       "eas": {

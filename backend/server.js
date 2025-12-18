@@ -573,18 +573,24 @@ process.on("unhandledRejection", (reason) => {
     const HOST = "0.0.0.0";
     const lanIp = getLanIPv4();
 
-    server.listen(PORT, HOST, () => {
-      const localUrl = `http://localhost:${PORT}`;
-      const lanUrl = `http://${lanIp}:${PORT}`;
+    const listen = () => {
+      server.listen(PORT, HOST, () => {
+        const localUrl = `http://localhost:${PORT}`;
+        const lanUrl = `http://${lanIp}:${PORT}`;
 
-      console.log(`✅ Server is up on port ${PORT}!`);
-      console.log(`   • Local:  ${localUrl}`);
-      console.log(`   • LAN:    ${lanUrl}`);
-      console.log(`🔗 CORS allowed origins: ${ORIGIN.join(", ")}`);
-      console.log(`🛡️  NODE_ENV=${process.env.NODE_ENV || "development"}`);
-      console.log(`🔑 JWT configured: ${!!JWT_SECRET}`);
-      console.log("🩺 Health check:", `${lanUrl}/health`);
-    });
+        console.log(`✅ Server is up on port ${PORT}!`);
+        console.log(`   • Local:  ${localUrl}`);
+        console.log(`   • LAN:    ${lanUrl}`);
+        console.log(`🔗 CORS allowed origins: ${ORIGIN.join(", ")}`);
+        console.log(`🛡️  NODE_ENV=${process.env.NODE_ENV || "development"}`);
+        console.log(`🔑 JWT configured: ${!!JWT_SECRET}`);
+        console.log("🩺 Health check:", `${lanUrl}/health`);
+      });
+    };
+
+    if (require.main === module) {
+      listen();
+    }
 
     // Graceful shutdown
     const shutdown = (signal) => {
@@ -618,3 +624,5 @@ process.on("unhandledRejection", (reason) => {
     process.exit(1);
   }
 })();
+
+module.exports = { app, server };
