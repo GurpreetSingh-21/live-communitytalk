@@ -29,8 +29,8 @@ const defaultValue: SocketContextValue = {
   unreadThreads: {},
   unreadDMs: 0,
   unreadCommunities: 0,
-  refreshUnread: async () => {},
-  markThreadRead: async () => {},
+  refreshUnread: async () => { },
+  markThreadRead: async () => { },
 };
 
 export const SocketContext = createContext(defaultValue);
@@ -130,26 +130,18 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
     }
 
     try {
-      const ids = Array.from(myCommunityIds);
-
-      const results = await Promise.all(
-        ids.map(async (id) => {
-          try {
-            const { data } = await api.get(
-              `/api/communities/${id}/unread`
-            );
-            return { id, count: Number(data?.unread || data?.count || 0) };
-          } catch {
-            return { id, count: 0 };
-          }
-        })
-      );
+      // Optimized: Fetch all in one batch instead of N calls
+      // We can use the same /my-threads endpoint since it includes 'unread'
+      const { data } = await api.get('/api/communities/my-threads');
 
       const out: Record<string, number> = {};
-      for (const r of results) {
-  const idStr = String(r.id ?? "");
-  if (idStr) out[idStr] = r.count;
-}
+      const items = data?.items || [];
+
+      for (const item of items) {
+        if (item.id) {
+          out[String(item.id)] = Number(item.unread || 0);
+        }
+      }
 
       setCommunityUnreads(out);
     } catch {

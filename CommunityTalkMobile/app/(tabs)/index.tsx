@@ -14,13 +14,14 @@ import {
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
+import { router, Redirect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
+
 
 const { width } = Dimensions.get("window");
 
@@ -437,7 +438,7 @@ const SectionHeader = ({
 };
 
 /* --------------------------------- SCREEN --------------------------------- */
-export default function UpdatesScreen() {
+function UpdatesScreenLegacy() {
   const { colors, isDark } = useTheme();
   const { unreadDMs = 0, socket } = useSocket() ?? {};
   const auth = React.useContext(AuthContext) as any;
@@ -844,4 +845,8 @@ export default function UpdatesScreen() {
       </SafeAreaView>
     </View>
   );
+}
+
+export default function Index() {
+  return <Redirect href="/(tabs)/dating" />;
 }

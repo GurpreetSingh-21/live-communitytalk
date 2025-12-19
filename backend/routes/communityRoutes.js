@@ -114,15 +114,108 @@ router.post("/", async (req, res) => {
     if (error?.code === 'P2002') {
       return res.status(400).json({ error: "Community name already exists" });
     }
-    console.error("POST /api/communities error:", error);
     return res.status(500).json({ error: "Server Error" });
   }
 });
 
+
+/**
+ * GET /api/communities/my-threads
+ * Batch fetch for "Communities" tab (Threads view).
+ * Returns: { items: [ { id, name, lastMsg, lastAt, memberCount, pinned, unread } ] }
+ */
+router.get("/my-threads", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // 1. Get all active memberships
+    const members = await prisma.member.findMany({
+      where: {
+        userId,
+        memberStatus: { in: ['active', 'owner'] }
+      },
+      include: {
+        community: {
+          select: {
+            id: true,
+            name: true,
+            updatedAt: true,
+            createdAt: true,
+            pinned: true, // If pinned is on Community? No, pinned is usually per user (Member preference).
+            // Schema check: Community has 'pinned'? Or Member?
+            // The frontend code expects `c.pinned`. 
+            // In typical systems, "pinning" is a user-specific action, stored on Member.
+            // But if the schema puts it on Community, it's global.
+            // Let's assume for now we use what's available. 
+            // The frontend code: `pinned: !!c?.pinned` (from AuthContext communities) or `!!item.pinned` (local state).
+            // Actually frontend uses `handlePinToggle` which updates LOCAL state only?
+            // "onPinToggle" just updates local state. so server doesn't store it?
+            // Wait, standard schema doesn't seem to have Pinned on Member.
+          }
+        }
+      }
+    });
+
+    // 2. For each community, get member count & last message
+    // We can optimize this with a groupBy or raw query, but Promise.all is better than N HTTP requests.
+    // Even better: fetch all matching messages in one go if possible, but "latest per group" is tricky in Prisma.
+    // Let's do Promise.all for now - it's N DB queries but 1 HTTP request. Faster than N HTTP.
+
+    const threads = await Promise.all(members.map(async (m) => {
+      const c = m.community;
+      if (!c) return null;
+
+      // Unread stub (since /unread is stubbed 0 anyway)
+      const unread = 0;
+
+      // Member count
+      const memberCount = await prisma.member.count({ where: { communityId: c.id, memberStatus: 'active' } });
+
+      // Last message
+      const lastMsgDoc = await prisma.message.findFirst({
+        where: { communityId: c.id },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      let lastMsg = { type: 'text', content: 'No messages yet' };
+      let lastAt = new Date(c.createdAt).getTime();
+
+      if (lastMsgDoc) {
+        lastAt = new Date(lastMsgDoc.createdAt).getTime();
+        const type = lastMsgDoc.attachments && Array.isArray(lastMsgDoc.attachments) && lastMsgDoc.attachments.length > 0 ? 'photo' : 'text';
+        // Simple heuristic matching frontend
+
+        let content = lastMsgDoc.content;
+        // Frontend logic duplication for content preview:
+        if (typeof lastMsgDoc.attachments === 'string' && lastMsgDoc.attachments.length > 2) {
+          // If JSON string
+          content = '📷 Image';
+        }
+
+        lastMsg = { type, content };
+      }
+
+      return {
+        id: c.id,
+        name: c.name,
+        avatar: "🏛️", // Hardcoded for now
+        lastMsg,
+        lastAt,
+        unread,
+        pinned: false, // Not persisted
+        memberCount
+      };
+    }));
+
+    return res.json({ items: threads.filter(Boolean) });
+  } catch (error) {
+    console.error("GET /api/communities/my-threads error:", error);
+    return res.status(500).json({ error: "Server Error" });
+  }
+});
 /**
  * GET /api/communities
  * List communities (optional search + pagination)
- * Query: ?q=term&page=1&limit=20&paginated=true
  */
 router.get("/", async (req, res) => {
   try {

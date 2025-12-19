@@ -174,10 +174,9 @@ const TabButton = ({
 const CustomTabBar = ({ state, descriptors, navigation, isDark, insets, unreadCounts }: any) => {
   // Routes config (order matters)
   const routes: TabRoute[] = [
-    { name: 'index', label: 'Updates', icon: 'sparkles', activeIcon: 'sparkles', path: '/(tabs)' },
+    { name: 'dating', label: 'Dating', icon: 'heart', activeIcon: 'heart.fill', path: '/(tabs)/dating' },
     { name: 'communities', label: 'Communities', icon: 'building.2', activeIcon: 'building.2.fill', path: '/(tabs)/communities' },
     { name: 'add-modal', label: 'Add', icon: 'plus', activeIcon: 'plus', path: '/modal', isSpecial: true },
-    { name: 'dating', label: 'Dating', icon: 'heart', activeIcon: 'heart.fill', path: '/(tabs)/dating' },
     { name: 'dms', label: 'Messages', icon: 'paperplane', activeIcon: 'paperplane.fill', path: '/(tabs)/dms' },
     { name: 'profile', label: 'Profile', icon: 'person', activeIcon: 'person.fill', path: '/(tabs)/profile' },
   ];
@@ -326,7 +325,7 @@ export default function TabLayout() {
         tabBarHideOnKeyboard: true, // Auto hide
       }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Updates' }} />
+
       <Tabs.Screen name="communities" options={{ title: 'Communities' }} />
       <Tabs.Screen name="add-modal" options={{ title: 'Add' }} />
       <Tabs.Screen name="dating" options={{ title: 'Dating' }} />
@@ -334,6 +333,7 @@ export default function TabLayout() {
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
 
       {/* Hidden Routes */}
+      <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );

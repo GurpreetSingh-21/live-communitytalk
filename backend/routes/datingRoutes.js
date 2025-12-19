@@ -104,7 +104,12 @@ router.post("/profile", async (req, res) => {
           collegeSlug: collegeSlug || req.user.collegeSlug || 'unknown',
           hobbies: hobbies || [],
           instagramHandle,
+          hobbies: hobbies || [],
+          instagramHandle,
           isProfileVisible: true,
+          score: calculateProfileScore({
+            firstName, gender, birthDate: new Date(birthDate), collegeSlug, bio, hobbies, instagramHandle
+          }, photos)
         },
         update: {
           firstName,
@@ -115,6 +120,9 @@ router.post("/profile", async (req, res) => {
           hobbies: hobbies || [],
           instagramHandle,
           // Don't update gender/birthDate trivially if it affects matching logic? Allowing for now.
+          score: calculateProfileScore({
+            firstName, gender, birthDate: new Date(birthDate), collegeSlug, bio, hobbies, instagramHandle
+          }, photos)
         }
       });
 
@@ -285,6 +293,27 @@ router.post("/swipe", async (req, res) => {
 
     const myProfile = await prisma.datingProfile.findUnique({ where: { userId } });
     if (!myProfile) return res.status(400).json({ error: "No profile" });
+
+    // 0. CHECK SINGLE DAY SWIPE LIMIT (Spam prevention)
+    const DAILY_LIMIT = 5;
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const todaySwipes = await prisma.datingSwipe.count({
+      where: {
+        swiperId: myProfile.id,
+        createdAt: {
+          gte: startOfDay
+        }
+      }
+    });
+
+    if (todaySwipes >= DAILY_LIMIT) {
+      return res.status(429).json({
+        error: "Daily swipe limit reached",
+        message: "You've swiped 5 times today. Save some love for tomorrow! 🌙"
+      });
+    }
 
     // 1. Prevent duplicate swipe
     // (Prisma unique constraint on swiperId_targetId handles this, but custom check details nice error)

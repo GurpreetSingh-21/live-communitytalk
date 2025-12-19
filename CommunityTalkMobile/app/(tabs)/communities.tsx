@@ -373,75 +373,27 @@ export default function CommunitiesScreen(): React.JSX.Element {
 
   const fetchCommunityThreads = useCallback(async (signal?: AbortSignal) => {
     if (!isAuthed) return [] as CommunityThread[];
-    const mine = Array.isArray(myCommunities) ? myCommunities : [];
 
-    const results = await Promise.all(
-      mine.map(async (c: any) => {
-        const cId = String(c?._id || c?.id || '');
-        if (!cId) return null;
-        try {
-          const { data } = await api.get(`/api/messages/${cId}`, {
-            params: { limit: 1, order: 'desc' },
-            signal,
-          });
-          const list = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
-          const last = list[0];
+    try {
+      const { data } = await api.get('/api/communities/my-threads', { signal });
+      const items = data?.items || [];
 
-          // ✅ FIX: Don't return null if no messages. Use fallback values.
-          // if (!last) return null; <--- THIS WAS THE BUG
-
-          const type = last?.type === 'photo' ? 'photo' : last?.type === 'voice' ? 'voice' : 'text';
-
-          // Show real message content OR "No messages yet"
-          let content = 'No messages yet';
-          if (last) {
-            if (type === 'photo') content = '📷 Image';
-            else if (type === 'voice') content = '🎤 Voice Memo';
-            else {
-              const text = String(last.content ?? '');
-              if (text.includes('cloudinary.com') || text.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
-                content = '📷 Image';
-              } else {
-                content = text;
-              }
-            }
-          }
-
-          // Use message time OR community join/create time
-          const lastAt = last
-            ? Number(new Date(last.createdAt ?? last.timestamp ?? Date.now()).getTime())
-            : Number(new Date(c.createdAt || c.updatedAt || Date.now()).getTime());
-
-          const th: CommunityThread = {
-            id: cId,
-            name: String(c?.name || 'Community'),
-            avatar: '🏛️',
-            lastMsg: { type: last ? type : 'text', content },
-            lastAt,
-            unread: 0,
-            pinned: !!c?.pinned,
-            memberCount: c?.memberCount || 0,
-          };
-          return th;
-        } catch (err) {
-          // ✅ Fallback: If API fails (e.g. 404), still show the community so it's clickable
-          console.log(`[Community] Failed to load thread ${cId}`, err);
-          return {
-            id: cId,
-            name: String(c?.name || 'Community'),
-            avatar: '🏛️',
-            lastMsg: { type: 'text', content: 'Tap to start chatting' },
-            lastAt: Number(new Date(c.createdAt || Date.now()).getTime()),
-            unread: 0,
-            pinned: !!c?.pinned,
-            memberCount: c?.memberCount || 0,
-          };
-        }
-      })
-    );
-
-    return results.filter(Boolean) as CommunityThread[];
-  }, [isAuthed, myCommunities]);
+      // Map to CommunityThread shape if needed, but backend now returns mostly correct shape
+      return items.map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        avatar: item.avatar || '🏛️',
+        lastMsg: item.lastMsg,
+        lastAt: item.lastAt,
+        unread: item.unread || 0,
+        pinned: !!item.pinned,
+        memberCount: item.memberCount
+      }));
+    } catch (err) {
+      console.log('[Communities] Batch fetch failed', err);
+      return [];
+    }
+  }, [isAuthed]);
 
   // Initial load
   useEffect(() => {
