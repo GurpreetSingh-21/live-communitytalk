@@ -54,16 +54,16 @@ export const AuthContext = createContext<AuthState>({
   isAuthed: false,
   user: null,
   communities: [],
-  signIn: async () => {},
+  signIn: async () => { },
   register: async () => ({ message: "" }),
-  signOut: async () => {},
-  refreshBootstrap: async () => {},
-  setToken: async () => {},
-  bootstrap: async () => {},
-  updateAvatar: () => {},
+  signOut: async () => { },
+  refreshBootstrap: async () => { },
+  setToken: async () => { },
+  bootstrap: async () => { },
+  updateAvatar: () => { },
 });
 
-SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.preventAutoHideAsync().catch(() => { });
 
 /* ───────────────────────────────────────────
    Normalize user scope (fills missing collegeSlug / religionKey)
@@ -122,6 +122,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
     const safeCommunities = Array.isArray(cs) ? cs : [];
     const augmentedUser = deriveScope(u, safeCommunities);
+
+    // Essential: Inject communityIds so screens can check isMember easily
+    if (augmentedUser) {
+      augmentedUser.communityIds = safeCommunities.map((c) => c._id || c.id);
+    }
+
     setUser(augmentedUser);
     setCommunities(safeCommunities);
   }, []);
@@ -133,7 +139,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
     try {
       await removeAccessToken();
-    } catch {}
+    } catch { }
 
     disconnectSocket();
     applyAuthState(null, []);
@@ -144,7 +150,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
   const triedLegacyOnce = useRef(false);
 
-// CommunityTalkMobile/src/context/AuthContext.tsx (inside AuthProvider)
+  // CommunityTalkMobile/src/context/AuthContext.tsx (inside AuthProvider)
 
   /* --------------------- Bootstrap --------------------- */
   const refreshBootstrap = useCallback(
@@ -170,11 +176,11 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         return;
       } catch (err: any) {
         if (err?._early401) return;
-        
+
         // Handle the custom error thrown when no token is found in auth.ts
         if (err.message?.includes("No access token found")) {
-            console.log("[AuthContext] Bootstrap skipped due to missing token.");
-            return;
+          console.log("[AuthContext] Bootstrap skipped due to missing token.");
+          return;
         }
 
         const status = err?.response?.status;
@@ -183,14 +189,14 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         if (status === 404 && !triedLegacyOnce.current) {
           console.warn("[AuthContext] Bootstrap 404. Trying legacy endpoint...");
           triedLegacyOnce.current = true;
-          
+
           try {
-            const data = await request("/bootstrap"); 
+            const data = await request("/bootstrap");
             applyAuthState(data?.user || null, data?.communities || []);
             console.log("[AuthContext] Legacy bootstrap succeeded.");
             return;
           } catch (e) {
-             console.error("[AuthContext] Legacy bootstrap failed.");
+            console.error("[AuthContext] Legacy bootstrap failed.");
           }
         }
 
@@ -207,7 +213,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     [applyAuthState, clearAuthState]
   );
 
-// CommunityTalkMobile/src/context/AuthContext.tsx (around line 290, the initialLoad function)
+  // CommunityTalkMobile/src/context/AuthContext.tsx (around line 290, the initialLoad function)
 
   /* --------------------- Initial Load --------------------- */
   const initialLoad = useCallback(async () => {
@@ -229,27 +235,27 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         applyAuthState(null, []);
       }
     } catch (e: any) { // ⭐ ENSURE CATCH BLOCK IS ROBUST
-      
+
       // ⭐ NEW: Filter out the expected error caused by unauthenticated bootstrap
       if (e.message?.includes("No access token found")) {
-         console.warn("[AuthContext] Load Error: Ignored expected 'No token' error.");
-         // This block intentionally skips clearing state, as it implies the flow is correct.
-         // We must still finish loading.
+        console.warn("[AuthContext] Load Error: Ignored expected 'No token' error.");
+        // This block intentionally skips clearing state, as it implies the flow is correct.
+        // We must still finish loading.
       } else if (e?.response?.status === 401) {
-         // This catches genuine 401 on expired tokens
-         console.error("[AuthContext] Initial load failed with 401, clearing state.");
-         await clearAuthState();
+        // This catches genuine 401 on expired tokens
+        console.error("[AuthContext] Initial load failed with 401, clearing state.");
+        await clearAuthState();
       } else {
-         // Catch all other network/logic errors
-         console.error("[AuthContext] Initial load failed with unexpected error:", e);
-         await clearAuthState();
+        // Catch all other network/logic errors
+        console.error("[AuthContext] Initial load failed with unexpected error:", e);
+        await clearAuthState();
       }
 
     } finally {
       if (mountedRef.current) setIsLoading(false);
       try {
         await SplashScreen.hideAsync();
-      } catch {}
+      } catch { }
     }
   }, [applyAuthState, clearAuthState, refreshBootstrap]);
 
@@ -306,7 +312,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       // to avoid blocking the UI
       await setAccessToken(token);
       await refreshSocketAuth(token);
-      
+
       // Run bootstrap and push notifications in background
       // These should not block the verify-email screen navigation
       setTimeout(() => {

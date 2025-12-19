@@ -28,15 +28,15 @@ router.get("/:communityId", async (req, res) => {
 
     // Ensure the community exists
     const community = await prisma.community.findUnique({
-        where: { id: communityId },
-        select: { id: true, name: true }
+      where: { id: communityId },
+      select: { id: true, name: true }
     });
     if (!community) return res.status(404).json({ error: "Community not found" });
 
     // Gate by membership of the requester
     const myMembership = await prisma.member.findUnique({
       where: {
-          userId_communityId: { userId: req.user.id, communityId: communityId }
+        userId_communityId: { userId: req.user.id, communityId: communityId }
       }
     });
     if (!myMembership) {
@@ -50,33 +50,33 @@ router.get("/:communityId", async (req, res) => {
 
     // Live presence
     const allOnlineUsers = new Set(
-        global.onlineUsers ? global.onlineUsers.keys() : [] 
-        // Note: req.presence.listOnlineUsers logic?
-        // Code used: `req.presence?.listOnlineUsers?.()`
-        // I will keep that logic.
+      global.onlineUsers ? global.onlineUsers.keys() : []
+      // Note: req.presence.listOnlineUsers logic?
+      // Code used: `req.presence?.listOnlineUsers?.()`
+      // I will keep that logic.
     );
     // Let's reuse existing presence logic pattern
     const liveUsers = new Set(
-        Array.isArray(req.presence?.listOnlineUsers?.())
-            ? req.presence.listOnlineUsers()
-            : []
+      Array.isArray(req.presence?.listOnlineUsers?.())
+        ? req.presence.listOnlineUsers()
+        : []
     );
 
     const where = { communityId: communityId };
-    
+
     // Search filter (on member fields OR user fields)
     // Prisma doesn't support OR across relations easily in one level without nested ORs.
     // simpler to search member.name/email/fullName since we copy those fields?
     // The previous code searched member.fullName/email OR person.fullName/email.
     // Our new Member table has fullName/email duplicated for optimization, so we can search local fields.
     if (q) {
-        where.OR = [
-            { fullName: { contains: q, mode: 'insensitive' } },
-            { email: { contains: q, mode: 'insensitive' } },
-            { name: { contains: q, mode: 'insensitive' } } // optional
-        ];
+      where.OR = [
+        { fullName: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+        { name: { contains: q, mode: 'insensitive' } } // optional
+      ];
     }
-    
+
     // Note: statusFilter in Mongoose code was applied *after* fetching + presence check?
     // "const byPresence = statusFilter ... ? normalized.filter(...) : normalized"
     // So status 'online' is determined by Socket presence, not DB.
@@ -84,21 +84,21 @@ router.get("/:communityId", async (req, res) => {
     // Wait, if we paginate by DB, but filter by Presence (RAM), that breaks pagination if we only return online users.
     // The original code: fetched 'limit' members, then applied filter to that slice. 
     // This is quirky (you might get 0 results for page 1 if all are offline), but I will replicate it to be safe.
-    
+
     const findArgs = {
-        where,
-        take: limit,
-        orderBy: { id: 'asc' }, // consistent ordering for cursor
-        include: {
-            user: {
-                select: { id: true, fullName: true, email: true, avatar: true }
-            }
+      where,
+      take: limit,
+      orderBy: { id: 'asc' }, // consistent ordering for cursor
+      include: {
+        user: {
+          select: { id: true, fullName: true, email: true, avatar: true }
         }
+      }
     };
-    
+
     if (cursor) {
-        findArgs.cursor = { id: cursor };
-        findArgs.skip = 1; // skip the cursor itself
+      findArgs.cursor = { id: cursor };
+      findArgs.skip = 1; // skip the cursor itself
     }
 
     const membersRaw = await prisma.member.findMany(findArgs);
@@ -129,7 +129,7 @@ router.get("/:communityId", async (req, res) => {
         email,
         avatar,
         status: isOnline ? "online" : "offline",
-        memberStatus: m.memberStatus, 
+        memberStatus: m.memberStatus,
         role: m.role,
         isYou: personId === req.user.id,
       };
@@ -143,7 +143,7 @@ router.get("/:communityId", async (req, res) => {
     // The original code did regex filter on "normalized" items if q was present but we did DB filter.
     // Since we did DB filter, 'filtered' should be same as 'byPresence'.
     // Except complex "name or email" logic. DB filter covered it.
-    
+
     const nextCursor = membersRaw.length === limit ? membersRaw[membersRaw.length - 1].id : null;
 
     return res.json({
@@ -176,25 +176,23 @@ router.post("/", async (req, res) => {
     }
 
     const comm = await prisma.community.findUnique({
-        where: { id: community }
+      where: { id: community }
     });
     if (!comm) return res.status(404).json({ error: "Community not found" });
 
     const me = await prisma.user.findUnique({
-        where: { id: req.user.id }
+      where: { id: req.user.id }
     });
     if (!me) return res.status(401).json({ error: "User not found" });
 
     // Upsert
     const memberData = {
-        userId: me.id,
-        communityId: comm.id,
-        name: (fullName || me.fullName || me.email || "User").trim(),
-        fullName: (fullName || me.fullName || me.email || "User").trim(),
-        email: me.email,
-        avatar: avatar || me.avatar || "/default-avatar.png",
-        role: "member",
-        memberStatus: "active"
+      userId: me.id,
+      communityId: comm.id,
+      name: (fullName || me.fullName || me.email || "User").trim(),
+      avatar: avatar || me.avatar || "/default-avatar.png",
+      memberStatus: "active",
+      role: "member"
     };
 
     // We use a transaction or just upsert.
@@ -214,20 +212,18 @@ router.post("/", async (req, res) => {
     */
     // So distinct from login logic? 
     // Yes, this route lets you "join" or "update profile in community".
-    
+
     // Prisma upsert:
     const updated = await prisma.member.upsert({
-        where: {
-            userId_communityId: { userId: me.id, communityId: comm.id }
-        },
-        create: memberData,
-        update: {
-            fullName: memberData.fullName,
-            name: memberData.name,
-            email: memberData.email,
-            avatar: memberData.avatar,
-            memberStatus: "active" // Ensure active if re-joining
-        }
+      where: {
+        userId_communityId: { userId: me.id, communityId: comm.id }
+      },
+      create: memberData,
+      update: {
+        memberStatus: "active",
+        name: memberData.name, // Ensure name is kept/updated
+        avatar: memberData.avatar
+      }
     });
 
     // Notify members in this room that membership changed
@@ -251,13 +247,13 @@ router.post("/", async (req, res) => {
 router.patch("/:memberId", async (req, res) => {
   try {
     const { memberId } = req.params;
-    
+
     const { fullName, avatar, status } = req.body || {};
     const data = {};
-    
+
     if (typeof fullName === "string") {
-        data.fullName = fullName.trim();
-        data.name = fullName.trim(); // sync name field
+      data.fullName = fullName.trim();
+      data.name = fullName.trim(); // sync name field
     }
     if (typeof avatar === "string") data.avatar = avatar.trim();
     if (typeof status === "string" && ["online", "offline"].includes(status)) {
@@ -281,7 +277,7 @@ router.patch("/:memberId", async (req, res) => {
       // So updating it in DB might be useless legacy behavior unless it overrides presence?
       // I'll skip DB update for 'status' unless I see a column.
     }
-    
+
     if (Object.keys(data).length === 0) {
       return res.status(400).json({ error: "No valid fields to update" });
     }
@@ -290,20 +286,54 @@ router.patch("/:memberId", async (req, res) => {
     // We can check ownership in WHERE clause
     // But we need to find unique by ID first to be safe, or just updateMany?
     // updateMany returns count.
-    
+
     // Better: findUnique first to check ownership, then update?
     // Or `update` if ID is PK.
     // Member PK is ID.
-    
+
     const existing = await prisma.member.findUnique({ where: { id: memberId } });
     if (!existing || existing.userId !== req.user.id) {
-        return res.status(404).json({ error: "Member not found or not owned by you" });
+      return res.status(404).json({ error: "Member not found or not owned by you" });
     }
-    
-    const member = await prisma.member.update({
-        where: { id: memberId },
-        data: data
+
+    // Redirect updates to User table (Global Profile)
+    if (data.fullName || data.avatar) {
+      // Prepare User update data
+      const userData = {};
+      if (data.fullName) userData.fullName = data.fullName;
+      if (data.avatar) userData.avatar = data.avatar;
+
+      await prisma.user.update({
+        where: { id: existing.userId },
+        data: userData
+      });
+    }
+
+    // Member update (only status if applicable, currently almost nothing)
+    // If no member-specific fields remain in 'data' (like specific role logic?), we skip member update
+    // But we need to return the object.
+
+    // Check if we have member-specific fields?
+    // current 'data' has fullName/avatar/name in it from lines 258-262.
+    // We should CLEAR them from `data` before calling prisma.member.update,
+    // OR just skip member update if only profile fields changed.
+
+    // For now, assume Member table update is barely needed unless we add member-settings.
+    // We'll return the existing member + user data.
+
+    const member = await prisma.member.findUnique({
+      where: { id: memberId },
+      include: { user: true }
     });
+
+    // Manually merge for response
+    const result = {
+      ...member,
+      name: member.user.fullName,
+      fullName: member.user.fullName,
+      avatar: member.user.avatar,
+      email: member.user.email
+    };
 
     req.io?.to(ROOM(member.communityId)).emit("members:changed", {
       communityId: String(member.communityId),
@@ -330,11 +360,11 @@ router.delete("/:memberId", async (req, res) => {
     // Verify ownership
     const existing = await prisma.member.findUnique({ where: { id: memberId } });
     if (!existing || existing.userId !== req.user.id) {
-        return res.status(404).json({ error: "Member not found or not owned by you" });
+      return res.status(404).json({ error: "Member not found or not owned by you" });
     }
 
     const removed = await prisma.member.delete({
-        where: { id: memberId }
+      where: { id: memberId }
     });
 
     req.io?.to(ROOM(removed.communityId)).emit("members:changed", {

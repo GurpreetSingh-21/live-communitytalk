@@ -288,15 +288,15 @@ export default function RegisterScreen() {
 
         const [colRes, relRes] = await Promise.all([
           api.get(`/api/public/colleges`),
-          api.get(`/api/public/communities?type=religion&paginated=false`),
+          api.get(`/api/public/communities?type=religion&type=custom&paginated=false`),
         ]);
 
         const colItems = Array.isArray(colRes.data) ? colRes.data : [];
         const relItems = Array.isArray(relRes.data)
           ? relRes.data
           : Array.isArray(relRes.data?.items)
-          ? relRes.data.items
-          : [];
+            ? relRes.data.items
+            : [];
 
         if (!mounted) return;
 
@@ -609,12 +609,12 @@ export default function RegisterScreen() {
                           pwStrength === "weak" && i === 0
                             ? "#EF4444"
                             : pwStrength === "medium" && i <= 1
-                            ? "#F59E0B"
-                            : pwStrength === "strong"
-                            ? "#10B981"
-                            : isDark
-                            ? "#27272A"
-                            : "#E5E7EB",
+                              ? "#F59E0B"
+                              : pwStrength === "strong"
+                                ? "#10B981"
+                                : isDark
+                                  ? "#27272A"
+                                  : "#E5E7EB",
                       }}
                     />
                   ))}

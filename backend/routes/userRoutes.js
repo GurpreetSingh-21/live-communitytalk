@@ -39,25 +39,24 @@ router.post("/avatar", async (req, res) => {
 
     // 4. SYNC: Update all Membership records for this user
     try {
-        await prisma.member.updateMany({
-            where: { userId: userId },
-            data: { avatar: uploadResponse.url }
-        });
+      await prisma.member.updateMany({
+        where: { userId: userId },
+        data: { avatar: uploadResponse.url }
+      });
     } catch (syncErr) {
-        console.warn("Avatar sync warning:", syncErr);
-        // Don't fail the request if sync fails, but log it.
+      console.warn("Avatar sync warning:", syncErr);
     }
 
     // Return user info excluding sensitive data
     const safeUser = {
-        id: updatedUser.id,
-        fullName: updatedUser.fullName,
-        email: updatedUser.email,
-        avatar: updatedUser.avatar,
-        role: updatedUser.role,
-        collegeSlug: updatedUser.collegeSlug,
-        religionKey: updatedUser.religionKey,
-        bio: updatedUser.bio
+      id: updatedUser.id,
+      fullName: updatedUser.fullName,
+      email: updatedUser.email,
+      avatar: updatedUser.avatar,
+      role: updatedUser.role,
+      collegeSlug: updatedUser.collegeSlug,
+      religionKey: updatedUser.religionKey,
+      bio: updatedUser.bio
     };
 
     return res.json({
@@ -83,13 +82,13 @@ router.get("/:id", async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
-          id: true,
-          fullName: true,
-          avatar: true,
-          email: true,
-          collegeSlug: true,
-          religionKey: true,
-          bio: true
+        id: true,
+        fullName: true,
+        avatar: true,
+        email: true,
+        collegeSlug: true,
+        religionKey: true,
+        bio: true
       }
     });
 
@@ -102,8 +101,8 @@ router.get("/:id", async (req, res) => {
     // But moving forward we should prefer id. 
     // Mongoose usually returned _id.
     const responseUser = {
-        _id: user.id, // Legacy compat
-        ...user
+      _id: user.id, // Legacy compat
+      ...user
     };
 
     return res.json(responseUser);

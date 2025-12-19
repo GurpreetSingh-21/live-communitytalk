@@ -10,7 +10,7 @@ router.use(authenticate);
 /* ───────────────── helpers ───────────────── */
 
 function isAdmin(req) {
-  return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
+  return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
   return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
 }
 
@@ -22,9 +22,7 @@ async function upsertMembership({ tx, user, communityId }) {
   const memberData = {
     userId: user.id,
     communityId: communityId,
-    name: user.fullName || user.email,
-    fullName: user.fullName || user.email,
-    email: user.email,
+    name: user.fullName || user.email || "User",
     avatar: user.avatar || "/default-avatar.png",
     memberStatus: "active",
     role: "member",
@@ -63,46 +61,44 @@ router.post("/", async (req, res) => {
     if (!name || !name.trim()) {
       return res.status(400).json({ error: "Community name is required" });
     }
-    
+
     // Check duplicate name
     // Using simple findFirst. We relies on case-insensitivity logic being handled manually 
     // or by DB collation. For now, strict match or manual lower case check.
     // Mongoose code had regex.
     const dup = await prisma.community.findFirst({
-        where: { name: { equals: name.trim(), mode: 'insensitive' } }
+      where: { name: { equals: name.trim(), mode: 'insensitive' } }
     });
-    
+
     if (dup) return res.status(400).json({ error: "Community name already exists" });
 
     const user = await prisma.user.findUnique({
-        where: { id: req.user.id }
+      where: { id: req.user.id }
     });
     if (!user) return res.status(404).json({ error: "Creator not found" });
 
     // Transaction to create community + owner member
     const result = await prisma.$transaction(async (tx) => {
-        const comm = await tx.community.create({
-            data: {
-                name: name.trim(),
-                description: (description || "").trim(),
-                type: "custom",
-                createdBy: user.id
-            }
-        });
+      const comm = await tx.community.create({
+        data: {
+          name: name.trim(),
+          description: (description || "").trim(),
+          type: "custom",
+          createdBy: user.id
+        }
+      });
 
-        await tx.member.create({
-            data: {
-                userId: user.id,
-                communityId: comm.id,
-                name: user.fullName || user.email || "User",
-                fullName: user.fullName || user.email || "User",
-                email: user.email,
-                avatar: user.avatar || "/default-avatar.png",
-                role: "owner",
-                memberStatus: "active"
-            }
-        });
-        return comm;
+      await tx.member.create({
+        data: {
+          userId: user.id,
+          communityId: comm.id,
+          name: user.fullName || user.email || "User",
+          avatar: user.avatar || "/default-avatar.png",
+          role: "owner",
+          memberStatus: "active"
+        }
+      });
+      return comm;
     });
 
     return res.status(201).json({
@@ -141,37 +137,37 @@ router.get("/", async (req, res) => {
 
     const where = {};
     if (qRaw) {
-        where.name = { contains: qRaw, mode: 'insensitive' };
+      where.name = { contains: qRaw, mode: 'insensitive' };
     }
 
     const select = {
-        id: true,
-        name: true,
-        description: true, 
-        type: true, 
-        key: true, 
-        slug: true, 
-        isPrivate: true, 
-        tags: true, 
-        createdBy: true, 
-        createdAt: true, 
-        updatedAt: true 
+      id: true,
+      name: true,
+      description: true,
+      type: true,
+      key: true,
+      slug: true,
+      isPrivate: true,
+      tags: true,
+      createdBy: true,
+      createdAt: true,
+      updatedAt: true
     };
 
     if (wantPaginated) {
       const [items, total] = await prisma.$transaction([
-          prisma.community.findMany({
-              where,
-              select,
-              orderBy: { createdAt: 'desc' },
-              skip,
-              take: limit
-          }),
-          prisma.community.count({ where })
+        prisma.community.findMany({
+          where,
+          select,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit
+        }),
+        prisma.community.count({ where })
       ]);
-      
+
       const mapped = items.map(c => ({ ...c, _id: c.id })); // Compat
-      
+
       return res.status(200).json({
         items: mapped,
         page,
@@ -187,9 +183,9 @@ router.get("/", async (req, res) => {
     // But for now we match behavior or set a reasonable default if not specified? 
     // Mongoose find() returns all. Let's return all but keep memory in mind.
     const items = await prisma.community.findMany({
-        where,
-        select,
-        orderBy: { createdAt: 'desc' }
+      where,
+      select,
+      orderBy: { createdAt: 'desc' }
     });
     const mapped = items.map(c => ({ ...c, _id: c.id }));
 
@@ -207,10 +203,10 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const community = await prisma.community.findUnique({
-        where: { id: req.params.id }
+      where: { id: req.params.id }
     });
     if (!community) return res.status(404).json({ error: "Community not found" });
-    
+
     return res.status(200).json({ ...community, _id: community.id });
   } catch (error) {
     console.error("GET /api/communities/:id error:", error);
@@ -254,25 +250,25 @@ router.patch("/:id", async (req, res) => {
       // Duplicate check (exclude self)
       const dup = await prisma.community.findFirst({
         where: {
-            id: { not: id },
-            name: { equals: name.trim(), mode: 'insensitive' }
+          id: { not: id },
+          name: { equals: name.trim(), mode: 'insensitive' }
         }
       });
       if (dup) return res.status(400).json({ error: "Community name already exists" });
       updates.name = name.trim();
     }
-    
+
     if (typeof desc === "string") {
       updates.description = desc.trim();
     }
 
     if (Object.keys(updates).length === 0) {
-        return res.status(200).json({ ...community, _id: community.id });
+      return res.status(200).json({ ...community, _id: community.id });
     }
 
     const saved = await prisma.community.update({
-        where: { id },
-        data: updates
+      where: { id },
+      data: updates
     });
 
     return res.status(200).json({ ...saved, _id: saved.id });
@@ -302,11 +298,11 @@ router.delete("/:id", async (req, res) => {
     // It does not have onDelete: Cascade explicitly set in standard schema usually unless I added it.
     // Defaults to restrictive. I must check schema or delete manually.
     // Mongoose code deleted manually. I'll do manual delete or transaction.
-    
+
     await prisma.$transaction([
-        prisma.member.deleteMany({ where: { communityId: id } }),
-        prisma.message.deleteMany({ where: { communityId: id } }), // Optionally delete messages too
-        prisma.community.delete({ where: { id } })
+      prisma.member.deleteMany({ where: { communityId: id } }),
+      prisma.message.deleteMany({ where: { communityId: id } }), // Optionally delete messages too
+      prisma.community.delete({ where: { id } })
     ]);
 
     return res.status(200).json({ message: "Community deleted" });
@@ -336,15 +332,15 @@ router.post("/:id/join", async (req, res) => {
 
     // Check membership
     const exists = await prisma.member.findUnique({
-        where: {
-            userId_communityId: { userId: personId, communityId: id }
-        }
+      where: {
+        userId_communityId: { userId: personId, communityId: id }
+      }
     });
-    
+
     // Note: If exists but is not 'active' (e.g. banned?), we might need logic.
     // For now, assuming idempotency means "ensure active".
     if (exists && exists.memberStatus === 'active') {
-        return res.status(200).json({ message: "Already a member" });
+      return res.status(200).json({ message: "Already a member" });
     }
 
     let membership;
@@ -388,7 +384,7 @@ router.post("/:id/leave", async (req, res) => {
     if (!community) return res.status(404).json({ error: "Community not found" });
 
     const deleted = await prisma.member.deleteMany({
-        where: { userId: personId, communityId: id }
+      where: { userId: personId, communityId: id }
     });
 
     if (deleted.count === 0) {

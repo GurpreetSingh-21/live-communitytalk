@@ -20,30 +20,25 @@ const prisma = require("../prisma/client");
  */
 router.get("/colleges", async (req, res) => {
   try {
-    const colleges = await prisma.community.findMany({
-      where: { type: "college" },
+    // Correctly fetch from College table which has emailDomains and the correct ID expected by register
+    const colleges = await prisma.college.findMany({
       select: {
         id: true,
         name: true,
         key: true,
-        // emailDomains? If not in schema, can't return.
-        // Assuming client might need it, but we can't invent it.
-        // If it was in tags like "domain:foo.edu", we could parse.
-        // For now just return standard fields.
+        emailDomains: true,
       },
       orderBy: { name: 'asc' }
     });
-    
-    // Convert to frontend shape if needed (id -> _id)
+
+    // Convert to frontend shape
     const items = colleges.map(c => ({
-        _id: c.id,
-        name: c.name,
-        key: c.key,
-        // Mock emailDomains if verifying registration needs it, or strictly follow schema.
-        // Start with empty to avoid crash if frontend expects array
-        emailDomains: [] 
+      _id: c.id,
+      name: c.name,
+      key: c.key,
+      emailDomains: c.emailDomains || []
     }));
-    
+
     return res.json(items);
   } catch (e) {
     console.error("GET /api/public/colleges error", e);
@@ -58,13 +53,13 @@ router.get("/colleges", async (req, res) => {
 router.get("/communities", async (req, res) => {
   try {
     const {
-        q = "",
-        sort = "name",
-        page = 1,
-        limit = 100,
-        type,
-        tags,
-        paginated = "true",
+      q = "",
+      sort = "name",
+      page = 1,
+      limit = 100,
+      type,
+      tags,
+      paginated = "true",
     } = req.query;
 
     const pg = Math.max(parseInt(page, 10) || 1, 1);
@@ -72,82 +67,82 @@ router.get("/communities", async (req, res) => {
     const doPaginate = paginated === "true" || paginated === true;
 
     const where = {
-        isPrivate: false // Public only
+      isPrivate: false // Public only
     };
 
     // Type filter
     if (type) {
-        if (Array.isArray(type)) where.type = { in: type };
-        else where.type = type;
+      if (Array.isArray(type)) where.type = { in: type };
+      else where.type = type;
     }
 
     // Tags filter: Prisma "hasEvery" for arrays (Postgres)
     if (tags) {
-        const tArr = Array.isArray(tags) ? tags : [tags];
-        if (tArr.length > 0) {
-            where.tags = { hasEvery: tArr };
-        }
+      const tArr = Array.isArray(tags) ? tags : [tags];
+      if (tArr.length > 0) {
+        where.tags = { hasEvery: tArr };
+      }
     }
 
     // Text search
     if (q && q.trim()) {
-        const qs = q.trim();
-        where.OR = [
-            { name: { contains: qs, mode: 'insensitive' } },
-            { key: { contains: qs, mode: 'insensitive' } },
-            { slug: { contains: qs, mode: 'insensitive' } },
-            { description: { contains: qs, mode: 'insensitive' } },
-        ];
+      const qs = q.trim();
+      where.OR = [
+        { name: { contains: qs, mode: 'insensitive' } },
+        { key: { contains: qs, mode: 'insensitive' } },
+        { slug: { contains: qs, mode: 'insensitive' } },
+        { description: { contains: qs, mode: 'insensitive' } },
+      ];
     }
 
     // Sort
     const orderBy = {};
     const sortField = sort.startsWith("-") ? sort.slice(1) : sort;
     const sortDir = sort.startsWith("-") ? 'desc' : 'asc';
-    
+
     // Map sort fields
     if (['name', 'createdAt'].includes(sortField)) {
-        orderBy[sortField] = sortDir;
+      orderBy[sortField] = sortDir;
     } else {
-        orderBy.name = 'asc';
+      orderBy.name = 'asc';
     }
 
     const select = {
-        id: true,
-        name: true,
-        type: true,
-        key: true,
-        tags: true,
-        isPrivate: true,
-        createdAt: true
+      id: true,
+      name: true,
+      type: true,
+      key: true,
+      tags: true,
+      isPrivate: true,
+      createdAt: true
     };
 
     if (!doPaginate) {
-        const items = await prisma.community.findMany({
-            where,
-            orderBy,
-            select
-        });
-        return res.json(items.map(i => ({ _id: i.id, ...i })));
+      const items = await prisma.community.findMany({
+        where,
+        orderBy,
+        select
+      });
+      return res.json(items.map(i => ({ _id: i.id, ...i })));
     }
 
     const [items, total] = await Promise.all([
-        prisma.community.findMany({
-            where,
-            orderBy,
-            skip: (pg - 1) * lim,
-            take: lim,
-            select
-        }),
-        prisma.community.count({ where })
+      prisma.community.findMany({
+        where,
+        orderBy,
+        skip: (pg - 1) * lim,
+        take: lim,
+        select
+      }),
+      prisma.community.count({ where })
     ]);
 
     res.json({
-        items: items.map(i => ({ _id: i.id, ...i })),
-        page: pg,
-        limit: lim,
-        total,
-        pages: Math.max(Math.ceil(total / lim), 1),
+      items: items.map(i => ({ _id: i.id, ...i })),
+      page: pg,
+      limit: lim,
+      total,
+      pages: Math.max(Math.ceil(total / lim), 1),
     });
 
   } catch (e) {

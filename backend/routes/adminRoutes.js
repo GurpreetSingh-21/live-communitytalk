@@ -134,7 +134,7 @@ router.get("/communities", async (req, res) => {
         ]);
 
         const mapped = items.map(c => ({
-            _id: c.id, 
+            _id: c.id,
             ...c
         }));
 
@@ -183,12 +183,12 @@ router.post("/communities", async (req, res) => {
             const tagset = new Set(baseTags);
 
             if (collegeId || collegeKey) {
-                const colFilter = collegeId 
-                    ? { id: collegeId, type: "college" } 
+                const colFilter = collegeId
+                    ? { id: collegeId, type: "college" }
                     : { key: slugify(collegeKey), type: "college" };
-                
+
                 const college = await prisma.community.findFirst({ where: colFilter });
-                
+
                 if (!college) {
                     return res.status(400).json({ error: "College not found" });
                 }
@@ -282,7 +282,7 @@ router.delete("/communities/:id", async (req, res) => {
         const { id } = req.params;
 
         try {
-             await prisma.community.delete({ where: { id } });
+            await prisma.community.delete({ where: { id } });
         } catch (e) {
             if (e.code === 'P2025') return res.status(404).json({ error: "Not found" });
             throw e;
@@ -510,15 +510,15 @@ router.patch("/people/:id", async (req, res) => {
         if (typeof req.body.fullName === "string") data.fullName = req.body.fullName.trim();
         if (typeof req.body.email === "string") data.email = req.body.email.trim().toLowerCase();
         if (typeof req.body.role === "string") {
-             if (["user", "mod", "admin"].includes(req.body.role)) {
-                 data.role = req.body.role;
-             }
+            if (["user", "mod", "admin"].includes(req.body.role)) {
+                data.role = req.body.role;
+            }
         }
 
         const saved = await prisma.user.update({
             where: { id },
             data,
-            include: { members: { select: { communityId: true } }}
+            include: { members: { select: { communityId: true } } }
         });
 
         const userObj = {
@@ -588,22 +588,22 @@ router.patch("/people/:id/unban", async (req, res) => {
         });
 
         const userObj = {
-             _id: saved.id,
-             fullName: saved.fullName,
-             email: saved.email,
-             role: saved.role,
-             isActive: saved.isActive,
-             isPermanentlyDeleted: saved.isPermanentlyDeleted,
-             reportsReceivedCount: saved.reportsReceivedCount
+            _id: saved.id,
+            fullName: saved.fullName,
+            email: saved.email,
+            role: saved.role,
+            isActive: saved.isActive,
+            isPermanentlyDeleted: saved.isPermanentlyDeleted,
+            reportsReceivedCount: saved.reportsReceivedCount
         };
 
         req.io?.emit("admin:userChanged", { action: "unban", user: userObj });
         res.json({ message: "User account reactivated.", user: userObj });
 
     } catch (e) {
-         console.error("💥 PATCH /api/admin/people/:id/unban ERROR:", e);
-         if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
-         res.status(500).json({ error: "Server error" });
+        console.error("💥 PATCH /api/admin/people/:id/unban ERROR:", e);
+        if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
+        res.status(500).json({ error: "Server error" });
     }
 });
 
@@ -629,9 +629,9 @@ router.patch("/people/:id/deactivate", async (req, res) => {
         res.json({ message: "User account deactivated (muted).", user: userObj });
 
     } catch (e) {
-         console.error("💥 PATCH /api/admin/people/:id/deactivate ERROR:", e);
-         if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
-         res.status(500).json({ error: "Server error" });
+        console.error("💥 PATCH /api/admin/people/:id/deactivate ERROR:", e);
+        if (e.code === 'P2025') return res.status(404).json({ error: "User not found" });
+        res.status(500).json({ error: "Server error" });
     }
 });
 
@@ -642,9 +642,9 @@ router.patch("/people/:id/deactivate", async (req, res) => {
 router.post("/memberships", async (req, res) => {
     try {
         const { personId, communityId } = req.body || {};
-        
+
         if (!personId || !communityId) {
-             return res.status(400).json({ error: "Invalid ids" });
+            return res.status(400).json({ error: "Invalid ids" });
         }
 
         const member = await prisma.member.upsert({
@@ -696,7 +696,7 @@ router.post("/memberships", async (req, res) => {
 router.delete("/memberships/:memberId", async (req, res) => {
     try {
         const { memberId } = req.params;
-        
+
         const m = await prisma.member.delete({
             where: { id: memberId }
         });
@@ -732,8 +732,8 @@ router.delete("/people/:id", async (req, res) => {
         if (!target) return res.status(404).json({ error: "User not found" });
 
         if (target.role === "admin") {
-            const adminsLeft = await prisma.user.count({ 
-                where: { role: "admin", id: { not: id } } 
+            const adminsLeft = await prisma.user.count({
+                where: { role: "admin", id: { not: id } }
             });
             if (adminsLeft === 0) {
                 return res.status(400).json({ error: "Cannot delete the last remaining admin." });
@@ -847,14 +847,14 @@ router.patch("/dating/profiles/:id/approve", async (req, res) => {
 
         const pObj = {
             ...profile,
-             person: {
-                 _id: profile.user.id,
-                 fullName: profile.user.fullName,
-                 email: profile.user.email,
-                 role: profile.user.role,
-                 collegeSlug: profile.user.collegeSlug,
-                 religionKey: profile.user.religionKey
-             }
+            person: {
+                _id: profile.user.id,
+                fullName: profile.user.fullName,
+                email: profile.user.email,
+                role: profile.user.role,
+                collegeSlug: profile.user.collegeSlug,
+                religionKey: profile.user.religionKey
+            }
         };
 
         req.io?.emit("admin:datingProfileChanged", {
@@ -885,14 +885,14 @@ router.patch("/dating/profiles/:id/suspend", async (req, res) => {
 
         const pObj = {
             ...profile,
-             person: {
-                 _id: profile.user.id,
-                 fullName: profile.user.fullName,
-                 email: profile.user.email,
-                 role: profile.user.role,
-                 collegeSlug: profile.user.collegeSlug,
-                 religionKey: profile.user.religionKey
-             }
+            person: {
+                _id: profile.user.id,
+                fullName: profile.user.fullName,
+                email: profile.user.email,
+                role: profile.user.role,
+                collegeSlug: profile.user.collegeSlug,
+                religionKey: profile.user.religionKey
+            }
         };
 
         req.io?.emit("admin:datingProfileChanged", {

@@ -142,6 +142,7 @@ const MeshBackground = () => {
 /* --------------------------- TYPES & CARD LOGIC --------------------------- */
 type Community = {
   _id: string;
+  id?: string;
   name: string;
   type?: string;
   tags?: string[];
@@ -292,14 +293,14 @@ const BentoCard = ({
     accent === "success"
       ? colors.success
       : accent === "warning"
-      ? colors.warning
-      : accent === "info"
-      ? colors.info
-      : accent === "purple"
-      ? colors.purple
-      : accent === "pink"
-      ? colors.pink
-      : colors.primary;
+        ? colors.warning
+        : accent === "info"
+          ? colors.info
+          : accent === "purple"
+            ? colors.purple
+            : accent === "pink"
+              ? colors.pink
+              : colors.primary;
 
   return (
     <Animated.View style={{ flex: 1, transform: [{ scale }] }}>
@@ -499,7 +500,7 @@ export default function UpdatesScreen() {
         } else {
           await fetchCommunities();
         }
-      } catch {}
+      } catch { }
     };
     socket.on?.("membership:joined", refresh);
     socket.on?.("membership:left", refresh);
@@ -804,7 +805,7 @@ export default function UpdatesScreen() {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 data={communities}
-                keyExtractor={(c) => c._id}
+                keyExtractor={(c) => c._id || (c as any).id}
                 renderItem={({ item, index }) => <CommunityCard community={item} index={index} />}
                 contentContainerStyle={{ paddingHorizontal: 20, paddingVertical: 10 }}
                 snapToInterval={318}

@@ -34,8 +34,6 @@ async function upsertMembership({ tx, user, communityId }) {
     userId: user.id,
     communityId: communityId,
     name: user.fullName || user.email,
-    fullName: user.fullName || user.email,
-    email: user.email,
     avatar: user.avatar || "/default-avatar.png",
     memberStatus: "active",
     role: "member",
@@ -103,7 +101,7 @@ function validateRegisterByIds({
 router.post("/register", async (req, res) => {
   try {
     const { fullName, email, password, collegeId, religionId } = req.body || {};
-    
+
     // Basic validation
     const { ok, errors } = validateRegisterByIds({
       fullName,
@@ -119,11 +117,11 @@ router.post("/register", async (req, res) => {
     const collegeDoc = await prisma.college.findUnique({
       where: { id: collegeId },
     });
-    
+
     if (!collegeDoc) {
-       return res.status(400).json({ error: { collegeId: "College not found" } });
+      return res.status(400).json({ error: { collegeId: "College not found" } });
     }
-    
+
     if (!collegeDoc.communityId) {
       return res.status(400).json({ error: { collegeId: "Invalid college data: no linked community" } });
     }
@@ -136,13 +134,13 @@ router.post("/register", async (req, res) => {
     });
 
     const collegeCommunity = communities.find(c => c.id === collegeDoc.communityId);
-    const religionCommunity = communities.find(c => c.id === religionId && c.type === "religion");
+    const religionCommunity = communities.find(c => c.id === religionId && (c.type === "religion" || c.type === "custom"));
 
     if (!collegeCommunity) {
-        return res.status(400).json({ error: { collegeId: "College community chat not found" } });
+      return res.status(400).json({ error: { collegeId: "College community chat not found" } });
     }
     if (!religionCommunity) {
-        return res.status(400).json({ error: { religionId: "Religion not found" } });
+      return res.status(400).json({ error: { religionId: "Religion not found" } });
     }
 
     let userForEmail;
@@ -184,7 +182,7 @@ router.post("/register", async (req, res) => {
               // I'll skip setting expiry column for now and just rely on time logic or add it later.
             }
           });
-          
+
           userForEmail = updated;
           isResend = true;
         } else {
@@ -316,9 +314,9 @@ router.post("/login", async (req, res) => {
       where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
       select: { communityId: true },
     });
-    
+
     const communityIds = memberships.map(m => m.communityId);
-    
+
     let communities = [];
     if (communityIds.length > 0) {
       communities = await prisma.community.findMany({
@@ -404,7 +402,7 @@ router.post("/verify-2fa-login", async (req, res) => {
           // Remove used backup code
           const newBackupCodes = [...user.twoFactorBackupCodes];
           newBackupCodes.splice(i, 1);
-          
+
           await prisma.user.update({
             where: { id: user.id },
             data: { twoFactorBackupCodes: newBackupCodes }
@@ -426,9 +424,9 @@ router.post("/verify-2fa-login", async (req, res) => {
       where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
       select: { communityId: true },
     });
-    
+
     const communityIds = memberships.map(m => m.communityId);
-    
+
     let communities = [];
     if (communityIds.length > 0) {
       communities = await prisma.community.findMany({
@@ -500,6 +498,22 @@ router.post("/verify-code", async (req, res) => {
 
     const token = signToken(updatedUser);
 
+    // Fetch communities so frontend knows they are members immediately
+    const memberships = await prisma.member.findMany({
+      where: { userId: updatedUser.id, memberStatus: { in: ["active", "owner"] } },
+      select: { communityId: true },
+    });
+
+    const communityIds = memberships.map(m => m.communityId);
+
+    let communities = [];
+    if (communityIds.length > 0) {
+      communities = await prisma.community.findMany({
+        where: { id: { in: communityIds } },
+        select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true },
+      });
+    }
+
     return res.status(200).json({
       message: "Login successful",
       token,
@@ -515,7 +529,7 @@ router.post("/verify-code", async (req, res) => {
         collegeSlug: updatedUser.collegeSlug || null,
         religionKey: updatedUser.religionKey || null,
       },
-      communities: [],
+      communities,
     });
   } catch (err) {
     console.error("POST /verify-code error:", err);
@@ -542,7 +556,7 @@ router.get("/profile", authenticate, async (req, res) => {
       select: { communityId: true },
     });
     const communityIds = memberships.map(m => m.communityId);
-    
+
     let communities = [];
     if (communityIds.length > 0) {
       communities = await prisma.community.findMany({
@@ -554,7 +568,7 @@ router.get("/profile", authenticate, async (req, res) => {
     return res.status(200).json({
       message: "Welcome to your profile!",
       user: {
-        ...user, 
+        ...user,
         _id: user.id // back-compat
       },
       communities,
@@ -629,7 +643,7 @@ router.patch("/profile", authenticate, async (req, res) => {
       select: { communityId: true },
     });
     const communityIds = memberships.map(m => m.communityId);
-    
+
     let communities = [];
     if (communityIds.length > 0) {
       communities = await prisma.community.findMany({
@@ -787,8 +801,8 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
     const user = await prisma.user.update({
       where: { id: userId },
       data: {
-          notificationPrefs: nextNotifPrefs,
-          privacyPrefs: nextPrivacyPrefs,
+        notificationPrefs: nextNotifPrefs,
+        privacyPrefs: nextPrivacyPrefs,
       },
       select: { id: true, email: true, notificationPrefs: true, privacyPrefs: true }
     });
@@ -825,7 +839,7 @@ router.get("/bootstrap", authenticate, async (req, res) => {
       select: { communityId: true },
     });
     const communityIds = memberships.map(m => m.communityId);
-    
+
     let communities = [];
     if (communityIds.length > 0) {
       communities = await prisma.community.findMany({
@@ -852,7 +866,7 @@ router.get("/my/communities", authenticate, async (req, res) => {
       select: { communityId: true },
     });
     const communityIds = memberships.map((m) => m.communityId);
-    
+
     // Original code returned specific fields including 'tags' and 'isPrivate'
     const items = await prisma.community.findMany({
       where: { id: { in: communityIds } },
@@ -871,7 +885,7 @@ router.get("/my/communities", authenticate, async (req, res) => {
       ...c,
       _id: c.id
     }));
-    
+
     res.json(mappedItems);
   } catch (err) {
     console.error("GET /my/communities error:", err);

@@ -19,14 +19,14 @@ async function assertCommunityAndMembership(communityId, userId) {
 
   const membership = await prisma.member.findUnique({
     where: {
-        userId_communityId: { userId: userId, communityId: communityId } 
+      userId_communityId: { userId: userId, communityId: communityId }
     }
   });
 
   if (!membership || !['active', 'owner'].includes(membership.memberStatus)) {
-      return { ok: false, code: 403, msg: "You are not a member of this community" };
+    return { ok: false, code: 403, msg: "You are not a member of this community" };
   }
-  return { ok: true, community: comm }; 
+  return { ok: true, community: comm };
 }
 
 const ensureAuthor = (msg, userId) => msg.senderId === userId;
@@ -57,7 +57,7 @@ router.post("/", async (req, res) => {
     // 2) Membership check
     const gate = await assertCommunityAndMembership(communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
-    
+
     // 3) Attachments
     let parsedAttachments = [];
     if (typeof attachments === 'string' && attachments.trim()) {
@@ -72,15 +72,15 @@ router.post("/", async (req, res) => {
 
     // 4) Save message
     const msg = await prisma.message.create({
-        data: {
-          communityId: communityId,
-          senderId: req.user.id,
-          senderName: req.user.fullName || req.user.email || "Unknown",
-          content: content.trim(),
-          attachments: parsedAttachments, // JSONB
-          replyToSnapshot: replyTo || undefined, // JSONB, store snapshot
-          status: "sent"
-        }
+      data: {
+        communityId: communityId,
+        senderId: req.user.id,
+        senderName: req.user.fullName || req.user.email || "Unknown",
+        content: content.trim(),
+        attachments: parsedAttachments, // JSONB
+        replyToSnapshot: replyTo || undefined, // JSONB, store snapshot
+        status: "sent"
+      }
     });
 
     // 4) Payload
@@ -111,11 +111,11 @@ router.post("/", async (req, res) => {
     });
 
     if (gate.community && gate.community.key) {
-        req.io?.to(gate.community.key).emit("receive_message", payload);
-        req.io?.to(gate.community.key).emit("message:new", {
-          communityId: String(communityId),
-          message: payload,
-        });
+      req.io?.to(gate.community.key).emit("receive_message", payload);
+      req.io?.to(gate.community.key).emit("message:new", {
+        communityId: String(communityId),
+        message: payload,
+      });
     }
 
     // 6) Push notifications (EXPO)
@@ -139,33 +139,24 @@ async function sendPushNotificationsAsync(communityId, sender, message) {
     // Get active members (except sender)
     const members = await prisma.member.findMany({
       where: {
-          communityId: communityId,
-          userId: { not: sender.id },
-          memberStatus: { in: ['active', 'owner'] } // Prisma uses arrays for in/notIn
+        communityId: communityId,
+        userId: { not: sender.id },
+        memberStatus: { in: ['active', 'owner'] } // Prisma uses arrays for in/notIn
       },
       select: { userId: true }
     });
-    
+
     const recipientIds = [...new Set(members.map(m => m.userId))];
     if (recipientIds.length === 0) return;
 
     // Fetch users with push tokens
     const recipients = await prisma.user.findMany({
-        where: {
-            id: { in: recipientIds },
-            pushTokens: { isEmpty: false } // Check if array is not empty? Prisma doesn't have isEmpty for arrays easily.
-            // Alternative: pushTokens: { not: [] } ?
-            // Postgres JSONB array check requires raw query or carefully constructed filter.
-            // Or just fetch all and filter in JS if list isn't huge.
-            // Or simple check: since pushTokens is String[] in schema:
-            // "pushTokens" String[] @default([])
-            // Prisma "has some"? No.
-            // We can just fetch all users and filter in memory if < 1000. Or use raw.
-            // Let's filter in memory for now.
-        },
-        select: { id: true, pushTokens: true, firstName: true, lastName: true }
+      where: {
+        id: { in: recipientIds },
+      },
+      select: { id: true, pushTokens: true, firstName: true, lastName: true }
     });
-    
+
     const validRecipients = recipients.filter(r => r.pushTokens && r.pushTokens.length > 0);
 
     if (validRecipients.length === 0) return;
@@ -206,7 +197,7 @@ router.get("/:communityId", async (req, res) => {
     res.set("Cache-Control", "no-store");
 
     const { communityId } = req.params;
-    
+
     // 2) Membership check
     const gate = await assertCommunityAndMembership(communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
@@ -219,14 +210,14 @@ router.get("/:communityId", async (req, res) => {
     if (isNaN(before.getTime())) before = new Date();
 
     const docs = await prisma.message.findMany({
-        where: {
-            communityId: communityId,
-            createdAt: { lt: before }
-        },
-        take: limit,
-        orderBy: { createdAt: 'desc' }
+      where: {
+        communityId: communityId,
+        createdAt: { lt: before }
+      },
+      take: limit,
+      orderBy: { createdAt: 'desc' }
     });
-    
+
     // Map to frontend shape
     const results = docs.map((msg) => ({
       _id: msg.id,
@@ -259,7 +250,7 @@ router.get("/:communityId", async (req, res) => {
       replyTo: msg.replyToSnapshot || undefined,
       attachments: msg.attachments
     }));
-    
+
     // However, for avatar, let's try to get it from relation if possible.
     // Ideally we'd modify the query to include sender.
     // `include: { sender: { select: { avatar: true } } }`
@@ -282,15 +273,15 @@ router.get("/:communityId/latest", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     const latest = await prisma.message.findFirst({
-        where: { communityId: communityId },
-        orderBy: { createdAt: 'desc' }
-        // include: { sender: { select: { avatar: true } } }
+      where: { communityId: communityId },
+      orderBy: { createdAt: 'desc' }
+      // include: { sender: { select: { avatar: true } } }
     });
 
     if (!latest) {
       return res.status(200).json(null);
     }
-    
+
     const result = {
       _id: latest.id,
       id: latest.id,
@@ -329,7 +320,7 @@ router.patch("/:messageId", async (req, res) => {
 
     const doc = await prisma.message.findUnique({ where: { id: messageId } });
     if (!doc) return res.status(404).json({ error: "Message not found" });
-    
+
     if (!ensureAuthor(doc, req.user.id))
       return res.status(403).json({ error: "You can only edit your own message" });
 
@@ -337,12 +328,12 @@ router.patch("/:messageId", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     const updated = await prisma.message.update({
-        where: { id: messageId },
-        data: {
-            content: content.trim(),
-            status: "edited",
-            editedAt: new Date()
-        }
+      where: { id: messageId },
+      data: {
+        content: content.trim(),
+        status: "edited",
+        editedAt: new Date()
+      }
     });
 
     const payload = {
@@ -369,7 +360,7 @@ router.delete("/:messageId", async (req, res) => {
 
     const doc = await prisma.message.findUnique({ where: { id: messageId } });
     if (!doc) return res.status(404).json({ error: "Message not found" });
-    
+
     if (!ensureAuthor(doc, req.user.id))
       return res.status(403).json({ error: "You can only delete your own message" });
 
@@ -377,12 +368,12 @@ router.delete("/:messageId", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     const updated = await prisma.message.update({
-        where: { id: messageId },
-        data: {
-            isDeleted: true,
-            deletedAt: new Date(),
-            status: "deleted"
-        }
+      where: { id: messageId },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        status: "deleted"
+      }
     });
 
     const payload = {
@@ -422,7 +413,7 @@ router.post("/:messageId/reactions", async (req, res) => {
     // We need to fetch current, modify, then update.
     // Concurrency could be an issue but for now simple read-modify-write.
     let reactions = Array.isArray(doc.reactions) ? doc.reactions : [];
-    
+
     // Remove existing reaction from this user for this emoji
     reactions = reactions.filter(
       r => !(String(r.userId) === String(req.user.id) && r.emoji === emoji)
@@ -437,8 +428,8 @@ router.post("/:messageId/reactions", async (req, res) => {
     });
 
     const updated = await prisma.message.update({
-        where: { id: messageId },
-        data: { reactions }
+      where: { id: messageId },
+      data: { reactions }
     });
 
     const payload = {
@@ -468,15 +459,15 @@ router.delete("/:messageId/reactions/:emoji", async (req, res) => {
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
     let reactions = Array.isArray(doc.reactions) ? doc.reactions : [];
-    
+
     // Remove reaction
     reactions = reactions.filter(
       r => !(String(r.userId) === String(req.user.id) && r.emoji === decodeURIComponent(emoji))
     );
 
     const updated = await prisma.message.update({
-        where: { id: messageId },
-        data: { reactions }
+      where: { id: messageId },
+      data: { reactions }
     });
 
     const payload = {
