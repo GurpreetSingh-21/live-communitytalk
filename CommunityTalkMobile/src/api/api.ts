@@ -23,7 +23,7 @@ if (__DEV__) {
 
 export const api = axios.create({
   baseURL: BASE,
-  timeout: 15000,
+  timeout: 60000,
   headers: {
     "Content-Type": "application/json",
     "X-Requested-With": "XMLHttpRequest",

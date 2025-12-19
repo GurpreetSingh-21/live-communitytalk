@@ -5,6 +5,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ───────────────────────── User / Person ─────────────────────────
@@ -281,38 +282,202 @@ model DirectMessageReaction {
 }
 
 // ───────────────────────── Dating ─────────────────────────
+// ───────────────────────── Dating Feature Schema ─────────────────────────
+
+// Enhanced Dating Profile
 model DatingProfile {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // ── Connection to Core User ──
   userId String @unique
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name        String
-  bio         String?
-  gender      String // Enum in code
-  seeking     String[] // Array of genders
-  yearOfStudy String   @default("other")
+  // ── Identity & Bio ──
+  firstName   String   // Real first name (Required)
+  birthDate   DateTime // For age calculation (Required 18+)
+  gender      Gender
+  bio         String?  @db.VarChar(500)
+  height      Int?     // In cm or inches (storage normalized)
   
-  photos      String[] // URLs
+  // ── College/Education (CUNY context) ──
+  collegeSlug String   // e.g., 'baruch', 'hunter'
+  major       String?
+  year        StudyYear? // Freshman, Sophomore, etc.
 
-  // Scope
-  collegeSlug String
-  religionKey String?
+  // ── Details ──
+  lookingFor      LookingFor[] // Relationship, Casual, etc.
+  hobbies         String[]     // Tags: "Gym", "Music", "Coding"
+  instagramHandle String?      // For verification/display
 
-  // Moderation
-  isProfileVisible Boolean @default(false)
-  isPhotoApproved  Boolean @default(false)
-  isSuspended      Boolean @default(false)
+  // ── Location ──
+  // We can store lat/long for distance calculation
+  latitude  Float?
+  longitude Float?
+  
+  // ── Status & Verification ──
+  isProfileVisible  Boolean   @default(true) // "Show me on dating"
+  isPaused          Boolean   @default(false)
+  
+  isPhotoVerified   Boolean   @default(false) // Blue tick?
+  photoVerifiedAt   DateTime?
+  
+  approvalStatus    ApprovalStatus @default(PENDING) // Manual/AI approval of text/bio
+  rejectionReason   String?
 
-  // Matching
-  likes    String[] // IDs of liked profiles
-  dislikes String[] // IDs of disliked profiles
-  matches  String[] // IDs of matches
+  score             Float     @default(0) // Profile completeness score
 
-  @@index([collegeSlug, religionKey, gender, isProfileVisible])
+  // ── Relations ──
+  photos      DatingPhoto[]
+  preference  DatingPreference?
+  
+  swipesMade    DatingSwipe[] @relation("Swiper")
+  swipesReceived DatingSwipe[] @relation("Target")
+  
+  matches1    DatingMatch[] @relation("MatchProfile1")
+  matches2    DatingMatch[] @relation("MatchProfile2")
+  
+  blocksGiven    DatingBlock[] @relation("Blocker")
+  blocksReceived DatingBlock[] @relation("Blocked")
+
+  @@index([collegeSlug])
+  @@index([gender])
+  @@index([userId])
   @@map("dating_profiles")
+}
+
+// Dating Preferences (Filters)
+model DatingPreference {
+  id        String   @id @default(cuid())
+  
+  datingProfileId String @unique
+  datingProfile   DatingProfile @relation(fields: [datingProfileId], references: [id], onDelete: Cascade)
+
+  // Filters
+  ageMin       Int @default(18)
+  ageMax       Int @default(30)
+  
+  maxDistance  Int @default(50) // in km/miles
+  
+  interestedInGender Gender[] // Array of genders interested in
+  
+  preferredColleges  String[] // Array of college slugs (or empty for all)
+  
+  // Privacy
+  showToPeopleOnCampusOnly Boolean @default(false)
+  isDistanceVisible        Boolean @default(true)
+  isCollegeVisible         Boolean @default(true)
+
+  @@map("dating_preferences")
+}
+
+// Photos with Moderation
+model DatingPhoto {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  datingProfileId String
+  datingProfile   DatingProfile @relation(fields: [datingProfileId], references: [id], onDelete: Cascade)
+
+  url       String
+  thumbnail String?
+  order     Int      @default(0)
+  
+  status    PhotoStatus @default(PENDING) // Moderation status
+  
+  isMain    Boolean     @default(false)
+
+  @@index([datingProfileId])
+  @@map("dating_photos")
+}
+
+// The "Swipe" Action
+model DatingSwipe {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  swiperId String
+  swiper   DatingProfile @relation("Swiper", fields: [swiperId], references: [id], onDelete: Cascade)
+
+  targetId String
+  target   DatingProfile @relation("Target", fields: [targetId], references: [id], onDelete: Cascade)
+
+  type     SwipeType // LIKE, DISLIKE, SUPERLIKE
+
+  @@unique([swiperId, targetId]) // Can only swipe once per person
+  @@index([swiperId])
+  @@index([targetId])
+  @@map("dating_swipes")
+}
+
+// Successful Match
+model DatingMatch {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt // Last activity
+
+  // Determine Profile1 < Profile2 by ID sorts to ensure uniqueness constraint
+  profile1Id String
+  profile1   DatingProfile @relation("MatchProfile1", fields: [profile1Id], references: [id], onDelete: Cascade)
+
+  profile2Id String
+  profile2   DatingProfile @relation("MatchProfile2", fields: [profile2Id], references: [id], onDelete: Cascade)
+
+  isActive   Boolean @default(true) // becomes false if unmatched
+  unmatchedBy String? // ID of who unmatched
+  
+  // Link to a conversation/thread
+  channelId String? 
+
+  @@unique([profile1Id, profile2Id])
+  @@index([profile1Id])
+  @@index([profile2Id])
+  @@map("dating_matches")
+}
+
+// Enums
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  OTHER
+}
+
+enum LookingFor {
+  RELATIONSHIP
+  CASUAL
+  FRIENDS
+  UNSURE
+}
+
+enum StudyYear {
+  FRESHMAN
+  SOPHOMORE
+  JUNIOR
+  SENIOR
+  GRADUATE
+  ALUMNI
+  OTHER
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  NEEDS_CHANGES
+}
+
+enum PhotoStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SwipeType {
+  LIKE
+  DISLIKE
+  SUPERLIKE
 }
 
 // ───────────────────────── Reports ─────────────────────────
@@ -334,4 +499,21 @@ model Report {
   targetId   String?
 
   @@map("reports")
+}
+
+// Blocking
+model DatingBlock {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  blockerId String
+  blocker   DatingProfile @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+
+  blockedId String
+  blocked   DatingProfile @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("dating_blocks")
 }

@@ -108,6 +108,47 @@ router.post('/', (req, res, next) => {
   }
 });
 
+// Import ImageKit service
+const { uploadToImageKit } = require("../services/imagekitService");
+
+/**
+ * POST /api/upload/base64
+ * Uploads a base64 image (used for Dating Photos to avoid FormData issues on RN)
+ * Uses ImageKit (same as User Avatar)
+ */
+router.post('/base64', async (req, res) => {
+  try {
+    const { image, fileName, folder } = req.body;
+
+    if (!image) {
+      return res.status(400).json({ error: "No image data provided" });
+    }
+
+    const name = fileName || `upload_${Date.now()}.jpg`;
+
+    // Upload to ImageKit
+    // Replicates logic from userRoutes.js /avatar
+    const uploadResponse = await uploadToImageKit(image, name, folder || "community_talk_uploads");
+
+    if (!uploadResponse || !uploadResponse.url) {
+      throw new Error("Failed to get download URL from ImageKit");
+    }
+
+    console.log(`✅ Base64 File uploaded via ImageKit:`, name);
+
+    return res.json({
+      url: uploadResponse.url,
+      type: 'photo',
+      name: name,
+      fileId: uploadResponse.fileId
+    });
+
+  } catch (error) {
+    console.error("❌ Base64 Upload Error:", error);
+    return res.status(500).json({ error: "Upload failed" });
+  }
+});
+
 // Error handling for Multer (Size limits, file types)
 router.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {

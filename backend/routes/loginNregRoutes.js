@@ -540,7 +540,64 @@ router.post("/verify-code", async (req, res) => {
   }
 });
 
-/* --------------------------- PROFILE (GET) --------------------------- */
+/* --------------------------- BOOTSTRAP (GET) --------------------------- */
+router.get("/bootstrap", authenticate, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id }
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    // Fetch communities via Memberships
+    const memberships = await prisma.member.findMany({
+      where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
+      select: { communityId: true },
+    });
+    const communityIds = memberships.map(m => m.communityId);
+
+    let communities = [];
+    if (communityIds.length > 0) {
+      communities = await prisma.community.findMany({
+        where: { id: { in: communityIds } },
+        select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true },
+      });
+    }
+
+    // Try to get last message for each community (optional optimization, keeping it simple for now)
+
+    // Self-healing: Check if DatingProfile exists
+    // The User table does NOT have hasDatingProfile/datingProfileId columns (schema mismatch).
+    // So we MUST check the DatingProfile table directly.
+
+    // Default assumption from user object (likely undefined/null)
+    // let hasProfile = user.hasDatingProfile; 
+
+    // Explicit Check
+    const existingProfile = await prisma.datingProfile.findUnique({
+      where: { userId: user.id },
+      select: { id: true }
+    });
+
+    const hasProfile = !!existingProfile;
+    const datingProfileId = existingProfile?.id || null;
+
+    return res.status(200).json({
+      message: "Bootstrap successful",
+      user: {
+        ...user,
+        _id: user.id, // back-compat
+        hasDatingProfile: hasProfile,
+        datingProfileId: datingProfileId
+      },
+      communities,
+    });
+  } catch (err) {
+    console.error("GET /bootstrap error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 /* --------------------------- PROFILE (GET) --------------------------- */
 router.get("/profile", authenticate, async (req, res) => {
   try {

@@ -177,6 +177,7 @@ const CustomTabBar = ({ state, descriptors, navigation, isDark, insets, unreadCo
     { name: 'index', label: 'Updates', icon: 'sparkles', activeIcon: 'sparkles', path: '/(tabs)' },
     { name: 'communities', label: 'Communities', icon: 'building.2', activeIcon: 'building.2.fill', path: '/(tabs)/communities' },
     { name: 'add-modal', label: 'Add', icon: 'plus', activeIcon: 'plus', path: '/modal', isSpecial: true },
+    { name: 'dating', label: 'Dating', icon: 'heart', activeIcon: 'heart.fill', path: '/(tabs)/dating' },
     { name: 'dms', label: 'Messages', icon: 'paperplane', activeIcon: 'paperplane.fill', path: '/(tabs)/dms' },
     { name: 'profile', label: 'Profile', icon: 'person', activeIcon: 'person.fill', path: '/(tabs)/profile' },
   ];
@@ -218,8 +219,8 @@ const CustomTabBar = ({ state, descriptors, navigation, isDark, insets, unreadCo
       opacity: withTiming(1, { duration: 200 }),
       left: `${(tabPosition.value * widthPercent)}%`,
       // We want to center the pill in that slot. 
-      // Slot width is 20%. Pill width is say 40px. 
-      // Easier to just move a container that is 20% width.
+      // Slot width is 20% (if 5 tabs). Pill width is say 40px. 
+      // Easier to just move a container that is matched to slot width.
       width: `${widthPercent}%`,
     };
   });
@@ -328,6 +329,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ title: 'Updates' }} />
       <Tabs.Screen name="communities" options={{ title: 'Communities' }} />
       <Tabs.Screen name="add-modal" options={{ title: 'Add' }} />
+      <Tabs.Screen name="dating" options={{ title: 'Dating' }} />
       <Tabs.Screen name="dms" options={{ title: 'Messages' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
 
