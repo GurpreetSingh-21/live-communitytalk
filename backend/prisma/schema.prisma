@@ -146,6 +146,7 @@ model Member {
   community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
 
   @@unique([userId, communityId]) // One membership per user per community
+  @@index([userId, memberStatus]) // CRITICAL: Speed up "my communities" query
   @@index([communityId, memberStatus])
   @@map("members")
 }

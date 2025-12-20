@@ -848,5 +848,5 @@ function UpdatesScreenLegacy() {
 }
 
 export default function Index() {
-  return <Redirect href="/(tabs)/dating" />;
+  return <Redirect href="/(tabs)/communities" />;
 }

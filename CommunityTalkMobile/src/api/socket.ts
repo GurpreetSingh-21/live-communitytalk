@@ -83,7 +83,7 @@ export async function connectSocket(providedToken?: string): Promise<Socket> {
 
     const onError = (err: any) => {
       cleanup();
-      console.error("[socket] Initial connect error:", err?.message || err);
+      console.warn("[socket] Initial connect error (will retry):", err?.message || err);
       reject(err);
     };
 

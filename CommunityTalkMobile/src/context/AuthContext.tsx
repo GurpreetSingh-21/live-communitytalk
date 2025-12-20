@@ -139,6 +139,12 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
     try {
       await removeAccessToken();
+      // Clear all caches on logout
+      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      await Promise.all([
+        AsyncStorage.removeItem('@communities_cache_v1'),
+        AsyncStorage.removeItem('@dms_cache_v1'),
+      ]);
     } catch { }
 
     disconnectSocket();
@@ -226,7 +232,11 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       if (token) {
         // --- AUTHENTICATED PATH ---
         console.log("[AuthContext] Token found, initiating bootstrap...");
-        await refreshSocketAuth(token);
+        try {
+          await refreshSocketAuth(token);
+        } catch (err) {
+          console.warn("[AuthContext] Socket connection failed (non-fatal):", err);
+        }
         await refreshBootstrap();
         await registerForPushNotificationsAsync();
       } else {

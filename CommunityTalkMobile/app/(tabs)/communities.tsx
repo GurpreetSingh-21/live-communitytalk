@@ -395,16 +395,58 @@ export default function CommunitiesScreen(): React.JSX.Element {
     }
   }, [isAuthed]);
 
-  // Initial load
+  // INSTANT LOADING: Show cache immediately, refresh in background (Discord/WhatsApp strategy)
   useEffect(() => {
     const ac = new AbortController();
-    setIsLoading(true);
+
     (async () => {
+      console.log('[Communities] 🔄 Component mounted, attempting cache load...');
+
+      // 1. Load cache INSTANTLY (0ms perceived load time!)
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        console.log('[Communities] ✅ AsyncStorage imported');
+
+        const cached = await AsyncStorage.getItem('@communities_cache_v1');
+        console.log('[Communities] Cache read result:', cached ? `${cached.length} chars` : 'null');
+
+        if (cached) {
+          const data = JSON.parse(cached);
+          console.log('[Communities] 📦 Loaded from cache:', data.length, 'items');
+          setThreads(resortByPinnedAndRecent(data));
+          setIsLoading(false); // Show immediately!
+        } else {
+          console.log('[Communities] ⚠️ No cache found, showing skeleton');
+          setIsLoading(true); // First load, show skeleton
+        }
+      } catch (e) {
+        console.error('[Communities] ❌ Cache load failed:', e);
+        setIsLoading(true);
+      }
+
+      // 2. Fetch fresh data in background (user doesn't wait!)
+      console.log('[Communities] 🌐 Fetching fresh data...');
       const communities = await fetchCommunityThreads(ac.signal);
       await refreshUnread?.();
+
+      // 3. Update UI with fresh data
       setThreads(resortByPinnedAndRecent(communities));
       setIsLoading(false);
+
+      // 4. Save to cache for next time (ONLY if we have data!)
+      if (communities && communities.length > 0) {
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem('@communities_cache_v1', JSON.stringify(communities));
+          console.log('[Communities] 💾 Saved to cache:', communities.length, 'items');
+        } catch (e) {
+          console.error('[Communities] ❌ Cache save failed:', e);
+        }
+      } else {
+        console.log('[Communities] ⚠️ Skipping cache save (empty data)');
+      }
     })();
+
     return () => ac.abort();
   }, [fetchCommunityThreads, refreshUnread]);
 

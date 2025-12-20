@@ -103,8 +103,9 @@ if (__DEV__) {
     API_BASE_URL.includes("127.0.0.1")
   ) {
     console.warn(
-      `[config] ⚠️ Using '${API_BASE_URL}' → this will NOT work on device/emulator.\n` +
-      "Use your LAN IP or ngrok instead (e.g. http://192.168.x.x:3000 or https://<sub>.ngrok-free.dev)."
+      `[config] ⚠️ Using '${API_BASE_URL}' → this will likely fail on a physical device.\n` +
+      "1. Tweak '.env' (see .env.example) to set EXPO_PUBLIC_API_BASE_URL=https://your-ngrok-url.ngrok-free.dev\n" +
+      "2. Or ensure you are running on a Simulator which can reach localhost."
     );
   } else {
     console.log("[config] ✅ Using API_BASE_URL →", API_BASE_URL);

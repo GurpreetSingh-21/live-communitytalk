@@ -37,13 +37,15 @@ router.post("/", async (req, res) => {
     const {
       content,
       communityId,
+      type,
       attachments = [],
       clientMessageId,
       replyTo, // NEW: Accept replyTo from frontend
     } = req.body || {};
 
     // 1) Validation
-    if (!content?.trim() || !communityId) {
+    console.log('[MESSAGE POST] Received:', { content: content?.substring(0, 100), communityId });
+    if (!content || !communityId) {
       return res
         .status(400)
         .json({ error: "content and communityId are required" });
@@ -76,7 +78,7 @@ router.post("/", async (req, res) => {
         communityId: communityId,
         senderId: req.user.id,
         senderName: req.user.fullName || req.user.email || "Unknown",
-        content: content.trim(),
+        content: String(content),
         attachments: parsedAttachments, // JSONB
         replyToSnapshot: replyTo || undefined, // JSONB, store snapshot
         status: "sent"
@@ -100,7 +102,8 @@ router.post("/", async (req, res) => {
       clientMessageId: clientMessageId || undefined,
       reactions: msg.reactions || [],
       replyTo: msg.replyToSnapshot || undefined,
-      attachments: msg.attachments
+      attachments: msg.attachments, // JSONB
+      type: (msg.attachments && msg.attachments.length > 0) ? msg.attachments[0].type : 'text'
     };
 
     // 5) Real-time emits
@@ -248,7 +251,8 @@ router.get("/:communityId", async (req, res) => {
       deletedAt: msg.deletedAt,
       reactions: msg.reactions || [],
       replyTo: msg.replyToSnapshot || undefined,
-      attachments: msg.attachments
+      attachments: msg.attachments,
+      type: (msg.attachments && msg.attachments.length > 0) ? msg.attachments[0].type : 'text'
     }));
 
     // However, for avatar, let's try to get it from relation if possible.

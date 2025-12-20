@@ -23,7 +23,7 @@ if (__DEV__) {
 
 export const api = axios.create({
   baseURL: BASE,
-  timeout: 60000,
+  timeout: 300000, // 5 minutes (via Cloudinary, huge files)
   headers: {
     "Content-Type": "application/json",
     "X-Requested-With": "XMLHttpRequest",

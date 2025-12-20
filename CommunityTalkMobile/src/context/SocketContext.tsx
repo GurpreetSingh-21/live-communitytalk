@@ -10,6 +10,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import { connectSocket, disconnectSocket, getSocket } from "../api/socket";
 import { AuthContext } from "./AuthContext";
 import { api } from "../api/api";
+import * as FileSystem from 'expo-file-system/legacy';
 
 type SocketRef = ReturnType<typeof getSocket> | null;
 
@@ -21,6 +22,14 @@ type SocketContextValue = {
   unreadCommunities: number;
   refreshUnread: () => Promise<void>;
   markThreadRead: (partnerId: string) => Promise<void>;
+  uploadAndSendFile: (
+    fileUri: string,
+    fileType: string,
+    fileName: string,
+    msgType: "photo" | "video" | "file",
+    communityId: string,
+    clientMessageId: string
+  ) => Promise<void>;
 };
 
 const defaultValue: SocketContextValue = {
@@ -31,6 +40,7 @@ const defaultValue: SocketContextValue = {
   unreadCommunities: 0,
   refreshUnread: async () => { },
   markThreadRead: async () => { },
+  uploadAndSendFile: async () => { },
 };
 
 export const SocketContext = createContext(defaultValue);
@@ -337,6 +347,54 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
   }, [isAuthed, refreshUnread]);
 
   /* -------------------------------------------------------------------------- */
+  /*                            BACKGROUND UPLOAD HANDLER                       */
+  /* -------------------------------------------------------------------------- */
+  const uploadAndSendFile = React.useCallback(async (
+    fileUri: string,
+    fileType: string,
+    fileName: string,
+    msgType: "photo" | "video" | "file",
+    communityId: string,
+    clientMessageId: string
+  ) => {
+    try {
+      console.log("🚀 [BG-UPLOAD] Starting Base64 Upload:", fileName);
+
+      // 1. Read file as Base64 to avoid FormData network hangs on Simulator
+      const base64 = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: 'base64',
+      });
+
+      // 2. Upload to /base64 endpoint
+      const uploadRes = await api.post('/api/upload/base64', {
+        image: `data:${fileType};base64,${base64}`,
+        fileName: fileName,
+        folder: 'community_talk_uploads'
+      }, {
+        timeout: 300000,
+      });
+
+      console.log("✅ [BG-UPLOAD] Uploaded:", uploadRes.data.url);
+      const secureUrl = uploadRes.data?.url || fileUri;
+
+      // 3. Create Message
+      const payload = {
+        content: secureUrl,
+        communityId,
+        type: msgType,
+        clientMessageId,
+        attachments: [{ url: secureUrl, type: msgType, name: fileName }]
+      };
+
+      await api.post(`/api/messages`, payload);
+      console.log("✅ [BG-UPLOAD] Message Created in DB");
+
+    } catch (err) {
+      console.error("❌ [BG-UPLOAD] Failed:", err);
+    }
+  }, []);
+
+  /* -------------------------------------------------------------------------- */
   /*                                CONTEXT VALUE                               */
   /* -------------------------------------------------------------------------- */
 
@@ -349,6 +407,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
       unreadCommunities,
       refreshUnread,
       markThreadRead,
+      uploadAndSendFile, // Exposed
     }),
     [
       ready,
@@ -357,6 +416,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
       unreadCommunities,
       refreshUnread,
       markThreadRead,
+      uploadAndSendFile,
     ]
   );
 

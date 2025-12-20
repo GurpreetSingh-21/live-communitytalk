@@ -126,21 +126,41 @@ router.post('/base64', async (req, res) => {
 
     const name = fileName || `upload_${Date.now()}.jpg`;
 
-    // Upload to ImageKit
-    // Replicates logic from userRoutes.js /avatar
-    const uploadResponse = await uploadToImageKit(image, name, folder || "community_talk_uploads");
+    // Upload to Cloudinary (Base64)
+    // Cloudinary supports base64 directly: "data:image/jpeg;base64,..."
+    // or just the raw base64 string if configured? Usually needs data URI scheme.
 
-    if (!uploadResponse || !uploadResponse.url) {
-      throw new Error("Failed to get download URL from ImageKit");
+    // Ensure data URI
+    let fileStr = image;
+    if (!fileStr.startsWith('data:')) {
+      // Guess mime type or default to jpeg?
+      // Ideally frontend sends full data URI. 
+      // If just base64, assume jpeg for now or try to detect.
+      fileStr = `data:image/jpeg;base64,${image}`;
     }
 
-    console.log(`✅ Base64 File uploaded via ImageKit:`, name);
+    const uploadResponse = await cloudinary.uploader.upload(fileStr, {
+      folder: folder || "community_talk_uploads",
+      resource_type: "auto", // Handle video/image automatically
+      public_id: `${Date.now()}-${path.parse(fileName || 'upload').name}`,
+    });
+
+    if (!uploadResponse || !uploadResponse.secure_url) {
+      throw new Error("Failed to get download URL from Cloudinary");
+    }
+
+    console.log(`✅ Base64 File uploaded via Cloudinary:`, name);
+
+    // Determine type
+    let type = 'file';
+    if (uploadResponse.resource_type === 'image') type = 'photo';
+    if (uploadResponse.resource_type === 'video') type = 'video';
 
     return res.json({
-      url: uploadResponse.url,
-      type: 'photo',
+      url: uploadResponse.secure_url,
+      type: type,
       name: name,
-      fileId: uploadResponse.fileId
+      fileId: uploadResponse.public_id
     });
 
   } catch (error) {

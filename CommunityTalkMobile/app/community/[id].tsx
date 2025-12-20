@@ -169,7 +169,7 @@ export default function CommunityScreen() {
   const communityId = String(id || "");
   const { isDark, colors } = useTheme();
   const { user } = React.useContext(AuthContext) as any;
-  const { socket, socketConnected } = useSocket() as any;
+  const { socket, socketConnected, uploadAndSendFile } = useSocket() as any;
   const insets = useSafeAreaInsets();
 
   const [community, setCommunity] = useState<Community | null>(null);
@@ -296,7 +296,7 @@ export default function CommunityScreen() {
   const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
   const attachmentMenuAnim = useRef(new Animated.Value(0)).current;
   const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
-  
+
   // Refs for Swipeable components to close them programmatically
   const swipeableRefs = useRef<Map<string, any>>(new Map());
 
@@ -457,7 +457,7 @@ export default function CommunityScreen() {
     if (!text || sending || !communityId) return;
     setSending(true);
     const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-    
+
     let replyToData = undefined;
     if (replyingTo) {
       console.log('📩 [REPLY] Sending reply to message:', replyingTo);
@@ -490,11 +490,11 @@ export default function CommunityScreen() {
     requestAnimationFrame(() => scrollToBottom(true));
 
     try {
-      const { data } = await api.post(`/api/messages`, { 
+      const { data } = await api.post(`/api/messages`, {
         content: text,
         communityId,
         clientMessageId,
-        replyTo: replyToData 
+        replyTo: replyToData
       });
       setMessages((prev) => {
         const idx = prev.findIndex((m) => m.clientMessageId === clientMessageId || m._id === clientMessageId);
@@ -535,8 +535,7 @@ export default function CommunityScreen() {
     fileName: string,
     msgType: "photo" | "video" | "file"
   ) => {
-    if (!communityId || sending) return;
-    setSending(true);
+    if (!communityId) return;
     setChatError(null);
     const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -558,63 +557,27 @@ export default function CommunityScreen() {
     setMessages((prev) => [...prev, optimistic]);
     requestAnimationFrame(() => scrollToBottom(true));
 
-    try {
-      const formData = new FormData();
-      // React Native FormData requires specific structure for file uploads
-      const fileToUpload: any = {
-        uri: fileUri,
-        type: fileType,
-        name: fileName,
-      };
-
-      console.log('📤 [UPLOAD] Preparing file:', { uri: fileUri, type: fileType, name: fileName });
-      formData.append('file', fileToUpload);
-
-      console.log('📤 [UPLOAD] Sending to /api/upload...');
-      const uploadRes = await api.post('/api/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      console.log('✅ [UPLOAD] Success:', uploadRes.data);
-      const secureUrl = uploadRes.data?.url || fileUri;
-
-      const payload = {
-        content: secureUrl,
-        communityId,
-        type: msgType,
-        clientMessageId,
-        attachments: [{ url: secureUrl, type: msgType, name: fileName }]
-      };
-
-      const { data } = await api.post(`/api/messages`, payload);
-
-      setMessages((prev) => {
-        const idx = prev.findIndex((m) => m.clientMessageId === clientMessageId || m._id === clientMessageId);
-        if (idx === -1) return prev;
-        const next = [...prev];
-        next[idx] = {
-          ...next[idx],
-          ...data,
-          _id: String(data._id),
-          content: secureUrl,
-          timestamp: data.timestamp || next[idx].timestamp,
-        };
-        return next;
-      });
-    } catch (err) {
-      console.error("Upload failed", err);
-      Alert.alert("Upload Failed", "Could not send file.");
+    // Hand off to SocketContext for background execution
+    // This ensures upload finishes even if user leaves screen
+    uploadAndSendFile(
+      fileUri,
+      fileType,
+      fileName,
+      msgType,
+      communityId,
+      clientMessageId
+    ).catch((err: any) => {
+      console.error("Context upload failed", err);
       setMessages((prev) =>
         prev.map((m) =>
           m.clientMessageId === clientMessageId
-            ? { ...m, status: "deleted", content: "[failed to send]" }
+            ? { ...m, status: "deleted", content: "[failed to send]" } // Optimistic rollback
             : m
         )
       );
-    } finally {
-      setSending(false);
-    }
-  }, [communityId, sending, user?._id, user?.fullName, scrollToBottom]);
+    });
+
+  }, [communityId, user?._id, user?.fullName, scrollToBottom, uploadAndSendFile]);
 
   const handlePickMedia = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -637,7 +600,7 @@ export default function CommunityScreen() {
     // Close menu with animation
     attachmentMenuAnim.setValue(0);
     setShowAttachmentMenu(false);
-    
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -656,7 +619,7 @@ export default function CommunityScreen() {
     // Close menu with animation
     attachmentMenuAnim.setValue(0);
     setShowAttachmentMenu(false);
-    
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['videos'],
       allowsEditing: true,
@@ -743,9 +706,9 @@ export default function CommunityScreen() {
           );
           if (i === -1) return [...prev, payload];
           const next = [...prev];
-          next[i] = { 
-            ...next[i], 
-            ...payload, 
+          next[i] = {
+            ...next[i],
+            ...payload,
             _id: String(payload._id),
             // CRITICAL: Only use socket's replyTo if it exists, otherwise keep optimistic value
             replyTo: (payload.replyTo !== undefined && payload.replyTo !== null) ? payload.replyTo : next[i].replyTo,
@@ -952,8 +915,8 @@ export default function CommunityScreen() {
 
   const AppHeader = () => (
     <LinearGradient
-      colors={isDark 
-        ? ['rgba(0, 0, 0, 0.95)', 'rgba(20, 20, 30, 0.98)'] 
+      colors={isDark
+        ? ['rgba(0, 0, 0, 0.95)', 'rgba(20, 20, 30, 0.98)']
         : ['rgba(255, 255, 255, 0.98)', 'rgba(250, 250, 255, 0.95)']}
       style={{
         paddingHorizontal: 20,
@@ -969,26 +932,26 @@ export default function CommunityScreen() {
     >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View style={{ flex: 1, marginRight: 12 }}>
-          <Text 
-            style={{ 
-              color: colors.text, 
-              fontSize: 22, 
-              fontWeight: "700", 
+          <Text
+            style={{
+              color: colors.text,
+              fontSize: 22,
+              fontWeight: "700",
               letterSpacing: -0.3,
               marginBottom: 2,
-            }} 
+            }}
             numberOfLines={2}
           >
             {community?.name || "Community"}
           </Text>
-          <Text style={{ 
-            color: colors.textSecondary, 
-            fontSize: 13, 
+          <Text style={{
+            color: colors.textSecondary,
+            fontSize: 13,
             marginTop: 2,
           }}>
-              {members.length ? `${members.length} members` : "—"}
+            {members.length ? `${members.length} members` : "—"}
             {isMember && onlineCount > 0 && ` • ${onlineCount} online`}
-                  </Text>
+          </Text>
         </View>
         {isMember ? (
           <TouchableOpacity
@@ -1041,15 +1004,15 @@ export default function CommunityScreen() {
                   justifyContent: "center",
                   borderRadius: 10,
                   paddingVertical: 8,
-                  backgroundColor: active 
+                  backgroundColor: active
                     ? (isDark ? 'rgba(94, 92, 230, 0.2)' : 'rgba(94, 92, 230, 0.1)')
                     : "transparent",
                 }}
               >
-                <Text 
-                  style={{ 
-                    color: active ? colors.primary : colors.textSecondary, 
-                    fontWeight: active ? "700" : "500", 
+                <Text
+                  style={{
+                    color: active ? colors.primary : colors.textSecondary,
+                    fontWeight: active ? "700" : "500",
                     fontSize: 14,
                   }}
                 >
@@ -1143,9 +1106,9 @@ export default function CommunityScreen() {
             resizeMode="cover"
           />
         ) : (
-          <Text style={{ 
-            color: "#fff", 
-            fontWeight: "800", 
+          <Text style={{
+            color: "#fff",
+            fontWeight: "800",
             fontSize: size * 0.375,
             textShadowColor: 'rgba(0, 0, 0, 0.3)',
             textShadowOffset: { width: 0, height: 1 },
@@ -1164,8 +1127,8 @@ export default function CommunityScreen() {
         style={{
           marginHorizontal: 16,
           marginBottom: 14,
-          backgroundColor: isDark 
-            ? 'rgba(255, 255, 255, 0.05)' 
+          backgroundColor: isDark
+            ? 'rgba(255, 255, 255, 0.05)'
             : 'rgba(255, 255, 255, 0.9)',
           borderRadius: 20,
           paddingHorizontal: 18,
@@ -1232,11 +1195,11 @@ export default function CommunityScreen() {
               borderRadius: 16,
               paddingHorizontal: 14,
               paddingVertical: 8,
-              backgroundColor: isOnline 
+              backgroundColor: isOnline
                 ? (isDark ? 'rgba(52, 199, 89, 0.2)' : 'rgba(52, 199, 89, 0.15)')
                 : (isDark ? 'rgba(142, 142, 147, 0.15)' : 'rgba(107, 114, 128, 0.1)'),
               borderWidth: 1,
-              borderColor: isOnline 
+              borderColor: isOnline
                 ? (isDark ? 'rgba(52, 199, 89, 0.4)' : 'rgba(52, 199, 89, 0.3)')
                 : (isDark ? 'rgba(142, 142, 147, 0.3)' : 'rgba(107, 114, 128, 0.2)'),
             }}
@@ -1263,8 +1226,8 @@ export default function CommunityScreen() {
         style={{
           flexDirection: "row",
           alignItems: "center",
-          backgroundColor: isDark 
-            ? 'rgba(255, 255, 255, 0.08)' 
+          backgroundColor: isDark
+            ? 'rgba(255, 255, 255, 0.08)'
             : 'rgba(0, 0, 0, 0.04)',
           borderRadius: 16,
           paddingHorizontal: 16,
@@ -1282,11 +1245,11 @@ export default function CommunityScreen() {
           onChangeText={setQ}
           placeholder="Search members"
           placeholderTextColor={colors.textSecondary}
-          style={{ 
-            color: colors.text, 
-            paddingVertical: 14, 
-            flex: 1, 
-            marginLeft: 12, 
+          style={{
+            color: colors.text,
+            paddingVertical: 14,
+            flex: 1,
+            marginLeft: 12,
             fontSize: 17,
             fontWeight: '500',
           }}
@@ -1316,7 +1279,7 @@ export default function CommunityScreen() {
                 paddingVertical: 10,
                 borderRadius: 22,
                 marginRight: 10,
-                backgroundColor: active 
+                backgroundColor: active
                   ? (isDark ? 'rgba(94, 92, 230, 0.3)' : 'rgba(94, 92, 230, 0.15)')
                   : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'),
                 borderWidth: active ? 0 : 1,
@@ -1484,8 +1447,8 @@ export default function CommunityScreen() {
           <View style={{ alignItems: "center", marginVertical: 20 }}>
             <View
               style={{
-                backgroundColor: isDark 
-                  ? 'rgba(255, 255, 255, 0.08)' 
+                backgroundColor: isDark
+                  ? 'rgba(255, 255, 255, 0.08)'
                   : 'rgba(0, 0, 0, 0.04)',
                 paddingHorizontal: 16,
                 paddingVertical: 8,
@@ -1530,444 +1493,136 @@ export default function CommunityScreen() {
           friction={2}
         >
           {!mine ? (
-          <View style={{ flexDirection: "row", alignItems: "flex-start", marginTop: isFirstOfGroup ? 0 : 2, marginBottom: isLastOfGroup ? 8 : 0 }}>
-            {/* Avatar (only show on first message of group) */}
-            <View style={{ width: 36, marginRight: 8, alignItems: "center" }}>
-              {isFirstOfGroup ? (
-                <TouchableOpacity
-                  onPress={() => handleAvatarPress(item.senderId, item.sender)}
-                  activeOpacity={0.7}
-                >
-                  <View style={{ position: "relative" }}>
-                    <Avatar
-                      name={item.sender}
-                      avatar={memberInfo?.avatar}
-                      size={36}
-                    />
-                    {/* Online indicator */}
-                    {memberInfo?.status === "online" && (
-                      <View
-                        style={{
-                          position: "absolute",
-                          bottom: -1,
-                          right: -1,
-                          width: 12,
-                          height: 12,
-                          borderRadius: 6,
-                          backgroundColor: colors.success,
-                          borderWidth: 2.5,
-                          borderColor: colors.bg,
-                        }}
+            <View style={{ flexDirection: "row", alignItems: "flex-start", marginTop: isFirstOfGroup ? 0 : 2, marginBottom: isLastOfGroup ? 8 : 0 }}>
+              {/* Avatar (only show on first message of group) */}
+              <View style={{ width: 36, marginRight: 8, alignItems: "center" }}>
+                {isFirstOfGroup ? (
+                  <TouchableOpacity
+                    onPress={() => handleAvatarPress(item.senderId, item.sender)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={{ position: "relative" }}>
+                      <Avatar
+                        name={item.sender}
+                        avatar={memberInfo?.avatar}
+                        size={36}
                       />
+                      {/* Online indicator */}
+                      {memberInfo?.status === "online" && (
+                        <View
+                          style={{
+                            position: "absolute",
+                            bottom: -1,
+                            right: -1,
+                            width: 12,
+                            height: 12,
+                            borderRadius: 6,
+                            backgroundColor: colors.success,
+                            borderWidth: 2.5,
+                            borderColor: colors.bg,
+                          }}
+                        />
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={{ width: 36 }} />
+                )}
+              </View>
+
+              {/* Message content */}
+              <View style={{ flex: 1, maxWidth: "80%", position: 'relative' }}>
+                {isFirstOfGroup && (
+                  <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 }}>
+                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginRight: 6 }}>
+                      {item.sender}
+                    </Text>
+                    {!isLastOfGroup && (
+                      <Text style={{ color: colors.textSecondary, fontSize: 10 }}>
+                        {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
                     )}
                   </View>
-                </TouchableOpacity>
-              ) : (
-                <View style={{ width: 36 }} />
-              )}
-            </View>
+                )}
 
-            {/* Message content */}
-            <View style={{ flex: 1, maxWidth: "80%", position: 'relative' }}>
-              {isFirstOfGroup && (
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 }}>
-                  <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginRight: 6 }}>
-                    {item.sender}
-                  </Text>
-                  {!isLastOfGroup && (
-                    <Text style={{ color: colors.textSecondary, fontSize: 10 }}>
-                    {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                  )}
-                </View>
-              )}
-              
-              {/* Reply Preview - Compact Format - 10/10 Edition */}
-              {item.replyTo && item.replyTo.sender && item.replyTo.content && (
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    // TODO: Scroll to original message with item.replyTo.messageId
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                  style={{
-                    marginBottom: 6,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    backgroundColor: isDark ? 'rgba(66, 133, 244, 0.12)' : 'rgba(66, 133, 244, 0.08)',
-                    borderRadius: 8,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    shadowColor: colors.primary,
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 2,
-                    elevation: 2,
-                  }}
-                >
-                  <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
-                  <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
-                    Replying to {item.replyTo.sender}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              
-              <TouchableOpacity
-                onLongPress={() => handleLongPress(item)}
-                delayLongPress={300}
-                activeOpacity={0.9}
-                style={{ position: 'relative' }}
-              >
-                {deleted ? (
-                  <View
+                {/* Reply Preview - Compact Format - 10/10 Edition */}
+                {item.replyTo && item.replyTo.sender && item.replyTo.content && (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      // TODO: Scroll to original message with item.replyTo.messageId
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
                     style={{
-                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F2F3F5',
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 12,
-                      borderTopLeftRadius: isFirstOfGroup ? 12 : 4,
-                      borderBottomLeftRadius: isLastOfGroup ? 12 : 4,
-                      marginTop: isFirstOfGroup ? 0 : 0,
+                      marginBottom: 6,
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      backgroundColor: isDark ? 'rgba(66, 133, 244, 0.12)' : 'rgba(66, 133, 244, 0.08)',
+                      borderRadius: 8,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      shadowColor: colors.primary,
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 2,
+                      elevation: 2,
                     }}
                   >
-                    <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
-                      Message deleted
+                    <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
+                    <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+                      Replying to {item.replyTo.sender}
                     </Text>
-                  </View>
-                ) : item.type === 'photo' || (item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) && item.content?.includes('cloudinary.com')) ? (
-                  <View style={{ position: 'relative' }}>
-                  <TouchableOpacity
-                    activeOpacity={0.9}
-                    onPress={() => handleImagePress(item.content)}
-                    onLongPress={() => handleLongPress(item)}
-                      style={{ 
-                        borderRadius: 12,
-                        borderTopLeftRadius: isFirstOfGroup ? 12 : 4,
-                        borderBottomLeftRadius: isLastOfGroup ? 12 : 4,
-                        overflow: 'hidden',
-                      }}
-                  >
-                    <Image
-                      source={{ uri: item.content }}
-                        style={{ width: 220, height: 220, backgroundColor: isDark ? '#1a1a1a' : '#E5E5EA' }}
-                      resizeMode="cover"
-                    />
                   </TouchableOpacity>
-                    {/* Reactions overlapping bottom-right */}
-                    {item.reactions && item.reactions.length > 0 && (
-                      <View style={{ 
-                        position: 'absolute', 
-                        bottom: 8, 
-                        right: 8, 
-                        flexDirection: 'row',
-                        flexWrap: 'wrap',
-                        maxWidth: 180,
-                        justifyContent: 'flex-end',
-                      }}>
-                        {Object.entries(
-                          item.reactions.reduce((acc, r) => {
-                            acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                            acc[r.emoji].count++;
-                            acc[r.emoji].users.push(r.userName);
-                            if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                            return acc;
-                          }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                        ).map(([emoji, data]) => (
-                          <TouchableOpacity
-                            key={emoji}
-                            onPress={() => {
-                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                              toggleReaction(item._id, emoji);
-                            }}
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              paddingHorizontal: 6,
-                              paddingVertical: 3,
-                              borderRadius: 12,
-                              backgroundColor: data.hasYou 
-                                ? 'rgba(94, 92, 230, 0.9)' 
-                                : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                              marginLeft: 4,
-                              marginBottom: 4,
-                              shadowColor: '#000',
-                              shadowOffset: { width: 0, height: 1 },
-                              shadowOpacity: 0.3,
-                              shadowRadius: 2,
-                            }}
-                          >
-                            <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                            {data.count > 1 && (
-                              <Text style={{ 
-                                marginLeft: 3, 
-                                fontSize: 10, 
-                                color: data.hasYou ? '#fff' : colors.text, 
-                                fontWeight: '600' 
-                              }}>
-                                {data.count}
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                ) : item.type === 'video' ? (
-                  <View style={{ position: 'relative' }}>
-                  <TouchableOpacity 
-                    onPress={() => Linking.openURL(item.content)} 
-                    style={{ 
-                      width: 220, 
-                      height: 150, 
-                      borderRadius: 12, 
-                        borderTopLeftRadius: isFirstOfGroup ? 12 : 4,
-                        borderBottomLeftRadius: isLastOfGroup ? 12 : 4,
-                      backgroundColor: '#000', 
-                      alignItems: 'center', 
-                      justifyContent: 'center',
-                      }}
-                    >
-                      <View style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 24,
-                        backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>
-                        <Ionicons name="play" size={24} color="#fff" />
-                      </View>
-                  </TouchableOpacity>
-                    {/* Reactions overlapping bottom-right */}
-                    {item.reactions && item.reactions.length > 0 && (
-                      <View style={{ 
-                        position: 'absolute', 
-                        bottom: 8, 
-                        right: 8, 
-                        flexDirection: 'row',
-                        flexWrap: 'wrap',
-                        maxWidth: 180,
-                        justifyContent: 'flex-end',
-                      }}>
-                        {Object.entries(
-                          item.reactions.reduce((acc, r) => {
-                            acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                            acc[r.emoji].count++;
-                            acc[r.emoji].users.push(r.userName);
-                            if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                            return acc;
-                          }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                        ).map(([emoji, data]) => (
-                          <TouchableOpacity
-                            key={emoji}
-                            onPress={() => {
-                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                              toggleReaction(item._id, emoji);
-                            }}
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              paddingHorizontal: 6,
-                              paddingVertical: 3,
-                              borderRadius: 12,
-                              backgroundColor: data.hasYou 
-                                ? 'rgba(94, 92, 230, 0.9)' 
-                                : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                              marginLeft: 4,
-                              marginBottom: 4,
-                              shadowColor: '#000',
-                              shadowOffset: { width: 0, height: 1 },
-                              shadowOpacity: 0.3,
-                              shadowRadius: 2,
-                            }}
-                          >
-                            <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                            {data.count > 1 && (
-                              <Text style={{ 
-                                marginLeft: 3, 
-                                fontSize: 10, 
-                                color: data.hasYou ? '#fff' : colors.text, 
-                                fontWeight: '600' 
-                              }}>
-                                {data.count}
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                ) : (
-                  <View style={{ position: 'relative' }}>
-                    <View 
-                      style={{ 
+                )}
+
+                <TouchableOpacity
+                  onLongPress={() => handleLongPress(item)}
+                  delayLongPress={300}
+                  activeOpacity={0.9}
+                  style={{ position: 'relative' }}
+                >
+                  {deleted ? (
+                    <View
+                      style={{
                         backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F2F3F5',
                         paddingHorizontal: 12,
                         paddingVertical: 8,
                         borderRadius: 12,
                         borderTopLeftRadius: isFirstOfGroup ? 12 : 4,
                         borderBottomLeftRadius: isLastOfGroup ? 12 : 4,
+                        marginTop: isFirstOfGroup ? 0 : 0,
                       }}
                     >
-                      <Text style={{ color: colors.text, fontSize: 15, lineHeight: 20 }}>
-                      {item.content}
-                    </Text>
-                      {/* Subtle timestamp for grouped messages */}
-                      {!isFirstOfGroup && (
-                        <Text style={{ 
-                          color: colors.textTertiary, 
-                          fontSize: 9, 
-                          marginTop: 2,
-                          alignSelf: 'flex-end',
-                        }}>
-                          {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                        </Text>
-                      )}
+                      <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
+                        Message deleted
+                      </Text>
                     </View>
-                    {/* Reactions overlapping bottom-right */}
-              {item.reactions && item.reactions.length > 0 && (
-                      <View style={{ 
-                        position: 'absolute', 
-                        bottom: -6, 
-                        right: 8, 
-                        flexDirection: 'row',
-                        flexWrap: 'wrap',
-                        maxWidth: 200,
-                        justifyContent: 'flex-end',
-                      }}>
-                  {Object.entries(
-                    item.reactions.reduce((acc, r) => {
-                      acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                      acc[r.emoji].count++;
-                      acc[r.emoji].users.push(r.userName);
-                      if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                      return acc;
-                    }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                  ).map(([emoji, data]) => (
-                    <TouchableOpacity
-                      key={emoji}
-                            onPress={() => {
-                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                              toggleReaction(item._id, emoji);
-                            }}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                              paddingHorizontal: 6,
-                              paddingVertical: 3,
-                        borderRadius: 12,
-                              backgroundColor: data.hasYou 
-                                ? 'rgba(94, 92, 230, 0.9)' 
-                                : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                              marginLeft: 4,
-                              marginBottom: 2,
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 1 },
-                              shadowOpacity: 0.2,
-                        shadowRadius: 2,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                      {data.count > 1 && (
-                              <Text style={{ 
-                                marginLeft: 3, 
-                                fontSize: 10, 
-                                color: data.hasYou ? '#fff' : colors.text, 
-                                fontWeight: '600' 
-                              }}>
-                          {data.count}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-                  </View>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <View style={{ alignItems: "flex-end", marginTop: isFirstOfGroup ? 0 : 2, marginBottom: isLastOfGroup ? 8 : 0 }}>
-            <View style={{ maxWidth: "75%", position: 'relative' }}>
-              {/* Reply Preview for self messages - Compact Format - 10/10 Edition */}
-              {item.replyTo && item.replyTo.sender && item.replyTo.content && (
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={() => {
-                    // TODO: Scroll to original message with item.replyTo.messageId
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                  style={{
-                    marginBottom: 6,
-                    paddingHorizontal: 8,
-                    paddingVertical: 4,
-                    backgroundColor: isDark ? 'rgba(66, 133, 244, 0.12)' : 'rgba(66, 133, 244, 0.08)',
-                    borderRadius: 8,
-                    alignSelf: 'flex-end',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: 4,
-                    shadowColor: colors.primary,
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 2,
-                    elevation: 2,
-                  }}
-                >
-                  <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
-                    Replying to {item.replyTo.sender}
-                  </Text>
-                  <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
-                </TouchableOpacity>
-              )}
-              
-              <TouchableOpacity
-                onLongPress={() => handleLongPress(item)}
-                delayLongPress={300}
-                activeOpacity={0.9}
-                style={{ position: 'relative' }}
-              >
-                <LinearGradient
-                  colors={['#007AFF', '#5E5CE6']}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 8,
-                    borderRadius: 12,
-                    borderTopRightRadius: isFirstOfGroup ? 12 : 4,
-                    borderBottomRightRadius: isLastOfGroup ? 12 : 4,
-                  }}
-                >
-                  {deleted ? (
-                    <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, fontStyle: "italic" }}>
-                      Message deleted
-                    </Text>
                   ) : item.type === 'photo' || (item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) && item.content?.includes('cloudinary.com')) ? (
                     <View style={{ position: 'relative' }}>
-                    <TouchableOpacity
-                      activeOpacity={0.9}
-                      onPress={() => handleImagePress(item.content)}
-                      onLongPress={() => handleLongPress(item)}
+                      <TouchableOpacity
+                        activeOpacity={0.9}
+                        onPress={() => handleImagePress(item.content)}
+                        onLongPress={() => handleLongPress(item)}
                         style={{
-                          borderRadius: 10,
+                          borderRadius: 12,
+                          borderTopLeftRadius: isFirstOfGroup ? 12 : 4,
+                          borderBottomLeftRadius: isLastOfGroup ? 12 : 4,
                           overflow: 'hidden',
                         }}
-                    >
-                      <Image
-                        source={{ uri: item.content }}
-                          style={{ width: 220, height: 220 }}
-                        resizeMode="cover"
-                      />
-                    </TouchableOpacity>
+                      >
+                        <Image
+                          source={{ uri: item.content }}
+                          style={{ width: 220, height: 220, backgroundColor: isDark ? '#1a1a1a' : '#E5E5EA' }}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
                       {/* Reactions overlapping bottom-right */}
                       {item.reactions && item.reactions.length > 0 && (
-                        <View style={{ 
-                          position: 'absolute', 
-                          bottom: 8, 
-                          right: 8, 
+                        <View style={{
+                          position: 'absolute',
+                          bottom: 8,
+                          right: 8,
                           flexDirection: 'row',
                           flexWrap: 'wrap',
                           maxWidth: 180,
@@ -1994,8 +1649,8 @@ export default function CommunityScreen() {
                                 paddingHorizontal: 6,
                                 paddingVertical: 3,
                                 borderRadius: 12,
-                                backgroundColor: data.hasYou 
-                                  ? 'rgba(94, 92, 230, 0.9)' 
+                                backgroundColor: data.hasYou
+                                  ? 'rgba(94, 92, 230, 0.9)'
                                   : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
                                 marginLeft: 4,
                                 marginBottom: 4,
@@ -2007,11 +1662,11 @@ export default function CommunityScreen() {
                             >
                               <Text style={{ fontSize: 12 }}>{emoji}</Text>
                               {data.count > 1 && (
-                                <Text style={{ 
-                                  marginLeft: 3, 
-                                  fontSize: 10, 
-                                  color: data.hasYou ? '#fff' : colors.text, 
-                                  fontWeight: '600' 
+                                <Text style={{
+                                  marginLeft: 3,
+                                  fontSize: 10,
+                                  color: data.hasYou ? '#fff' : colors.text,
+                                  fontWeight: '600'
                                 }}>
                                   {data.count}
                                 </Text>
@@ -2023,15 +1678,17 @@ export default function CommunityScreen() {
                     </View>
                   ) : item.type === 'video' ? (
                     <View style={{ position: 'relative' }}>
-                      <TouchableOpacity 
-                        onPress={() => Linking.openURL(item.content)} 
-                        style={{ 
-                          width: 220, 
-                          height: 150, 
-                          borderRadius: 10, 
-                          backgroundColor: 'rgba(0,0,0,0.3)', 
-                          alignItems: 'center', 
-                          justifyContent: 'center' 
+                      <TouchableOpacity
+                        onPress={() => Linking.openURL(item.content)}
+                        style={{
+                          width: 220,
+                          height: 150,
+                          borderRadius: 12,
+                          borderTopLeftRadius: isFirstOfGroup ? 12 : 4,
+                          borderBottomLeftRadius: isLastOfGroup ? 12 : 4,
+                          backgroundColor: '#000',
+                          alignItems: 'center',
+                          justifyContent: 'center',
                         }}
                       >
                         <View style={{
@@ -2044,13 +1701,13 @@ export default function CommunityScreen() {
                         }}>
                           <Ionicons name="play" size={24} color="#fff" />
                         </View>
-                    </TouchableOpacity>
+                      </TouchableOpacity>
                       {/* Reactions overlapping bottom-right */}
                       {item.reactions && item.reactions.length > 0 && (
-                        <View style={{ 
-                          position: 'absolute', 
-                          bottom: 8, 
-                          right: 8, 
+                        <View style={{
+                          position: 'absolute',
+                          bottom: 8,
+                          right: 8,
                           flexDirection: 'row',
                           flexWrap: 'wrap',
                           maxWidth: 180,
@@ -2077,8 +1734,8 @@ export default function CommunityScreen() {
                                 paddingHorizontal: 6,
                                 paddingVertical: 3,
                                 borderRadius: 12,
-                                backgroundColor: data.hasYou 
-                                  ? 'rgba(94, 92, 230, 0.9)' 
+                                backgroundColor: data.hasYou
+                                  ? 'rgba(94, 92, 230, 0.9)'
                                   : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
                                 marginLeft: 4,
                                 marginBottom: 4,
@@ -2090,162 +1747,468 @@ export default function CommunityScreen() {
                             >
                               <Text style={{ fontSize: 12 }}>{emoji}</Text>
                               {data.count > 1 && (
-                                <Text style={{ 
-                                  marginLeft: 3, 
-                                  fontSize: 10, 
-                                  color: data.hasYou ? '#fff' : colors.text, 
-                                  fontWeight: '600' 
+                                <Text style={{
+                                  marginLeft: 3,
+                                  fontSize: 10,
+                                  color: data.hasYou ? '#fff' : colors.text,
+                                  fontWeight: '600'
                                 }}>
                                   {data.count}
                                 </Text>
                               )}
-              </TouchableOpacity>
+                            </TouchableOpacity>
                           ))}
                         </View>
                       )}
                     </View>
                   ) : (
                     <View style={{ position: 'relative' }}>
-                      <Text style={{ color: "#FFFFFF", fontSize: 15, lineHeight: 20 }}>
-                        {item.content}
-                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : '#F2F3F5',
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 12,
+                          borderTopLeftRadius: isFirstOfGroup ? 12 : 4,
+                          borderBottomLeftRadius: isLastOfGroup ? 12 : 4,
+                        }}
+                      >
+                        <Text style={{ color: colors.text, fontSize: 15, lineHeight: 20 }}>
+                          {item.content}
+                        </Text>
+                        {/* Subtle timestamp for grouped messages */}
+                        {!isFirstOfGroup && (
+                          <Text style={{
+                            color: colors.textTertiary,
+                            fontSize: 9,
+                            marginTop: 2,
+                            alignSelf: 'flex-end',
+                          }}>
+                            {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                          </Text>
+                        )}
+                      </View>
                       {/* Reactions overlapping bottom-right */}
-              {item.reactions && item.reactions.length > 0 && (
-                        <View style={{ 
-                          position: 'absolute', 
-                          bottom: -6, 
-                          right: 8, 
+                      {item.reactions && item.reactions.length > 0 && (
+                        <View style={{
+                          position: 'absolute',
+                          bottom: -6,
+                          right: 8,
                           flexDirection: 'row',
                           flexWrap: 'wrap',
                           maxWidth: 200,
                           justifyContent: 'flex-end',
                         }}>
-                  {Object.entries(
-                    item.reactions.reduce((acc, r) => {
-                      acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                      acc[r.emoji].count++;
-                      acc[r.emoji].users.push(r.userName);
-                      if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                      return acc;
-                    }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                  ).map(([emoji, data]) => (
-                    <TouchableOpacity
-                      key={emoji}
+                          {Object.entries(
+                            item.reactions.reduce((acc, r) => {
+                              acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                              acc[r.emoji].count++;
+                              acc[r.emoji].users.push(r.userName);
+                              if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                              return acc;
+                            }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                          ).map(([emoji, data]) => (
+                            <TouchableOpacity
+                              key={emoji}
                               onPress={() => {
                                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                 toggleReaction(item._id, emoji);
                               }}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
+                              style={{
+                                flexDirection: 'row',
+                                alignItems: 'center',
                                 paddingHorizontal: 6,
                                 paddingVertical: 3,
-                        borderRadius: 12,
-                                backgroundColor: data.hasYou 
-                                  ? 'rgba(94, 92, 230, 0.9)' 
+                                borderRadius: 12,
+                                backgroundColor: data.hasYou
+                                  ? 'rgba(94, 92, 230, 0.9)'
                                   : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                        marginLeft: 4,
+                                marginLeft: 4,
                                 marginBottom: 2,
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 1 },
+                                shadowColor: '#000',
+                                shadowOffset: { width: 0, height: 1 },
                                 shadowOpacity: 0.2,
-                        shadowRadius: 2,
-                      }}
-                    >
-                      <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                      {data.count > 1 && (
-                                <Text style={{ 
-                                  marginLeft: 3, 
-                                  fontSize: 10, 
-                                  color: data.hasYou ? '#fff' : colors.text, 
-                                  fontWeight: '600' 
+                                shadowRadius: 2,
+                              }}
+                            >
+                              <Text style={{ fontSize: 12 }}>{emoji}</Text>
+                              {data.count > 1 && (
+                                <Text style={{
+                                  marginLeft: 3,
+                                  fontSize: 10,
+                                  color: data.hasYou ? '#fff' : colors.text,
+                                  fontWeight: '600'
                                 }}>
-                          {data.count}
-                        </Text>
+                                  {data.count}
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          ))}
+                        </View>
                       )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
                     </View>
                   )}
-                </LinearGradient>
-              </TouchableOpacity>
-
-              {/* Reactions Display (Right Aligned) - Premium Pill Style */}
-              {item.reactions && item.reactions.length > 0 && (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', position: 'absolute', bottom: -14, right: 12, zIndex: 10, justifyContent: 'flex-end' }}>
-                  {Object.entries(
-                    item.reactions.reduce((acc, r) => {
-                      acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                      acc[r.emoji].count++;
-                      acc[r.emoji].users.push(r.userName);
-                      if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                      return acc;
-                    }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                  ).map(([emoji, data]) => (
-                    <TouchableOpacity
-                      key={emoji}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        toggleReaction(item._id, emoji);
-                      }}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        paddingHorizontal: 10,
-                        paddingVertical: 6,
-                        borderRadius: 16,
-                        backgroundColor: data.hasYou 
-                          ? (isDark ? 'rgba(94, 92, 230, 0.25)' : 'rgba(94, 92, 230, 0.15)') 
-                          : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'),
-                        borderWidth: 1.5,
-                        borderColor: data.hasYou 
-                          ? colors.primary 
-                          : (isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'),
-                        marginLeft: 6,
-                        shadowColor: data.hasYou ? colors.primary : '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: data.hasYou ? 0.3 : 0.1,
-                        shadowRadius: 4,
-                        elevation: data.hasYou ? 4 : 2,
-                      }}
-                    >
-                      <Text style={{ fontSize: 14 }}>{emoji}</Text>
-                      {data.count > 1 && (
-                  <Text style={{
-                          marginLeft: 5, 
-                          fontSize: 11, 
-                          color: data.hasYou ? colors.primary : colors.textSecondary, 
-                          fontWeight: '700' 
-                        }}>
-                          {data.count}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              {/* Delivery status indicators - only show on last message of group */}
-              {!deleted && isLastOfGroup && (
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 4, marginRight: 4 }}>
-                  <Text style={{
-                    color: item.status === "read" ? "#007AFF" : "rgba(255,255,255,0.4)",
-                    fontSize: 10,
-                    marginRight: 4
-                  }}>
-                    {(item.status === "read" || item.status === "delivered") && "✓✓"}
-                    {(!item.status || item.status === "sent") && "✓"}
-                  </Text>
-                  <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 10 }}>
-                    {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                </View>
-              )}
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        )}
+          ) : (
+            <View style={{ alignItems: "flex-end", marginTop: isFirstOfGroup ? 0 : 2, marginBottom: isLastOfGroup ? 8 : 0 }}>
+              <View style={{ maxWidth: "75%", position: 'relative' }}>
+                {/* Reply Preview for self messages - Compact Format - 10/10 Edition */}
+                {item.replyTo && item.replyTo.sender && item.replyTo.content && (
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => {
+                      // TODO: Scroll to original message with item.replyTo.messageId
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    }}
+                    style={{
+                      marginBottom: 6,
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      backgroundColor: isDark ? 'rgba(66, 133, 244, 0.12)' : 'rgba(66, 133, 244, 0.08)',
+                      borderRadius: 8,
+                      alignSelf: 'flex-end',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      shadowColor: colors.primary,
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 2,
+                      elevation: 2,
+                    }}
+                  >
+                    <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+                      Replying to {item.replyTo.sender}
+                    </Text>
+                    <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  onLongPress={() => handleLongPress(item)}
+                  delayLongPress={300}
+                  activeOpacity={0.9}
+                  style={{ position: 'relative' }}
+                >
+                  <LinearGradient
+                    colors={['#007AFF', '#5E5CE6']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 12,
+                      borderTopRightRadius: isFirstOfGroup ? 12 : 4,
+                      borderBottomRightRadius: isLastOfGroup ? 12 : 4,
+                    }}
+                  >
+                    {deleted ? (
+                      <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, fontStyle: "italic" }}>
+                        Message deleted
+                      </Text>
+                    ) : item.type === 'photo' || (item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) && item.content?.includes('cloudinary.com')) ? (
+                      <View style={{ position: 'relative' }}>
+                        <TouchableOpacity
+                          activeOpacity={0.9}
+                          onPress={() => handleImagePress(item.content)}
+                          onLongPress={() => handleLongPress(item)}
+                          style={{
+                            borderRadius: 10,
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <Image
+                            source={{ uri: item.content }}
+                            style={{ width: 220, height: 220 }}
+                            resizeMode="cover"
+                          />
+                        </TouchableOpacity>
+                        {/* Reactions overlapping bottom-right */}
+                        {item.reactions && item.reactions.length > 0 && (
+                          <View style={{
+                            position: 'absolute',
+                            bottom: 8,
+                            right: 8,
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            maxWidth: 180,
+                            justifyContent: 'flex-end',
+                          }}>
+                            {Object.entries(
+                              item.reactions.reduce((acc, r) => {
+                                acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                                acc[r.emoji].count++;
+                                acc[r.emoji].users.push(r.userName);
+                                if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                                return acc;
+                              }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                            ).map(([emoji, data]) => (
+                              <TouchableOpacity
+                                key={emoji}
+                                onPress={() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                  toggleReaction(item._id, emoji);
+                                }}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  paddingHorizontal: 6,
+                                  paddingVertical: 3,
+                                  borderRadius: 12,
+                                  backgroundColor: data.hasYou
+                                    ? 'rgba(94, 92, 230, 0.9)'
+                                    : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
+                                  marginLeft: 4,
+                                  marginBottom: 4,
+                                  shadowColor: '#000',
+                                  shadowOffset: { width: 0, height: 1 },
+                                  shadowOpacity: 0.3,
+                                  shadowRadius: 2,
+                                }}
+                              >
+                                <Text style={{ fontSize: 12 }}>{emoji}</Text>
+                                {data.count > 1 && (
+                                  <Text style={{
+                                    marginLeft: 3,
+                                    fontSize: 10,
+                                    color: data.hasYou ? '#fff' : colors.text,
+                                    fontWeight: '600'
+                                  }}>
+                                    {data.count}
+                                  </Text>
+                                )}
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    ) : item.type === 'video' ? (
+                      <View style={{ position: 'relative' }}>
+                        <TouchableOpacity
+                          onPress={() => Linking.openURL(item.content)}
+                          style={{
+                            width: 220,
+                            height: 150,
+                            borderRadius: 10,
+                            backgroundColor: 'rgba(0,0,0,0.3)',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
+                        >
+                          <View style={{
+                            width: 48,
+                            height: 48,
+                            borderRadius: 24,
+                            backgroundColor: 'rgba(255, 255, 255, 0.25)',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            <Ionicons name="play" size={24} color="#fff" />
+                          </View>
+                        </TouchableOpacity>
+                        {/* Reactions overlapping bottom-right */}
+                        {item.reactions && item.reactions.length > 0 && (
+                          <View style={{
+                            position: 'absolute',
+                            bottom: 8,
+                            right: 8,
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            maxWidth: 180,
+                            justifyContent: 'flex-end',
+                          }}>
+                            {Object.entries(
+                              item.reactions.reduce((acc, r) => {
+                                acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                                acc[r.emoji].count++;
+                                acc[r.emoji].users.push(r.userName);
+                                if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                                return acc;
+                              }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                            ).map(([emoji, data]) => (
+                              <TouchableOpacity
+                                key={emoji}
+                                onPress={() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                  toggleReaction(item._id, emoji);
+                                }}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  paddingHorizontal: 6,
+                                  paddingVertical: 3,
+                                  borderRadius: 12,
+                                  backgroundColor: data.hasYou
+                                    ? 'rgba(94, 92, 230, 0.9)'
+                                    : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
+                                  marginLeft: 4,
+                                  marginBottom: 4,
+                                  shadowColor: '#000',
+                                  shadowOffset: { width: 0, height: 1 },
+                                  shadowOpacity: 0.3,
+                                  shadowRadius: 2,
+                                }}
+                              >
+                                <Text style={{ fontSize: 12 }}>{emoji}</Text>
+                                {data.count > 1 && (
+                                  <Text style={{
+                                    marginLeft: 3,
+                                    fontSize: 10,
+                                    color: data.hasYou ? '#fff' : colors.text,
+                                    fontWeight: '600'
+                                  }}>
+                                    {data.count}
+                                  </Text>
+                                )}
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    ) : (
+                      <View style={{ position: 'relative' }}>
+                        <Text style={{ color: "#FFFFFF", fontSize: 15, lineHeight: 20 }}>
+                          {item.content}
+                        </Text>
+                        {/* Reactions overlapping bottom-right */}
+                        {item.reactions && item.reactions.length > 0 && (
+                          <View style={{
+                            position: 'absolute',
+                            bottom: -6,
+                            right: 8,
+                            flexDirection: 'row',
+                            flexWrap: 'wrap',
+                            maxWidth: 200,
+                            justifyContent: 'flex-end',
+                          }}>
+                            {Object.entries(
+                              item.reactions.reduce((acc, r) => {
+                                acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                                acc[r.emoji].count++;
+                                acc[r.emoji].users.push(r.userName);
+                                if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                                return acc;
+                              }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                            ).map(([emoji, data]) => (
+                              <TouchableOpacity
+                                key={emoji}
+                                onPress={() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                  toggleReaction(item._id, emoji);
+                                }}
+                                style={{
+                                  flexDirection: 'row',
+                                  alignItems: 'center',
+                                  paddingHorizontal: 6,
+                                  paddingVertical: 3,
+                                  borderRadius: 12,
+                                  backgroundColor: data.hasYou
+                                    ? 'rgba(94, 92, 230, 0.9)'
+                                    : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
+                                  marginLeft: 4,
+                                  marginBottom: 2,
+                                  shadowColor: '#000',
+                                  shadowOffset: { width: 0, height: 1 },
+                                  shadowOpacity: 0.2,
+                                  shadowRadius: 2,
+                                }}
+                              >
+                                <Text style={{ fontSize: 12 }}>{emoji}</Text>
+                                {data.count > 1 && (
+                                  <Text style={{
+                                    marginLeft: 3,
+                                    fontSize: 10,
+                                    color: data.hasYou ? '#fff' : colors.text,
+                                    fontWeight: '600'
+                                  }}>
+                                    {data.count}
+                                  </Text>
+                                )}
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+
+                {/* Reactions Display (Right Aligned) - Premium Pill Style */}
+                {item.reactions && item.reactions.length > 0 && (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', position: 'absolute', bottom: -14, right: 12, zIndex: 10, justifyContent: 'flex-end' }}>
+                    {Object.entries(
+                      item.reactions.reduce((acc, r) => {
+                        acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                        acc[r.emoji].count++;
+                        acc[r.emoji].users.push(r.userName);
+                        if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                        return acc;
+                      }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                    ).map(([emoji, data]) => (
+                      <TouchableOpacity
+                        key={emoji}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          toggleReaction(item._id, emoji);
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 16,
+                          backgroundColor: data.hasYou
+                            ? (isDark ? 'rgba(94, 92, 230, 0.25)' : 'rgba(94, 92, 230, 0.15)')
+                            : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'),
+                          borderWidth: 1.5,
+                          borderColor: data.hasYou
+                            ? colors.primary
+                            : (isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'),
+                          marginLeft: 6,
+                          shadowColor: data.hasYou ? colors.primary : '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: data.hasYou ? 0.3 : 0.1,
+                          shadowRadius: 4,
+                          elevation: data.hasYou ? 4 : 2,
+                        }}
+                      >
+                        <Text style={{ fontSize: 14 }}>{emoji}</Text>
+                        {data.count > 1 && (
+                          <Text style={{
+                            marginLeft: 5,
+                            fontSize: 11,
+                            color: data.hasYou ? colors.primary : colors.textSecondary,
+                            fontWeight: '700'
+                          }}>
+                            {data.count}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Delivery status indicators - only show on last message of group */}
+                {!deleted && isLastOfGroup && (
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 4, marginRight: 4 }}>
+                    <Text style={{
+                      color: item.status === "read" ? "#007AFF" : "rgba(255,255,255,0.4)",
+                      fontSize: 10,
+                      marginRight: 4
+                    }}>
+                      {(item.status === "read" || item.status === "delivered") && "✓✓"}
+                      {(!item.status || item.status === "sent") && "✓"}
+                    </Text>
+                    <Text style={{ color: "rgba(255,255,255,0.4)", fontSize: 10 }}>
+                      {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
         </Swipeable>
       </View>
     );
@@ -2406,15 +2369,15 @@ export default function CommunityScreen() {
                       <View
                         style={{
                           alignSelf: "flex-start",
-                          backgroundColor: isDark 
-                            ? "rgba(52, 199, 89, 0.2)" 
+                          backgroundColor: isDark
+                            ? "rgba(52, 199, 89, 0.2)"
                             : "rgba(52, 199, 89, 0.12)",
                           borderRadius: 16,
                           paddingHorizontal: 14,
                           paddingVertical: 8,
                           borderWidth: 1,
-                          borderColor: isDark 
-                            ? "rgba(52, 199, 89, 0.3)" 
+                          borderColor: isDark
+                            ? "rgba(52, 199, 89, 0.3)"
                             : "rgba(52, 199, 89, 0.2)",
                           shadowColor: colors.success,
                           shadowOffset: { width: 0, height: 2 },
@@ -2430,14 +2393,14 @@ export default function CommunityScreen() {
                             backgroundColor: colors.success,
                             marginRight: 8,
                           }} />
-                          <Text style={{ 
-                            color: colors.success, 
-                            fontSize: 13, 
+                          <Text style={{
+                            color: colors.success,
+                            fontSize: 13,
                             fontWeight: "700",
                             letterSpacing: 0.3,
                           }}>
-                          {typingLabel}
-                        </Text>
+                            {typingLabel}
+                          </Text>
                         </View>
                       </View>
                     </View>
@@ -2457,262 +2420,262 @@ export default function CommunityScreen() {
                       elevation: 4,
                     }}
                   >
-                  <View
-                    style={{
+                    <View
+                      style={{
                         paddingHorizontal: 12,
                         paddingTop: 8,
                         paddingBottom: 8,
-                    }}
-                  >
-                    {/* Reply Preview Bar - Full width, above input */}
-                    {replyingTo && (
-                      <View style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA',
-                        paddingHorizontal: 12,
-                        paddingVertical: 8,
-                        marginBottom: 8,
-                        borderRadius: 8,
-                        borderLeftWidth: 3,
-                        borderLeftColor: colors.primary,
-                      }}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>
-                            Replying to {replyingTo.sender}
-                          </Text>
-                          <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
-                            {replyingTo.content || (replyingTo.type === 'photo' ? '📷 Photo' : 'Message')}
-                          </Text>
-                        </View>
-                        <TouchableOpacity 
-                          onPress={() => {
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                            setReplyingTo(null);
-                          }}
-                        >
-                          <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
-                        </TouchableOpacity>
-                      </View>
-                    )}
-
-                    {/* Input Row: + button, TextInput, Send button */}
-                    <View
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'flex-end',
-                        gap: 8,
                       }}
                     >
-                    {/* Animated Attachment Menu - iMessage/Discord Style */}
-                    {showAttachmentMenu && (
-                      <>
-                        {/* Backdrop to close menu when tapping outside */}
-                        <Pressable
-                          style={{
-                            position: 'absolute',
-                            top: -2000,
-                            left: -2000,
-                            right: -2000,
-                            bottom: -2000,
-                            backgroundColor: 'transparent',
-                          }}
+                      {/* Reply Preview Bar - Full width, above input */}
+                      {replyingTo && (
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA',
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          marginBottom: 8,
+                          borderRadius: 8,
+                          borderLeftWidth: 3,
+                          borderLeftColor: colors.primary,
+                        }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>
+                              Replying to {replyingTo.sender}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
+                              {replyingTo.content || (replyingTo.type === 'photo' ? '📷 Photo' : 'Message')}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => {
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                              setReplyingTo(null);
+                            }}
+                          >
+                            <Ionicons name="close-circle" size={20} color={colors.textSecondary} />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+
+                      {/* Input Row: + button, TextInput, Send button */}
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'flex-end',
+                          gap: 8,
+                        }}
+                      >
+                        {/* Animated Attachment Menu - iMessage/Discord Style */}
+                        {showAttachmentMenu && (
+                          <>
+                            {/* Backdrop to close menu when tapping outside */}
+                            <Pressable
+                              style={{
+                                position: 'absolute',
+                                top: -2000,
+                                left: -2000,
+                                right: -2000,
+                                bottom: -2000,
+                                backgroundColor: 'transparent',
+                              }}
+                              onPress={() => {
+                                attachmentMenuAnim.setValue(0);
+                                setShowAttachmentMenu(false);
+                              }}
+                            />
+                            <Animated.View
+                              style={{
+                                position: 'absolute',
+                                bottom: inputHeight + Math.max(insets.bottom, 12) + 10,
+                                left: 12,
+                                zIndex: 1000,
+                                maxWidth: 250,
+                                transform: [
+                                  {
+                                    translateY: attachmentMenuAnim.interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [20, 0],
+                                    }),
+                                  },
+                                  {
+                                    scale: attachmentMenuAnim.interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [0.8, 1],
+                                    }),
+                                  },
+                                ],
+                                opacity: attachmentMenuAnim,
+                              }}
+                            >
+                              <BlurView
+                                intensity={80}
+                                tint={isDark ? 'dark' : 'light'}
+                                style={{
+                                  borderRadius: 16,
+                                  overflow: 'hidden',
+                                  borderWidth: 1,
+                                  borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                                  shadowColor: '#000',
+                                  shadowOffset: { width: 0, height: 8 },
+                                  shadowOpacity: 0.3,
+                                  shadowRadius: 20,
+                                  elevation: 12,
+                                }}
+                              >
+                                <View style={{ padding: 8 }}>
+                                  <TouchableOpacity
+                                    onPress={handlePickPhoto}
+                                    style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      paddingHorizontal: 16,
+                                      paddingVertical: 12,
+                                      minHeight: 44,
+                                      borderRadius: 12,
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <View
+                                      style={{
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: 16,
+                                        backgroundColor: '#5E5CE6',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        marginRight: 12,
+                                      }}
+                                    >
+                                      <Ionicons name="image" size={18} color="#fff" />
+                                    </View>
+                                    <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
+                                      Photo
+                                    </Text>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                  </TouchableOpacity>
+
+                                  <View
+                                    style={{
+                                      height: 1,
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                                      marginVertical: 4,
+                                    }}
+                                  />
+
+                                  <TouchableOpacity
+                                    onPress={handlePickVideo}
+                                    style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      paddingHorizontal: 16,
+                                      paddingVertical: 12,
+                                      minHeight: 44,
+                                      borderRadius: 12,
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <View
+                                      style={{
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: 16,
+                                        backgroundColor: '#007AFF',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        marginRight: 12,
+                                      }}
+                                    >
+                                      <Ionicons name="videocam" size={18} color="#fff" />
+                                    </View>
+                                    <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
+                                      Video
+                                    </Text>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                  </TouchableOpacity>
+
+                                  <View
+                                    style={{
+                                      height: 1,
+                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                                      marginVertical: 4,
+                                    }}
+                                  />
+
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      // Placeholder for camera
+                                      attachmentMenuAnim.setValue(0);
+                                      setShowAttachmentMenu(false);
+                                      Alert.alert('Coming Soon', 'Camera feature will be available soon.');
+                                    }}
+                                    style={{
+                                      flexDirection: 'row',
+                                      alignItems: 'center',
+                                      paddingHorizontal: 16,
+                                      paddingVertical: 12,
+                                      minHeight: 44,
+                                      borderRadius: 12,
+                                    }}
+                                    activeOpacity={0.7}
+                                  >
+                                    <View
+                                      style={{
+                                        width: 32,
+                                        height: 32,
+                                        borderRadius: 16,
+                                        backgroundColor: '#34C759',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        marginRight: 12,
+                                      }}
+                                    >
+                                      <Ionicons name="camera" size={18} color="#fff" />
+                                    </View>
+                                    <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
+                                      Camera
+                                    </Text>
+                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                  </TouchableOpacity>
+                                </View>
+                              </BlurView>
+                            </Animated.View>
+                          </>
+                        )}
+
+                        {/* + button */}
+                        <TouchableOpacity
                           onPress={() => {
-                            attachmentMenuAnim.setValue(0);
-                            setShowAttachmentMenu(false);
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            showAttachmentOptions();
                           }}
-                        />
-                      <Animated.View
-                        style={{
-                          position: 'absolute',
-                            bottom: inputHeight + Math.max(insets.bottom, 12) + 10,
-                            left: 12,
-                            zIndex: 1000,
-                            maxWidth: 250,
-                          transform: [
-                            {
-                              translateY: attachmentMenuAnim.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [20, 0],
-                              }),
-                            },
-                              {
-                                scale: attachmentMenuAnim.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: [0.8, 1],
-                              }),
-                            },
-                          ],
-                          opacity: attachmentMenuAnim,
-                        }}
-                      >
-                          <BlurView
-                            intensity={80}
-                            tint={isDark ? 'dark' : 'light'}
-                            style={{
-                              borderRadius: 16,
-                              overflow: 'hidden',
-                              borderWidth: 1,
-                              borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                              shadowColor: '#000',
-                              shadowOffset: { width: 0, height: 8 },
-                              shadowOpacity: 0.3,
-                              shadowRadius: 20,
-                              elevation: 12,
-                            }}
-                          >
-                            <View style={{ padding: 8 }}>
-                        <TouchableOpacity
-                          onPress={handlePickPhoto}
                           style={{
-                            flexDirection: 'row',
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
                             alignItems: 'center',
-                            paddingHorizontal: 16,
-                            paddingVertical: 12,
-                                  minHeight: 44,
-                                  borderRadius: 12,
+                            justifyContent: 'center',
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
                           }}
                           activeOpacity={0.7}
                         >
-                          <View
-                            style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 16,
-                              backgroundColor: '#5E5CE6',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              marginRight: 12,
-                            }}
-                          >
-                                  <Ionicons name="image" size={18} color="#fff" />
-                          </View>
-                                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
-                                  Photo
-                                </Text>
-                                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                          <Ionicons name="add" size={22} color={colors.text} />
                         </TouchableOpacity>
 
-                              <View
-                                style={{
-                                  height: 1,
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                                  marginVertical: 4,
-                                }}
-                              />
-
-                        <TouchableOpacity
-                          onPress={handlePickVideo}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            paddingHorizontal: 16,
-                            paddingVertical: 12,
-                                  minHeight: 44,
-                                  borderRadius: 12,
-                          }}
-                          activeOpacity={0.7}
-                        >
-                          <View
-                            style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 16,
-                              backgroundColor: '#007AFF',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              marginRight: 12,
-                            }}
-                          >
-                                  <Ionicons name="videocam" size={18} color="#fff" />
-                          </View>
-                                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
-                                  Video
-                                </Text>
-                                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-                        </TouchableOpacity>
-
-                              <View
-                                style={{
-                                  height: 1,
-                                  backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                                  marginVertical: 4,
-                                }}
-                              />
-
-                      <TouchableOpacity
-                                onPress={() => {
-                                  // Placeholder for camera
-                                  attachmentMenuAnim.setValue(0);
-                                  setShowAttachmentMenu(false);
-                                  Alert.alert('Coming Soon', 'Camera feature will be available soon.');
-                                }}
-                        style={{
-                                  flexDirection: 'row',
-                          alignItems: 'center',
-                                  paddingHorizontal: 16,
-                                  paddingVertical: 12,
-                                  minHeight: 44,
-                                  borderRadius: 12,
-                        }}
-                        activeOpacity={0.7}
-                      >
-                                <View
-                                  style={{
-                                    width: 32,
-                                    height: 32,
-                                    borderRadius: 16,
-                                    backgroundColor: '#34C759',
-                            alignItems: 'center',
-                                    justifyContent: 'center',
-                                    marginRight: 12,
-                                  }}
-                                >
-                                  <Ionicons name="camera" size={18} color="#fff" />
-                            </View>
-                                <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
-                                  Camera
-                                </Text>
-                                <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-                            </TouchableOpacity>
-                          </View>
-                          </BlurView>
-                        </Animated.View>
-                      </>
-                    )}
-
-                      {/* + button */}
-                      <TouchableOpacity
-                        onPress={() => {
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          showAttachmentOptions();
-                        }}
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 18,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Ionicons name="add" size={22} color={colors.text} />
-                      </TouchableOpacity>
-
-                      {/* Text Input */}
+                        {/* Text Input */}
                         <View
                           style={{
-                          flex: 1,
+                            flex: 1,
                             flexDirection: "row",
-                          alignItems: "center",
-                          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F2F3F5',
-                          borderRadius: 20,
+                            alignItems: "center",
+                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : '#F2F3F5',
+                            borderRadius: 20,
                             paddingHorizontal: 16,
                             paddingVertical: 10,
-                          minHeight: 40,
-                          maxHeight: 120,
+                            minHeight: 40,
+                            maxHeight: 120,
                           }}
                         >
                           <TextInput
@@ -2723,12 +2686,12 @@ export default function CommunityScreen() {
                             onChangeText={(t) => {
                               const wasEmpty = input.trim().length === 0;
                               const willBeEmpty = t.trim().length === 0;
-                              
+
                               // Trigger LayoutAnimation when send button appears/disappears
                               if (wasEmpty !== willBeEmpty) {
                                 LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
                               }
-                              
+
                               setInput(t);
 
                               if (socket && communityId) {
@@ -2749,12 +2712,12 @@ export default function CommunityScreen() {
                             placeholderTextColor={colors.textSecondary}
                             style={{
                               color: colors.text,
-                            fontSize: 16,
+                              fontSize: 16,
                               flex: 1,
-                            minHeight: 20,
+                              minHeight: 20,
                               maxHeight: 100,
-                            height: Math.max(20, inputHeight - 20),
-                            paddingVertical: 0,
+                              height: Math.max(20, inputHeight - 20),
+                              paddingVertical: 0,
                               textAlignVertical: "top",
                             }}
                             onContentSizeChange={(e) => {
@@ -2769,44 +2732,44 @@ export default function CommunityScreen() {
                             autoCapitalize="sentences"
                           />
 
-                        {/* Send button - appears when text exists with animation */}
-                        {input.trim().length > 0 && (
-                          <Animated.View
-                            style={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: 18,
-                              overflow: "hidden",
-                              marginLeft: 8,
-                              opacity: sending ? 0.6 : 1,
-                            }}
-                          >
-                            <TouchableOpacity
-                              onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                                sendMessage();
-                              }}
-                              disabled={sending}
+                          {/* Send button - appears when text exists with animation */}
+                          {input.trim().length > 0 && (
+                            <Animated.View
                               style={{
-                                width: '100%',
-                                height: '100%',
-                            }}
-                          >
-                            <LinearGradient
-                                colors={['#007AFF', '#5E5CE6']}
-                              start={{ x: 0, y: 0 }}
-                              end={{ x: 1, y: 1 }}
-                              style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+                                width: 36,
+                                height: 36,
+                                borderRadius: 18,
+                                overflow: "hidden",
+                                marginLeft: 8,
+                                opacity: sending ? 0.6 : 1,
+                              }}
                             >
-                              {sending ? (
-                                <ActivityIndicator color="#fff" size="small" />
-                              ) : (
-                                  <Ionicons name="arrow-up" size={18} color="#fff" />
-                              )}
-                            </LinearGradient>
-                          </TouchableOpacity>
-                          </Animated.View>
-                        )}
+                              <TouchableOpacity
+                                onPress={() => {
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                                  sendMessage();
+                                }}
+                                disabled={sending}
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                }}
+                              >
+                                <LinearGradient
+                                  colors={['#007AFF', '#5E5CE6']}
+                                  start={{ x: 0, y: 0 }}
+                                  end={{ x: 1, y: 1 }}
+                                  style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+                                >
+                                  {sending ? (
+                                    <ActivityIndicator color="#fff" size="small" />
+                                  ) : (
+                                    <Ionicons name="arrow-up" size={18} color="#fff" />
+                                  )}
+                                </LinearGradient>
+                              </TouchableOpacity>
+                            </Animated.View>
+                          )}
                         </View>
                       </View>
                     </View>

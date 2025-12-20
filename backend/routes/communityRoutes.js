@@ -125,10 +125,13 @@ router.post("/", async (req, res) => {
  * Returns: { items: [ { id, name, lastMsg, lastAt, memberCount, pinned, unread } ] }
  */
 router.get("/my-threads", async (req, res) => {
+  const startTime = Date.now();
   try {
     const userId = req.user.id;
+    console.log(`[PERF] my-threads START for user ${userId}`);
 
     // 1. Get all active memberships
+    const t1 = Date.now();
     const members = await prisma.member.findMany({
       where: {
         userId,
@@ -141,8 +144,7 @@ router.get("/my-threads", async (req, res) => {
             name: true,
             updatedAt: true,
             createdAt: true,
-            pinned: true, // If pinned is on Community? No, pinned is usually per user (Member preference).
-            // Schema check: Community has 'pinned'? Or Member?
+            // pinned: true, // Not in schema
             // The frontend code expects `c.pinned`. 
             // In typical systems, "pinning" is a user-specific action, stored on Member.
             // But if the schema puts it on Community, it's global.
@@ -155,41 +157,60 @@ router.get("/my-threads", async (req, res) => {
         }
       }
     });
+    const t2 = Date.now();
+    console.log(`[PERF] Members query: ${t2 - t1}ms, found ${members.length} memberships`);
 
-    // 2. For each community, get member count & last message
-    // We can optimize this with a groupBy or raw query, but Promise.all is better than N HTTP requests.
-    // Even better: fetch all matching messages in one go if possible, but "latest per group" is tricky in Prisma.
-    // Let's do Promise.all for now - it's N DB queries but 1 HTTP request. Faster than N HTTP.
+    // 2. OPTIMIZED: Batch all queries (was N+1, now 2 queries total!)
+    const communityIds = members.map(m => m.community?.id).filter(Boolean);
+    console.log(`[PERF] Batching queries for ${communityIds.length} communities`);
+    const t3 = Date.now();
 
-    const threads = await Promise.all(members.map(async (m) => {
+    const [memberCounts, allMessages] = await Promise.all([
+      prisma.member.groupBy({
+        by: ['communityId'],
+        where: { communityId: { in: communityIds }, memberStatus: 'active' },
+        _count: { id: true }
+      }),
+      prisma.message.findMany({
+        where: { communityId: { in: communityIds } },
+        orderBy: { createdAt: 'desc' },
+        take: communityIds.length * 2
+      })
+    ]);
+    const t4 = Date.now();
+    console.log(`[PERF] Batch queries: ${t4 - t3}ms (counts + messages)`);
+
+    const memberCountMap = Object.fromEntries(memberCounts.map(mc => [mc.communityId, mc._count.id]));
+    const lastMessageMap = {};
+    for (const msg of allMessages) {
+      if (!lastMessageMap[msg.communityId]) lastMessageMap[msg.communityId] = msg;
+    }
+
+    const threads = members.map((m) => {
       const c = m.community;
       if (!c) return null;
 
-      // Unread stub (since /unread is stubbed 0 anyway)
       const unread = 0;
-
-      // Member count
-      const memberCount = await prisma.member.count({ where: { communityId: c.id, memberStatus: 'active' } });
-
-      // Last message
-      const lastMsgDoc = await prisma.message.findFirst({
-        where: { communityId: c.id },
-        orderBy: { createdAt: 'desc' }
-      });
+      const memberCount = memberCountMap[c.id] || 1;
+      const lastMsgDoc = lastMessageMap[c.id];
 
       let lastMsg = { type: 'text', content: 'No messages yet' };
       let lastAt = new Date(c.createdAt).getTime();
 
       if (lastMsgDoc) {
         lastAt = new Date(lastMsgDoc.createdAt).getTime();
-        const type = lastMsgDoc.attachments && Array.isArray(lastMsgDoc.attachments) && lastMsgDoc.attachments.length > 0 ? 'photo' : 'text';
-        // Simple heuristic matching frontend
-
+        let type = 'text';
         let content = lastMsgDoc.content;
-        // Frontend logic duplication for content preview:
-        if (typeof lastMsgDoc.attachments === 'string' && lastMsgDoc.attachments.length > 2) {
-          // If JSON string
-          content = '📷 Image';
+
+        // ISSUE #2 FIX: Detect media and show icon instead of URL
+        if (lastMsgDoc.attachments && Array.isArray(lastMsgDoc.attachments) && lastMsgDoc.attachments.length > 0) {
+          const attachment = lastMsgDoc.attachments[0];
+          type = attachment.type || 'photo';
+          if (type === 'photo') content = '📷 Photo';
+          else if (type === 'video') content = '🎥 Video';
+          else if (type === 'file') content = '📎 File';
+        } else if (content && content.length > 50) {
+          content = content.substring(0, 50) + '...';
         }
 
         lastMsg = { type, content };
@@ -205,12 +226,14 @@ router.get("/my-threads", async (req, res) => {
         pinned: false, // Not persisted
         memberCount
       };
-    }));
+    });
 
     return res.json({ items: threads.filter(Boolean) });
   } catch (error) {
     console.error("GET /api/communities/my-threads error:", error);
     return res.status(500).json({ error: "Server Error" });
+  } finally {
+    console.log(`[PERF] my-threads TOTAL: ${Date.now() - startTime}ms`);
   }
 });
 /**

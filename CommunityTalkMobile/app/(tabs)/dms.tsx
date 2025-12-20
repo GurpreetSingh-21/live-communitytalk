@@ -138,7 +138,7 @@ const TypingIndicator = () => {
 
 const SmartPreview = ({ msg }: { msg: MessageContent }) => {
   const isDark = useColorScheme() === 'dark';
-  
+
   let iconName: any = 'text-outline';
   let label = msg.content;
 
@@ -193,9 +193,9 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
 
   const pan = Gesture.Pan()
     .activeOffsetX([-20, 20])
-    .onUpdate((e) => { 
-        // Only allow swiping left
-        if (e.translationX < 0) translateX.value = e.translationX; 
+    .onUpdate((e) => {
+      // Only allow swiping left
+      if (e.translationX < 0) translateX.value = e.translationX;
     })
     .onEnd((e) => {
       // Snap points: 0 (closed), -140 (2 buttons), -210 (3 buttons)
@@ -206,16 +206,16 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
     });
 
   const animatedRowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
-  
+
   // Action buttons animations
-  const animatedPinStyle = useAnimatedStyle(() => ({ 
-      transform: [{ scale: interpolate(translateX.value, [-ACTION_WIDTH, 0], [1, 0.5], 'clamp') }] 
+  const animatedPinStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(translateX.value, [-ACTION_WIDTH, 0], [1, 0.5], 'clamp') }]
   }));
-  const animatedArchiveStyle = useAnimatedStyle(() => ({ 
-      transform: [{ scale: interpolate(translateX.value, [-ACTION_WIDTH * 2, -ACTION_WIDTH], [1, 0.5], 'clamp') }] 
+  const animatedArchiveStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(translateX.value, [-ACTION_WIDTH * 2, -ACTION_WIDTH], [1, 0.5], 'clamp') }]
   }));
-  const animatedDeleteStyle = useAnimatedStyle(() => ({ 
-      transform: [{ scale: interpolate(translateX.value, [-ACTION_WIDTH * 3, -ACTION_WIDTH * 2], [1, 0.5], 'clamp') }] 
+  const animatedDeleteStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: interpolate(translateX.value, [-ACTION_WIDTH * 3, -ACTION_WIDTH * 2], [1, 0.5], 'clamp') }]
   }));
 
   const handlePin = () => { 'worklet'; runOnJS(onPinToggle)(item.id); translateX.value = withSpring(0); };
@@ -231,7 +231,7 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
         <View className="relative">
           {/* Hidden Actions Layer (Right Side) */}
           <View className="absolute right-0 top-0 bottom-0 flex-row h-full">
-            
+
             {/* 1. PIN Button */}
             <Pressable onPress={handlePin} style={{ width: ACTION_WIDTH, backgroundColor: '#4f46e5', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
               <Animated.View style={animatedPinStyle} className="items-center">
@@ -260,24 +260,24 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
 
           {/* Foreground Row */}
           <Animated.View style={[animatedRowStyle, { backgroundColor: isDark ? '#000' : '#fff' }]}>
-            <Pressable 
-                className="flex-row items-center gap-4 px-4 h-[93px] active:bg-slate-50 dark:active:bg-zinc-900" 
-                onPress={() => onOpen(item.id)}
+            <Pressable
+              className="flex-row items-center gap-4 px-4 h-[93px] active:bg-slate-50 dark:active:bg-zinc-900"
+              onPress={() => onOpen(item.id)}
             >
               <View>
                 <View className="w-14 h-14 rounded-full items-center justify-center overflow-hidden bg-slate-200 dark:bg-zinc-800 border border-slate-100 dark:border-zinc-700">
-                    {isAvatarUrl ? (
-                       <Image 
-                         source={{ uri: item.avatar }} 
-                         style={{ width: '100%', height: '100%' }} 
-                         resizeMode="cover" 
-                       />
-                    ) : (
-                       <Text className="text-3xl">{item.avatar || '🗣️'}</Text>
-                    )}
+                  {isAvatarUrl ? (
+                    <Image
+                      source={{ uri: item.avatar }}
+                      style={{ width: '100%', height: '100%' }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <Text className="text-3xl">{item.avatar || '🗣️'}</Text>
+                  )}
                 </View>
                 {item.online && !item.typing && (
-                    <View className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white dark:border-black" />
+                  <View className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white dark:border-black" />
                 )}
                 {item.typing && (
                   <View className="absolute bottom-0 right-0"><TypingIndicator /></View>
@@ -287,16 +287,16 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
               <View className="flex-1 py-4 h-full justify-center border-b border-slate-100 dark:border-zinc-800">
                 <View className="flex-row items-center justify-between mb-1">
                   <View className="flex-row items-center gap-1">
-                      <Text className="text-base font-bold text-black dark:text-white" numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                      {item.pinned && <Ionicons name="pin" size={12} color={isDark ? '#fbbf24' : '#d97706'} />}
+                    <Text className="text-base font-bold text-black dark:text-white" numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                    {item.pinned && <Ionicons name="pin" size={12} color={isDark ? '#fbbf24' : '#d97706'} />}
                   </View>
                   <Text className="text-xs text-slate-400 dark:text-zinc-500">
                     {timeAgoLabel(item.lastAt, now)}
                   </Text>
                 </View>
-                
+
                 <View className="flex-row items-center justify-between">
                   <View className="flex-1 mr-2">
                     <SmartPreview msg={item.lastMsg} />
@@ -328,13 +328,13 @@ export default function DMsScreen(): React.JSX.Element {
   const [searchQuery, setSearchQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<(typeof FILTERS)[number]>('All');
-  
+
   // Notification state for undo actions
   const [snackbarMsg, setSnackbarMsg] = useState<string | null>(null);
   const [lastDeletedItem, setLastDeletedItem] = useState<DMThread | null>(null);
-  
+
   const [activeUsers, setActiveUsers] = useState<ActiveUser[]>([]);
-  
+
   const scrollY = useSharedValue(0);
 
   const [now, setNow] = useState(() => Date.now());
@@ -350,27 +350,27 @@ export default function DMsScreen(): React.JSX.Element {
     try {
       const { data } = await api.get('/api/direct-messages', { signal });
       const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
-      
+
       const normalized: DMThread[] = list.map((t: any) => {
         const rawLast = t.lastMessage ?? t.threadData?.lastMessage;
-        
+
         let content = "";
         let type: MessageType = 'text';
 
         if (t.lastType && ['photo', 'video', 'audio', 'file', 'text'].includes(t.lastType)) {
-            type = t.lastType;
-            content = t.lastMessage || "";
-        } 
+          type = t.lastType;
+          content = t.lastMessage || "";
+        }
         else if (typeof rawLast === 'string') {
-            content = rawLast;
-            if (content.match(/\.(jpeg|jpg|gif|png)/i)) type = 'photo';
+          content = rawLast;
+          if (content.match(/\.(jpeg|jpg|gif|png)/i)) type = 'photo';
         }
 
         if (!content || content === '[Photo]') {
-             if (type === 'photo') content = 'Photo';
-             else if (type === 'video') content = 'Video';
-             else if (type === 'audio') content = 'Voice Note';
-             else if (type === 'file') content = 'Attachment';
+          if (type === 'photo') content = 'Photo';
+          else if (type === 'video') content = 'Video';
+          else if (type === 'audio') content = 'Voice Note';
+          else if (type === 'file') content = 'Attachment';
         }
 
         const id = String(t.partnerId ?? t.id ?? '');
@@ -381,7 +381,7 @@ export default function DMsScreen(): React.JSX.Element {
           id,
           name,
           avatar: t.avatarEmoji || t.avatar || '🗣️',
-          lastMsg: { type, content }, 
+          lastMsg: { type, content },
           lastAt,
           unread: Number(t.unread || 0),
           online: !!t.online,
@@ -390,7 +390,7 @@ export default function DMsScreen(): React.JSX.Element {
           archived: false, // Default state from backend
         };
       });
-      
+
       return normalized;
     } catch (error) {
       return [] as DMThread[];
@@ -413,20 +413,49 @@ export default function DMsScreen(): React.JSX.Element {
     }
   }, [fetchDMThreads, refreshUnread]);
 
+  // INSTANT LOADING: Show cache immediately, refresh in background
   useEffect(() => {
     const ac = new AbortController();
-    setIsLoading(true);
-    
+
     (async () => {
+      // 1. Load cache INSTANTLY
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const cached = await AsyncStorage.getItem('@dms_cache_v1');
+        if (cached) {
+          const data = JSON.parse(cached);
+          console.log('[DMs] 📦 Loaded from cache:', data.length, 'items');
+          setThreads(resortByPinnedAndRecent(data));
+          setIsLoading(false);
+        } else {
+          setIsLoading(true);
+        }
+      } catch (e) {
+        console.error('[DMs] ❌ Cache load failed:', e);
+        setIsLoading(true);
+      }
+
+      // 2. Fetch fresh data in background
       const dm = await fetchDMThreads(ac.signal);
       await refreshUnread?.();
       setThreads(resortByPinnedAndRecent(dm));
       setIsLoading(false);
+
+      // 3. Save to cache (only if non-empty)
+      if (dm && dm.length > 0) {
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem('@dms_cache_v1', JSON.stringify(dm));
+          console.log('[DMs] 💾 Saved to cache:', dm.length, 'items');
+        } catch (e) {
+          console.error('[DMs] ❌ Cache save failed:', e);
+        }
+      }
     })();
-    
+
     return () => ac.abort();
-  }, [fetchDMThreads, refreshUnread]); 
- 
+  }, [fetchDMThreads, refreshUnread]);
+
   useEffect(() => {
     if (!threads.length) return;
     setThreads(prev =>
@@ -435,10 +464,10 @@ export default function DMsScreen(): React.JSX.Element {
   }, [unreadThreads]);
 
   useEffect(() => {
-      const online = threads
-        .filter(t => (t.online || t.typing) && !t.archived) // Don't show archived users in rail
-        .map(t => ({ id: t.id, name: t.name, avatar: t.avatar }));
-      setActiveUsers(online);
+    const online = threads
+      .filter(t => (t.online || t.typing) && !t.archived) // Don't show archived users in rail
+      .map(t => ({ id: t.id, name: t.name, avatar: t.avatar }));
+    setActiveUsers(online);
   }, [threads]);
 
   /* ------------------- Realtime listeners ------------------- */
@@ -452,8 +481,8 @@ export default function DMsScreen(): React.JSX.Element {
       if (!uid || uid === myId) return;
 
       const online = typeof payload?.online === 'boolean'
-          ? payload.online
-          : String(payload?.status || '').toLowerCase() === 'online';
+        ? payload.online
+        : String(payload?.status || '').toLowerCase() === 'online';
 
       setThreads(prev =>
         prev.map(t => t.id === uid ? ({ ...t, online }) : t)
@@ -474,12 +503,12 @@ export default function DMsScreen(): React.JSX.Element {
 
       const type = payload?.type || 'text';
       let contentStr = String(payload?.content ?? '');
-      
+
       if (!contentStr) {
-          if (type === 'photo') contentStr = 'Photo';
-          else if (type === 'video') contentStr = 'Video';
-          else if (type === 'audio') contentStr = 'Voice Note';
-          else if (type === 'file') contentStr = 'File';
+        if (type === 'photo') contentStr = 'Photo';
+        else if (type === 'video') contentStr = 'Video';
+        else if (type === 'audio') contentStr = 'Voice Note';
+        else if (type === 'file') contentStr = 'File';
       }
 
       const content: MessageContent = { type, content: contentStr };
@@ -524,10 +553,10 @@ export default function DMsScreen(): React.JSX.Element {
 
   const handleArchive = useCallback((id: string) => {
     setThreads(cur => {
-        const target = cur.find(t => t.id === id);
-        if(target) setLastDeletedItem({...target, archived: true});
-        // Optimistically remove from view
-        return cur.map(t => t.id === id ? { ...t, archived: true } : t);
+      const target = cur.find(t => t.id === id);
+      if (target) setLastDeletedItem({ ...target, archived: true });
+      // Optimistically remove from view
+      return cur.map(t => t.id === id ? { ...t, archived: true } : t);
     });
     setSnackbarMsg("Conversation archived");
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -536,27 +565,27 @@ export default function DMsScreen(): React.JSX.Element {
 
   const handleDelete = useCallback((id: string) => {
     Alert.alert(
-        "Delete Conversation",
-        "Are you sure you want to delete this chat? This cannot be undone.",
-        [
-            { text: "Cancel", style: "cancel" },
-            { 
-                text: "Delete", 
-                style: "destructive", 
-                onPress: () => {
-                    setThreads(cur => cur.filter(t => t.id !== id));
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    // Note: Ideally you call an API here to delete on backend
-                }
-            }
-        ]
+      "Delete Conversation",
+      "Are you sure you want to delete this chat? This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            setThreads(cur => cur.filter(t => t.id !== id));
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            // Note: Ideally you call an API here to delete on backend
+          }
+        }
+      ]
     );
   }, []);
 
   const handleUndo = () => {
     if (lastDeletedItem) {
       setThreads(cur => resortByPinnedAndRecent(
-          cur.map(t => t.id === lastDeletedItem.id ? { ...t, archived: false } : t)
+        cur.map(t => t.id === lastDeletedItem.id ? { ...t, archived: false } : t)
       ));
       setSnackbarMsg(null);
       setLastDeletedItem(null);
@@ -575,16 +604,16 @@ export default function DMsScreen(): React.JSX.Element {
   const openDM = async (partnerId: string) => {
     const thread = threads.find(t => t.id === partnerId);
     await markThreadRead?.(partnerId);
-    
+
     setThreads(cur => cur.map(t => (t.id === partnerId ? { ...t, unread: 0 } : t)));
-    
+
     router.push({
-        pathname: "/dm/[id]",
-        params: { 
-            id: partnerId,
-            name: thread?.name || "Chat",
-            avatar: thread?.avatar 
-        }
+      pathname: "/dm/[id]",
+      params: {
+        id: partnerId,
+        name: thread?.name || "Chat",
+        avatar: thread?.avatar
+      }
     });
   };
 
@@ -597,17 +626,17 @@ export default function DMsScreen(): React.JSX.Element {
   const filteredThreads = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
     let filtered = threads.filter((t) => !t.archived && t.name.toLowerCase().includes(q)); // Filter out archived
-    
+
     if (activeFilter === 'Unread') filtered = filtered.filter((t) => t.unread && t.unread > 0);
     if (activeFilter === 'Pinned') filtered = filtered.filter((t) => t.pinned);
-    
+
     return filtered;
   }, [threads, debouncedQuery, activeFilter]);
 
   /* ------------------- Header animation ------------------- */
 
   const scrollHandler = useAnimatedScrollHandler((event) => { scrollY.value = event.contentOffset.y; });
-  
+
   // Collapse header logic
   const animatedHeaderStyle = useAnimatedStyle(() => ({ transform: [{ translateY: interpolate(scrollY.value, [0, 100], [0, -60], 'clamp') }] }));
   const animatedOpacityStyle = useAnimatedStyle(() => ({ opacity: interpolate(scrollY.value, [0, 60], [1, 0], 'clamp') }));
@@ -656,89 +685,88 @@ export default function DMsScreen(): React.JSX.Element {
       />
 
       {/* Fixed Header */}
-      <Animated.View 
-        style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, zIndex: 10 }, animatedHeaderStyle]} 
+      <Animated.View
+        style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, zIndex: 10 }, animatedHeaderStyle]}
       >
         <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
-        
+
         <View className="px-4 pb-2">
-            {/* Top Bar */}
-            <View className="flex-row items-center justify-between mt-2 mb-4">
-                <Text className="text-3xl font-extrabold text-black dark:text-white">Messages</Text>
-                <Pressable 
-                    className="h-10 w-10 items-center justify-center rounded-full bg-slate-200/80 dark:bg-zinc-800/80 active:opacity-70" 
-                    onPress={() => router.push('/(tabs)/explore')}
-                >
-                    <IconSymbol name="plus" size={20} color={isDark ? '#FFF' : '#000'} />
-                </Pressable>
-            </View>
+          {/* Top Bar */}
+          <View className="flex-row items-center justify-between mt-2 mb-4">
+            <Text className="text-3xl font-extrabold text-black dark:text-white">Messages</Text>
+            <Pressable
+              className="h-10 w-10 items-center justify-center rounded-full bg-slate-200/80 dark:bg-zinc-800/80 active:opacity-70"
+              onPress={() => router.push('/(tabs)/explore')}
+            >
+              <IconSymbol name="plus" size={20} color={isDark ? '#FFF' : '#000'} />
+            </Pressable>
+          </View>
 
-            {/* Active Users Rail (Collapsible) */}
-            <Animated.View style={[{ overflow: 'hidden' }, animatedOpacityStyle]}>
-                {activeUsers.length > 0 ? (
-                    <FlatList
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        data={activeUsers}
-                        keyExtractor={(item) => item.id}
-                        renderItem={({ item }) => (
-                            <Pressable onPress={() => openDM(item.id)} className="items-center mr-4">
-                                <View className="relative">
-                                    <View className="w-14 h-14 rounded-full bg-slate-200 dark:bg-zinc-800 items-center justify-center border-2 border-transparent active:border-indigo-500 overflow-hidden">
-                                        {item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('file')) ? (
-                                            <Image source={{ uri: item.avatar }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                                        ) : (
-                                            <Text className="text-2xl">{item.avatar || '🗣️'}</Text>
-                                        )}
-                                    </View>
-                                    <View className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white dark:border-black" />
-                                </View>
-                                <Text className="text-[10px] mt-1 text-slate-600 dark:text-zinc-400 font-medium" numberOfLines={1}>
-                                    {item.name.split(' ')[0]}
-                                </Text>
-                            </Pressable>
+          {/* Active Users Rail (Collapsible) */}
+          <Animated.View style={[{ overflow: 'hidden' }, animatedOpacityStyle]}>
+            {activeUsers.length > 0 ? (
+              <FlatList
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                data={activeUsers}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <Pressable onPress={() => openDM(item.id)} className="items-center mr-4">
+                    <View className="relative">
+                      <View className="w-14 h-14 rounded-full bg-slate-200 dark:bg-zinc-800 items-center justify-center border-2 border-transparent active:border-indigo-500 overflow-hidden">
+                        {item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('file')) ? (
+                          <Image source={{ uri: item.avatar }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                        ) : (
+                          <Text className="text-2xl">{item.avatar || '🗣️'}</Text>
                         )}
-                        className="mb-4"
-                    />
-                ) : (
-                    // Placeholder spacing if no active users
-                    <View className="h-2" /> 
+                      </View>
+                      <View className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white dark:border-black" />
+                    </View>
+                    <Text className="text-[10px] mt-1 text-slate-600 dark:text-zinc-400 font-medium" numberOfLines={1}>
+                      {item.name.split(' ')[0]}
+                    </Text>
+                  </Pressable>
                 )}
-            </Animated.View>
+                className="mb-4"
+              />
+            ) : (
+              // Placeholder spacing if no active users
+              <View className="h-2" />
+            )}
+          </Animated.View>
 
-            {/* Search Bar */}
-            <View className="flex-row items-center gap-2 rounded-xl bg-black/5 dark:bg-white/10 px-3 h-11 mb-3">
-                <IconSymbol name="magnifyingglass" size={18} color={isDark ? '#9ca3af' : '#64748b'} />
-                <TextInput
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    placeholder="Search conversations..."
-                    className="flex-1 h-full text-base text-black dark:text-white"
-                    placeholderTextColor={isDark ? '#9ca3af' : '#64748b'}
-                    clearButtonMode="while-editing"
-                />
-            </View>
+          {/* Search Bar */}
+          <View className="flex-row items-center gap-2 rounded-xl bg-black/5 dark:bg-white/10 px-3 h-11 mb-3">
+            <IconSymbol name="magnifyingglass" size={18} color={isDark ? '#9ca3af' : '#64748b'} />
+            <TextInput
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search conversations..."
+              className="flex-1 h-full text-base text-black dark:text-white"
+              placeholderTextColor={isDark ? '#9ca3af' : '#64748b'}
+              clearButtonMode="while-editing"
+            />
+          </View>
 
-            {/* Filters */}
-            <View className="flex-row gap-2">
-                {FILTERS.map((f) => (
-                    <Pressable
-                        key={f}
-                        onPress={() => { setActiveFilter(f); Haptics.selectionAsync(); }}
-                        className={`px-3 py-1.5 rounded-full border ${
-                            activeFilter === f 
-                            ? 'bg-black dark:bg-white border-transparent' 
-                            : 'bg-transparent border-slate-200 dark:border-zinc-700'
-                        }`}
-                    >
-                        <Text className={`text-xs font-semibold ${activeFilter === f ? 'text-white dark:text-black' : 'text-slate-600 dark:text-zinc-400'}`}>
-                            {f}
-                        </Text>
-                    </Pressable>
-                ))}
-            </View>
+          {/* Filters */}
+          <View className="flex-row gap-2">
+            {FILTERS.map((f) => (
+              <Pressable
+                key={f}
+                onPress={() => { setActiveFilter(f); Haptics.selectionAsync(); }}
+                className={`px-3 py-1.5 rounded-full border ${activeFilter === f
+                    ? 'bg-black dark:bg-white border-transparent'
+                    : 'bg-transparent border-slate-200 dark:border-zinc-700'
+                  }`}
+              >
+                <Text className={`text-xs font-semibold ${activeFilter === f ? 'text-white dark:text-black' : 'text-slate-600 dark:text-zinc-400'}`}>
+                  {f}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
-        
+
         {/* Divider Line */}
         <View className="h-[1px] w-full bg-slate-200 dark:bg-zinc-800 mt-2" />
       </Animated.View>
@@ -756,7 +784,7 @@ export default function DMsScreen(): React.JSX.Element {
             <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} className="flex-row items-center justify-between p-4 rounded-2xl overflow-hidden shadow-lg">
               <Text className="text-black dark:text-white font-medium">{snackbarMsg}</Text>
               <Pressable onPress={handleUndo} hitSlop={10}>
-                  <Text className="text-indigo-600 dark:text-indigo-400 font-bold">Undo</Text>
+                <Text className="text-indigo-600 dark:text-indigo-400 font-bold">Undo</Text>
               </Pressable>
             </BlurView>
           </MotiView>
