@@ -56,32 +56,35 @@ export default function DatingCard({ profile }: DatingCardProps) {
 
                 {/* Gradient Overlay */}
                 <LinearGradient
-                    colors={['transparent', 'rgba(0,0,0,0.4)', 'rgba(0,0,0,0.95)']}
+                    colors={['transparent', 'rgba(0,0,0,0.2)', 'rgba(0,0,0,0.8)', '#000']}
+                    locations={[0, 0.3, 0.7, 1]}
                     style={styles.gradient}
                 >
                     {/* Content */}
                     <View style={styles.content}>
+                        {/* College Badge */}
+                        {profile.collegeName && (
+                            <View style={styles.collegeBadge}>
+                                <Text style={styles.college}>{profile.collegeName}</Text>
+                            </View>
+                        )}
+
                         <View style={styles.headerRow}>
                             <Text style={styles.name}>{profile.firstName}, {profile.age}</Text>
-                            <Ionicons name="checkmark-circle" size={24} color="#4C5FD5" style={{ marginLeft: 6 }} />
+                            <Ionicons name="checkmark-circle" size={26} color="#4C5FD5" />
                         </View>
 
                         <Text style={styles.subtext}>{profile.major} • {profile.year}</Text>
-                        {profile.collegeName && <Text style={styles.college}>{profile.collegeName}</Text>}
 
-                        <Text style={styles.bio} numberOfLines={3}>{profile.bio}</Text>
+                        {/* Divider or spacing? */}
+                        <View style={{ height: 12 }} />
 
                         <View style={styles.chipRow}>
-                            {profile.hobbies.slice(0, 3).map((h, i) => (
+                            {profile.hobbies.slice(0, 4).map((h, i) => (
                                 <View key={i} style={styles.chip}>
                                     <Text style={styles.chipText}>{h}</Text>
                                 </View>
                             ))}
-                            {profile.hobbies.length > 3 && (
-                                <View style={styles.chip}>
-                                    <Text style={styles.chipText}>+{profile.hobbies.length - 3}</Text>
-                                </View>
-                            )}
                         </View>
                     </View>
                 </LinearGradient>
@@ -105,17 +108,18 @@ export default function DatingCard({ profile }: DatingCardProps) {
 
 const styles = StyleSheet.create({
     card: {
-        width: width - 20, // slightly smaller than screen width
-        height: height * 0.75, // fixed height for stack
-        borderRadius: 20,
-        backgroundColor: '#FFF',
+        width: width - 24,
+        height: height * 0.62, // Reduced height for split layout
+        borderRadius: 32,
+        backgroundColor: '#1A1A1A',
         overflow: 'hidden',
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 5,
-        position: 'relative'
+        shadowOffset: { width: 0, height: 12 },
+        shadowOpacity: 0.35,
+        shadowRadius: 16,
+        elevation: 8,
+        position: 'relative',
+        marginBottom: 20 // Slight spacing from buttons
     },
     image: {
         width: '100%',
@@ -126,39 +130,58 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        height: '50%',
+        height: '45%',
         justifyContent: 'flex-end',
-        padding: 20
+        paddingHorizontal: 24,
+        paddingBottom: 32
     },
     content: {
-        marginBottom: 10
+        gap: 8
     },
     headerRow: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: 8,
         marginBottom: 4
     },
     name: {
-        fontSize: 28,
-        fontWeight: '800',
-        color: '#FFF'
+        fontSize: 34,
+        fontWeight: '900',
+        color: '#FFF',
+        letterSpacing: 0.5,
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4
     },
     subtext: {
-        fontSize: 16,
-        color: 'rgba(255,255,255,0.9)',
-        marginBottom: 4
+        fontSize: 17,
+        fontWeight: '600',
+        color: 'rgba(255,255,255,0.95)',
+        letterSpacing: 0.3
+    },
+    collegeBadge: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 8,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.2)'
     },
     college: {
-        fontSize: 14,
-        color: '#FF6B6B', // Brand accent?
+        fontSize: 13,
+        color: '#FFF',
         fontWeight: '700',
-        marginBottom: 12
+        textTransform: 'uppercase',
+        letterSpacing: 0.5
     },
     bio: {
         fontSize: 15,
         color: 'rgba(255,255,255,0.85)',
         lineHeight: 22,
-        marginBottom: 16
+        marginBottom: 16,
+        fontWeight: '500'
     },
     chipRow: {
         flexDirection: 'row',
@@ -166,29 +189,33 @@ const styles = StyleSheet.create({
         gap: 8
     },
     chip: {
-        backgroundColor: 'rgba(255,255,255,0.2)',
+        backgroundColor: 'rgba(255,255,255,0.2)', // Glass effect
         paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
+        borderColor: 'rgba(255,255,255,0.15)',
+        backdropFilter: 'blur(10px)' // Note: native blur needs Expo BlurView usually
     },
     chipText: {
         color: '#FFF',
-        fontSize: 12,
-        fontWeight: '600'
+        fontSize: 13,
+        fontWeight: '700',
+        letterSpacing: 0.3
     },
     indicatorContainer: {
         position: 'absolute',
-        top: 10,
-        left: 10,
-        right: 10,
+        top: 20,
+        left: 20,
+        right: 20,
         flexDirection: 'row',
-        gap: 4
+        gap: 6,
+        height: 4
     },
     indicatorBar: {
         flex: 1,
-        height: 4,
-        borderRadius: 2
+        height: 3,
+        borderRadius: 2,
+        backgroundColor: 'rgba(255,255,255,0.2)'
     }
 });

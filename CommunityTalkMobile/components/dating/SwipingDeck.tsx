@@ -11,6 +11,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { api } from '@/src/api/api';
 import DatingCard from './DatingCard';
+import SwipeOverlay from './SwipeOverlay';
+import ActionButtons from './ActionButtons';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
@@ -33,7 +35,7 @@ export default function SwipingDeck() {
         try {
             setLoading(true);
             const { data } = await api.get('/api/dating/pool');
-            setPool(data.pool || []);
+            setPool(Array.isArray(data) ? data : []);
         } catch (err) {
             console.error("Fetch pool error:", err);
             Alert.alert("Error", "Failed to load profiles.");
@@ -56,8 +58,7 @@ export default function SwipingDeck() {
         try {
             const type = direction === 'right' ? 'LIKE' : direction === 'left' ? 'DISLIKE' : 'SUPERLIKE';
             const { data } = await api.post('/api/dating/swipe', {
-                targetUserId: currentProfile.userId, // CAUTION: API expects userId or profileId? 
-                // datingRoutes.js uses `targetUserId` in body.
+                targetId: currentProfile.id, // Send profile ID, not user ID
                 type
             });
 
@@ -162,6 +163,26 @@ export default function SwipingDeck() {
         );
     }
 
+
+
+    /* ──────────────────────────────────────────────────────────────────────────
+       BUTTON HANDLERS
+       ────────────────────────────────────────────────────────────────────────── */
+    const triggerSwipe = (direction: 'left' | 'right' | 'up') => {
+        const destX = direction === 'left' ? -width * 1.5 : direction === 'right' ? width * 1.5 : 0;
+        const destY = direction === 'up' ? -1000 : 0;
+
+        if (direction === 'up') {
+            translateY.value = withSpring(destY, {}, () => {
+                runOnJS(handleSwipeComplete)(direction);
+            });
+        } else {
+            translateX.value = withSpring(destX, {}, () => {
+                runOnJS(handleSwipeComplete)(direction);
+            });
+        }
+    };
+
     return (
         <View style={styles.container}>
             {/* Next Card (Underneath) */}
@@ -175,11 +196,17 @@ export default function SwipingDeck() {
             <GestureDetector gesture={panGesture}>
                 <Animated.View style={[styles.cardWrapper, animatedCardStyle]}>
                     <DatingCard profile={pool[0]} />
-
-                    {/* Overlay Labels (Like/Nope) */}
-                    {/* Can implement animated overlay here based on translateX */}
+                    <SwipeOverlay translateX={translateX} translateY={translateY} />
                 </Animated.View>
             </GestureDetector>
+
+            {/* Action Buttons */}
+            <ActionButtons
+                onNope={() => triggerSwipe('left')}
+                onLike={() => triggerSwipe('right')}
+                onSuperLike={() => triggerSwipe('up')}
+                onBoost={() => Alert.alert("Boost", "Feature coming soon!")}
+            />
         </View>
     );
 }
@@ -193,13 +220,16 @@ const styles = StyleSheet.create({
     },
     cardWrapper: {
         position: 'absolute',
-        width: width - 20,
+        width: width, // Full width to allow overlay to work properly
         height: '100%',
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'flex-start', // Align to top
+        paddingTop: 10, // Slight top spacing
+        zIndex: 10
     },
     nextCard: {
-        zIndex: -1,
+        zIndex: 1,
+        transform: [{ scale: 0.95 }, { translateY: 10 }] // Stack effect
     },
     center: {
         flex: 1,

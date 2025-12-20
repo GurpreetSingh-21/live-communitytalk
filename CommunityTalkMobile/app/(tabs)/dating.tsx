@@ -8,12 +8,14 @@ import { AuthContext } from '@/src/context/AuthContext';
 import OnboardingWizard from '@/components/dating/onboarding/OnboardingWizard';
 import SwipingDeck from '@/components/dating/SwipingDeck';
 import MatchesList from '@/components/dating/MatchesList';
+import SettingsModal from '@/components/dating/SettingsModal';
 
 export default function DatingScreen() {
     const router = useRouter();
     const auth = useContext(AuthContext) as any;
     const { user, refreshBootstrap, isLoading } = auth;
     const [view, setView] = useState<'stack' | 'matches'>('stack');
+    const [settingsVisible, setSettingsVisible] = useState(false);
 
     // Handle Loading
     if (isLoading) {
@@ -61,17 +63,22 @@ export default function DatingScreen() {
                     {/* Custom Header with Toggle */}
                     <View style={styles.header}>
                         <TouchableOpacity
-                            style={[styles.navItem, view === 'stack' && styles.navItemActive]}
-                            onPress={() => setView('stack')}
+                            style={styles.navItem}
+                            onPress={() => setSettingsVisible(true)}
                         >
                             <IconSymbol
-                                name="flame.fill"
-                                size={28}
-                                color={view === 'stack' ? '#FFF' : 'rgba(255,255,255,0.5)'}
+                                name="gearshape.fill"
+                                size={26}
+                                color="#FFF"
                             />
                         </TouchableOpacity>
 
-                        <Text style={styles.headerTitle}>CommunityTalk</Text>
+                        <TouchableOpacity
+                            onPress={() => setView('stack')}
+                            activeOpacity={0.8}
+                        >
+                            <Text style={styles.headerTitle}>CommunityTalk</Text>
+                        </TouchableOpacity>
 
                         <TouchableOpacity
                             style={[styles.navItem, view === 'matches' && styles.navItemActive]}
@@ -80,7 +87,7 @@ export default function DatingScreen() {
                             <IconSymbol
                                 name="bubble.left.and.bubble.right.fill"
                                 size={26}
-                                color={view === 'matches' ? '#FFF' : 'rgba(255,255,255,0.5)'}
+                                color={view === 'matches' ? '#FFF' : 'rgba(255,255,255,0.8)'}
                             />
                         </TouchableOpacity>
                     </View>
@@ -96,6 +103,12 @@ export default function DatingScreen() {
                     </View>
                 </SafeAreaView>
             </LinearGradient>
+
+            {/* SETTINGS MODAL */}
+            <SettingsModal
+                visible={settingsVisible}
+                onClose={() => setSettingsVisible(false)}
+            />
         </View>
     );
 }

@@ -35,6 +35,7 @@ import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
 import DMHeader from "@/components/dm/DMHeader";
+import { checkMessageToxicity } from '@/constants/safety';
 
 /* ───────────────── Types & helpers ───────────────── */
 type DMMessage = {
@@ -334,6 +335,8 @@ export default function DMThreadScreen() {
   }, [loadInitial, partnerId]);
 
   /* ─────── Pagination (older) ─────── */
+  /* ─────── Pagination (older) ─────── */
+
   const loadOlder = useCallback(async () => {
     if (!messages.length || !hasMore) return;
     try {
@@ -585,10 +588,10 @@ export default function DMThreadScreen() {
     }
   }, [emitTyping]);
 
+
+
   /* ─────── Send Text ─────── */
-  const sendText = useCallback(async () => {
-    const text = input.trim();
-    if (!text || sending) return;
+  const performSend = useCallback(async (text: string) => {
     setSending(true);
 
     const clientMessageId = `dm_${Date.now()}_${Math.random()
@@ -651,12 +654,31 @@ export default function DMThreadScreen() {
     } finally {
       setSending(false);
     }
-  }, [input, sending, myId, partnerId]);
+  }, [myId, partnerId]);
+
+  const sendText = useCallback(async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+
+    // 🛡️ SAFETY CHECK: Frontend Strict Blocking
+    if (checkMessageToxicity(text)) {
+      Alert.alert(
+        "Message Blocked",
+        "Your message contains inappropriate language that violates our Community Guidelines. Please allow us to keep this platform professional and safe.",
+        [
+          { text: "OK", style: "default" }
+        ]
+      );
+      return;
+    }
+
+    performSend(text);
+  }, [input, sending, performSend]);
 
   /* ─────── Discord-Style Profile Header ─────── */
   const renderProfileHeader = () => {
     console.log('🎨 [DM] Rendering Discord-style profile header for:', headerName);
-    
+
     // Generate avatar color based on partner name
     const hueFrom = (s: string) => {
       let h = 0;
@@ -823,12 +845,12 @@ export default function DMThreadScreen() {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <Ionicons name="calendar-outline" size={18} color={colors.textSecondary} />
                 <Text style={{ color: colors.text, fontSize: 14 }}>
-                  {meta?.updatedAt 
-                    ? new Date(meta.updatedAt).toLocaleDateString(undefined, { 
-                        month: 'short', 
-                        day: 'numeric', 
-                        year: 'numeric' 
-                      })
+                  {meta?.updatedAt
+                    ? new Date(meta.updatedAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric'
+                    })
                     : "November 20, 2025"}
                 </Text>
               </View>

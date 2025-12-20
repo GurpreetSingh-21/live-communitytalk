@@ -690,7 +690,7 @@ router.patch("/profile", authenticate, async (req, res) => {
     if (updates.fullName) {
       await prisma.member.updateMany({
         where: { userId: userId },
-        data: { name: updates.fullName, fullName: updates.fullName },
+        data: { name: updates.fullName }, // Member only has 'name' field, not 'fullName'
       });
     }
 

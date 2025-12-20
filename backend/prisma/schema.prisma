@@ -27,9 +27,24 @@ model User {
   isActive         Boolean @default(true)
   verificationCode String?
 
-  // Moderation
-  reportsReceivedCount Int     @default(0)
-  isPermanentlyDeleted Boolean @default(false)
+  // Moderation & Safety
+  reportsReceivedCount Int           @default(0)
+  isPermanentlyDeleted Boolean       @default(false)
+  accountStatus        AccountStatus @default(ACTIVE)
+  suspendedUntil       DateTime?
+  suspendedReason      String?
+  bannedAt             DateTime?
+  bannedReason         String?
+  strikeCount          Int           @default(0)
+  lastStrikeAt         DateTime?
+  
+  // Verification
+  profileVerified      Boolean       @default(false)
+  photoVerified        Boolean       @default(false)
+  verifiedAt           DateTime?
+  
+  // Rate Limiting (JSON for flexibility)
+  rateLimits           Json?
 
   // College & Religion Scope
   collegeName String?
@@ -60,9 +75,14 @@ model User {
   hasDatingProfile Boolean        @default(false)
   datingProfile    DatingProfile?
 
-  // Reporting
-  reportsMade    Report[] @relation("Reporter")
-  reportsAgainst Report[] @relation("Reported")
+  // Reporting & Safety
+  reportsMade      Report[]      @relation("Reporter")
+  reportsAgainst   Report[]      @relation("Reported")
+  strikes          Strike[]
+  appeals          Appeal[]
+  photoReports     PhotoReport[] @relation("PhotoReporter")
+  moderationLogs   ModerationLog[] @relation("ModeratorActions")
+  verificationRequests VerificationRequest[]
 
   @@map("users")
 }
@@ -71,6 +91,14 @@ enum Role {
   user
   mod
   admin
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  UNDER_REVIEW
+  DEACTIVATED
 }
 
 // ───────────────────────── Metadata / Directory ─────────────────────────
@@ -385,11 +413,20 @@ model DatingPhoto {
   thumbnail String?
   order     Int      @default(0)
   
-  status    PhotoStatus @default(PENDING) // Moderation status
+  status          PhotoStatus @default(PENDING)
+  rejectionReason String?
+  reviewedBy      String?  // Admin user ID
+  reviewedAt      DateTime?
+  
+  // AI placeholders (for future)
+  aiFlags         Json?
   
   isMain    Boolean     @default(false)
+  
+  reports   PhotoReport[]
 
   @@index([datingProfileId])
+  @@index([status])
   @@map("dating_photos")
 }
 
@@ -485,21 +522,66 @@ enum SwipeType {
 model Report {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   
-  reason    String
-  details   String?
-  status    String @default("pending") // pending, resolved, dismissed
-
+  // Reporter
   reporterId String
   reporter   User   @relation("Reporter", fields: [reporterId], references: [id])
 
+  // Reported User
   reportedId String
   reported   User   @relation("Reported", fields: [reportedId], references: [id])
-
-  targetType String // "message", "user", "post"
-  targetId   String?
-
+  
+  // Report Details
+  reason       ReportReason
+  category     String?      // Subcategory
+  details      String?
+  targetType   String       // "profile", "photo", "message", "behavior"
+  targetId     String?
+  
+  // Evidence
+  screenshots  String[]     // URLs to uploaded screenshots
+  
+  // Status
+  status       ReportStatus   @default(PENDING)
+  priority     ReportPriority @default(NORMAL)
+  
+  // Review
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  reviewNotes  String?
+  actionTaken  String?      // "warning", "strike", "suspend", "ban", "dismissed"
+  
+  @@index([reportedId, status])
+  @@index([status, priority])
+  @@index([createdAt])
   @@map("reports")
+}
+
+enum ReportReason {
+  HARASSMENT
+  FAKE_PROFILE
+  INAPPROPRIATE_CONTENT
+  SAFETY_CONCERN
+  SPAM
+  UNDERAGE
+  HATE_SPEECH
+  IMPERSONATION
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum ReportPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
 }
 
 // Blocking
@@ -517,4 +599,178 @@ model DatingBlock {
   @@index([blockerId])
   @@index([blockedId])
   @@map("dating_blocks")
+}
+
+// ───────────────────────── Verification ─────────────────────────
+model VerificationRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  
+  poseId    String
+  pose      VerificationPose @relation(fields: [poseId], references: [id])
+  photoUrl  String   // The selfie they took
+  
+  status    ApprovalStatus @default(PENDING)
+  adminNote String?
+  
+  reviewedBy String? // Admin ID
+  reviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("verification_requests")
+}
+
+model VerificationPose {
+  id          String @id @default(cuid())
+  name        String // e.g. "Peace Sign"
+  instruction String // "Hold up two fingers like a peace sign"
+  referenceImageUrl String 
+  isActive    Boolean @default(true)
+  
+  requests    VerificationRequest[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("verification_poses")
+}
+
+// ───────────────────────── Photo Reports ─────────────────────────
+model PhotoReport {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  
+  reporterId String
+  reporter   User @relation("PhotoReporter", fields: [reporterId], references: [id])
+  
+  photoId    String
+  photo      DatingPhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  
+  reason     PhotoReportReason
+  details    String?
+  status     ReportStatus @default(PENDING)
+  
+  reviewedBy String?
+  reviewedAt DateTime?
+  
+  @@index([photoId, status])
+  @@map("photo_reports")
+}
+
+enum PhotoReportReason {
+  NUDITY
+  NOT_REAL_PERSON
+  SOMEONE_ELSE
+  INAPPROPRIATE
+  CELEBRITY_STOCK
+  OTHER
+}
+
+// ───────────────────────── Strikes ─────────────────────────
+model Strike {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  reason    String
+  severity  StrikeSeverity @default(MINOR)
+  details   String?
+  
+  // Linked to report/incident
+  reportId  String?
+  
+  // Issued by
+  issuedBy  String  // Admin user ID
+  
+  // Expiration (strikes can expire after X months)
+  expiresAt DateTime?
+  active    Boolean @default(true)
+  
+  @@index([userId, active])
+  @@index([createdAt])
+  @@map("strikes")
+}
+
+enum StrikeSeverity {
+  MINOR    // Warning
+  MODERATE // Temporary suspension
+  SEVERE   // Long suspension or ban consideration
+}
+
+// ───────────────────────── Appeals ─────────────────────────
+model Appeal {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // What they're appealing
+  type      AppealType
+  strikeId  String?
+  reportId  String?
+  
+  reason    String
+  status    AppealStatus @default(PENDING)
+  
+  // Review
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  reviewNotes  String?
+  decision     String?  // "approved", "denied", "partial"
+  
+  @@index([userId, status])
+  @@index([status])
+  @@map("appeals")
+}
+
+enum AppealType {
+  STRIKE
+  SUSPENSION
+  BAN
+  PHOTO_REJECTION
+}
+
+enum AppealStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  DENIED
+}
+
+// ───────────────────────── Moderation Logs ─────────────────────────
+model ModerationLog {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  
+  // What happened
+  action       String   // "photo_approved", "user_banned", "report_reviewed", etc.
+  targetType   String   // "user", "photo", "report"
+  targetId     String
+  
+  // Who did it
+  moderatorId  String
+  moderator    User @relation("ModeratorActions", fields: [moderatorId], references: [id])
+  
+  // Context
+  reason       String?
+  details      Json?
+  
+  // Link to related entities
+  userId       String?
+  reportId     String?
+  strikeId     String?
+  
+  @@index([targetType, targetId])
+  @@index([moderatorId])
+  @@index([createdAt])
+  @@map("moderation_logs")
 }

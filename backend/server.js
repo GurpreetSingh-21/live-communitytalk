@@ -46,6 +46,7 @@ const userReportRoutes = require("./routes/userReportRoutes");
 const uploadRoutes = require('./routes/upload');
 const reactionRoutes = require('./routes/reactionRoutes');
 const twoFactorRoutes = require('./routes/twoFactorRoutes');
+const safetyRoutes = require('./routes/safetyRoutes'); // Safety & Moderation
 
 // 📦 Models
 // const Person = require("./person");
@@ -488,6 +489,8 @@ app.use("/api/direct-messages", authenticate, directMessageRoutes);
 app.use("/api/notifications", authenticate, notificationRoutes);
 // ⭐ NEW: User Reporting Route (Authenticated)
 app.use("/api/reports", authenticate, userReportRoutes);
+// ⭐ Safety & Moderation Routes (Authenticated)
+app.use("/api/safety", authenticate, safetyRoutes);
 // Reactions routes (emoji reactions on messages)
 app.use("/api/reactions", authenticate, reactionRoutes);
 // Two-Factor Authentication routes

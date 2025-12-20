@@ -210,6 +210,20 @@ const handleSend = async (req, res) => {
     const from = req.user.id;
     const to = req.params.id || req.body.to;
 
+    // 🛡️ SAFETY: Rate Limit
+    // Use a shared rate limiter import
+    const RateLimiter = require('../services/RateLimiter');
+    const ALLOWED_RATE = RateLimiter.checkLimit(from, 'send_dm', 15, 60 * 1000); // 15 per min
+    if (!ALLOWED_RATE) {
+      return res.status(429).json({ error: "You are sending messages too fast. Please slow down." });
+    }
+
+    // 🛡️ SAFETY: Spam Repetition
+    const ALLOWED_CONTENT = RateLimiter.checkRepetition(from, req.body.content || "", 3);
+    if (!ALLOWED_CONTENT) {
+      return res.status(429).json({ error: "Please avoid repeating the same message." });
+    }
+
     if (!to) return res.status(400).json({ error: "Invalid recipient id" });
     if (String(to) === String(from))
       return res.status(400).json({ error: "Cannot message yourself" });

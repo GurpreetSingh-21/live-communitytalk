@@ -1,64 +1,83 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
-import { api } from '@/src/api/api';
+import DatingAPI from '@/src/api/dating';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 
 const { width } = Dimensions.get('window');
 
 type Match = {
-    id: string; // DatingMatch ID
-    userId: string; // Partner User ID
+    matchId: string;
+    partnerId: string; // Dating Profile ID
+    userId: string;    // Partner User ID (for DM)
     firstName: string;
-    avatar: string; // Main photo
-    matchedAt: string;
+    photo: string | null;
+    updatedAt?: string;
+};
+
+type Thread = {
+    partnerId: string;
+    partnerName: string;
+    avatar?: string;
+    lastMessage: string;
+    lastTimestamp: string;
+    unread: number;
+    // ... other metadata
 };
 
 export default function MatchesList() {
     const [matches, setMatches] = useState<Match[]>([]);
+    const [threads, setThreads] = useState<Thread[]>([]);
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
     useEffect(() => {
-        fetchMatches();
+        fetchData();
     }, []);
 
-    const fetchMatches = async () => {
+    const fetchData = async () => {
         try {
             setLoading(true);
-            const { data } = await api.get('/api/dating/matches');
-            // data.matches is expected to be array of Objects with { matchId, partnerProfile, ... }
-            // datingRoutes.js returns mapped matches.
-            setMatches(data.matches || []);
+            const [matchesData, threadsData] = await Promise.all([
+                DatingAPI.getMatches(),
+                DatingAPI.getConversations()
+            ]);
+
+            setMatches((matchesData as any) || []);
+            setThreads((threadsData as any) || []);
         } catch (err) {
-            console.error("Fetch matches error:", err);
+            console.error("Fetch matches/threads error:", err);
         } finally {
             setLoading(false);
         }
     };
 
-    const openChat = (match: Match) => {
-        // Navigate to DM
-        // existing DM route: /dms/[id]?name=...
-        // Check `app/(tabs)/dms.tsx` or `app/dm/[id].tsx`
-        // Usually it's `/dm/${match.userId}`.
+    const openChat = (userId: string, name: string) => {
         router.push({
             pathname: "/dm/[id]",
-            params: { id: match.userId, name: match.firstName, type: 'dating' }
+            params: { id: userId, name: name, type: 'dating' }
         });
     };
 
-    const renderItem = ({ item }: { item: Match }) => (
-        <TouchableOpacity style={styles.matchItem} onPress={() => openChat(item)}>
-            <Image source={{ uri: item.avatar }} style={styles.avatar} />
+    const renderThread = ({ item }: { item: Thread }) => (
+        <TouchableOpacity style={styles.matchItem} onPress={() => openChat(item.partnerId, item.partnerName)}>
+            <Image source={{ uri: item.avatar || 'https://via.placeholder.com/150' }} style={styles.avatar} />
             <View style={styles.info}>
-                <Text style={styles.name}>{item.firstName}</Text>
-                <Text style={styles.time}>Matched {new Date(item.matchedAt).toLocaleDateString()}</Text>
+                <View style={styles.row}>
+                    <Text style={styles.name}>{item.partnerName}</Text>
+                    {item.lastTimestamp && (
+                        <Text style={styles.time}>{new Date(item.lastTimestamp).toLocaleDateString()}</Text>
+                    )}
+                </View>
+                <Text style={[styles.messagePreview, item.unread > 0 && styles.unreadText]} numberOfLines={1}>
+                    {item.lastMessage || "Start a conversation"}
+                </Text>
             </View>
-            <View style={styles.chatIcon}>
-                <Ionicons name="chatbubble-ellipses" size={24} color="#4C5FD5" />
-            </View>
+            {item.unread > 0 && (
+                <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadCount}>{item.unread}</Text>
+                </View>
+            )}
         </TouchableOpacity>
     );
 
@@ -70,7 +89,7 @@ export default function MatchesList() {
         );
     }
 
-    if (matches.length === 0) {
+    if (matches.length === 0 && threads.length === 0) {
         return (
             <View style={styles.center}>
                 <View style={styles.emptyIcon}>
@@ -84,23 +103,34 @@ export default function MatchesList() {
 
     return (
         <View style={styles.container}>
-            <Text style={styles.header}>New Matches</Text>
-            <View style={styles.newMatchesRow}>
-                {matches.slice(0, 5).map(m => (
-                    <TouchableOpacity key={m.id} style={styles.bubble} onPress={() => openChat(m)}>
-                        <Image source={{ uri: m.avatar }} style={styles.bubbleImage} />
-                        <Text style={styles.bubbleName} numberOfLines={1}>{m.firstName}</Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
+            {matches.length > 0 && (
+                <>
+                    <Text style={styles.header}>New Matches</Text>
+                    <View style={styles.newMatchesRow}>
+                        {matches.slice(0, 10).map(m => ( // Show top 10
+                            <TouchableOpacity key={m.matchId} style={styles.bubble} onPress={() => openChat(m.userId, m.firstName)}>
+                                <Image source={{ uri: m.photo || 'https://via.placeholder.com/150' }} style={styles.bubbleImage} />
+                                <Text style={styles.bubbleName} numberOfLines={1}>{m.firstName}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </>
+            )}
 
             <Text style={styles.header}>Messages</Text>
-            <FlatList
-                data={matches}
-                renderItem={renderItem}
-                keyExtractor={item => item.id}
-                contentContainerStyle={styles.listContent}
-            />
+            {threads.length === 0 ? (
+                <View style={styles.emptyMessages}>
+                    <Text style={styles.emptyText}>No conversations yet. Say hi!</Text>
+                </View>
+            ) : (
+                <FlatList
+                    data={threads}
+                    renderItem={renderThread}
+                    keyExtractor={item => item.partnerId}
+                    contentContainerStyle={styles.listContent}
+                    showsVerticalScrollIndicator={false}
+                />
+            )}
         </View>
     );
 }
@@ -127,7 +157,11 @@ const styles = StyleSheet.create({
     newMatchesRow: {
         flexDirection: 'row',
         paddingHorizontal: 16,
-        marginBottom: 10,
+        marginBottom: 20,
+        // Using scrollview usually but flexWrap is okay for small rows. 
+        // Logic suggests Horizontal ScrollView is better for bubbles.
+        // Changing to flexWrap for simplicity or ScrollView if row is strict.
+        // Assuming FlexWrap based on existing code, but let's just make it wrap.
         flexWrap: 'wrap',
         gap: 16
     },
@@ -169,10 +203,16 @@ const styles = StyleSheet.create({
         width: 50,
         height: 50,
         borderRadius: 25,
-        marginRight: 16
+        marginRight: 16,
+        backgroundColor: '#EEE'
     },
     info: {
         flex: 1
+    },
+    row: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 4
     },
     name: {
         fontSize: 16,
@@ -180,9 +220,28 @@ const styles = StyleSheet.create({
         color: '#000'
     },
     time: {
+        fontSize: 11,
+        color: '#999'
+    },
+    messagePreview: {
+        fontSize: 14,
+        color: '#666'
+    },
+    unreadText: {
+        color: '#000',
+        fontWeight: '600'
+    },
+    unreadBadge: {
+        backgroundColor: '#FF6B6B',
+        borderRadius: 10,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        marginLeft: 8
+    },
+    unreadCount: {
+        color: '#FFF',
         fontSize: 12,
-        color: '#999',
-        marginTop: 2
+        fontWeight: '700'
     },
     chatIcon: {
         padding: 8
@@ -206,5 +265,13 @@ const styles = StyleSheet.create({
         fontSize: 16,
         color: '#666',
         textAlign: 'center'
+    },
+    emptyMessages: {
+        padding: 20,
+        alignItems: 'center'
+    },
+    emptyText: {
+        color: '#999',
+        fontStyle: 'italic'
     }
 });
