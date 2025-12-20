@@ -266,6 +266,7 @@ model DirectMessage {
 
   content     String?
   type        DMType  @default(text)
+  context     String  @default("community") // "community" or "dating"
   attachments Json?
 
   status      MessageStatus @default(sent)

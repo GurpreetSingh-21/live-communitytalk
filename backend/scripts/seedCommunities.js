@@ -57,6 +57,21 @@ const COUNTRY_COMMUNITIES = [
     { name: "Colombia" },
     { name: "Italy" },
     { name: "Pakistan" },
+    { name: "Pakistan" },
+];
+
+/* ============================================================
+    DEFINITION: RELIGIONS
+   ============================================================ */
+const RELIGIONS = [
+    { name: "Sikhism", key: "sikhism" },
+    { name: "Christianity", key: "christianity" },
+    { name: "Islam", key: "islam" },
+    { name: "Hinduism", key: "hinduism" },
+    { name: "Judaism", key: "judaism" },
+    { name: "Buddhism", key: "buddhism" },
+    { name: "Atheism", key: "atheism" },
+    { name: "Other", key: "other" }
 ];
 
 /* ============================================================
@@ -114,7 +129,31 @@ const COUNTRY_COMMUNITIES = [
             }
         }
 
-        console.log("\n🎉 All college-specific communities seeded successfully!");
+        // SEED RELIGIONS (Global)
+        console.log("\n🙏 Seeding Religions...");
+        for (const rel of RELIGIONS) {
+            const uniqueSlug = `religion-${rel.key}`;
+            await prisma.community.upsert({
+                where: { slug: uniqueSlug },
+                update: {
+                    name: rel.name,
+                    key: uniqueSlug,
+                    type: "religion", // ENUM defined as 'religion'
+                    isPrivate: false,
+                    tags: ["religion", rel.key],
+                },
+                create: {
+                    name: rel.name,
+                    key: uniqueSlug,
+                    slug: uniqueSlug,
+                    type: "religion",
+                    isPrivate: false,
+                    tags: ["religion", rel.key],
+                }
+            });
+        }
+
+        console.log("\n🎉 All college-specific and religion communities seeded successfully!");
         await prisma.$disconnect();
         process.exit(0);
     } catch (err) {

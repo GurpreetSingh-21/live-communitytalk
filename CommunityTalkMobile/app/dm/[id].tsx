@@ -195,7 +195,7 @@ const msgKey = (m: DMMessage, idx: number) => {
 
 /* ───────────────── Component ───────────────── */
 export default function DMThreadScreen() {
-  const params = useLocalSearchParams<{ id: string; name?: string; avatar?: string }>();
+  const params = useLocalSearchParams<{ id: string; name?: string; avatar?: string; type?: string }>();
   const partnerId = String(params?.id || "");
   const paramName = params?.name ? String(params.name) : undefined;
   const paramAvatar = params?.avatar ? String(params.avatar) : undefined;
@@ -205,6 +205,9 @@ export default function DMThreadScreen() {
   const isDark = useColorScheme() === "dark";
   const insets = useSafeAreaInsets();
   const { socket } = useSocket() as any;
+
+  // 🟢 CONTEXT: Determine if this is Dating or Community
+  const context = params.type === 'dating' ? 'dating' : 'community';
 
   const [meta, setMeta] = useState<PartnerMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -300,7 +303,7 @@ export default function DMThreadScreen() {
       let msgs: any[] = [];
       try {
         const { data } = await api.get(
-          `/api/direct-messages/${partnerId}?limit=50`
+          `/api/direct-messages/${partnerId}?limit=50&context=${context}`
         );
         msgs = Array.isArray(data) ? data : data?.items ?? [];
       } catch (e: any) {
@@ -343,7 +346,7 @@ export default function DMThreadScreen() {
       const oldest = messages[0];
       const before = encodeURIComponent(asDate(oldest.createdAt).toISOString());
       const { data } = await api.get(
-        `/api/direct-messages/${partnerId}?limit=50&before=${before}`
+        `/api/direct-messages/${partnerId}?limit=50&before=${before}&context=${context}`
       );
       const older: DMMessage[] = Array.isArray(data) ? data : data?.items ?? [];
       setMessages((prev) =>
@@ -434,7 +437,7 @@ export default function DMThreadScreen() {
         type: fileType,
       } as any);
 
-      const uploadRes = await api.post('/api/upload', formData, {
+      const uploadRes = await api.post(`/api/upload?context=${context}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
@@ -617,7 +620,7 @@ export default function DMThreadScreen() {
 
     try {
       let data: any;
-      const payload = { content: text, type: 'text', clientMessageId };
+      const payload = { content: text, type: 'text', clientMessageId, context };
 
       try {
         ({ data } = await api.post(`/api/direct-messages/${partnerId}`, payload));

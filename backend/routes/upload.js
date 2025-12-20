@@ -30,8 +30,12 @@ const storage = new CloudinaryStorage({
       resourceType = 'raw';   // Use 'raw' for documents to prevent conversion issues
     }
 
+    // Determine folder based on context set in query string (e.g. ?context=dating)
+    const context = req.query.context === 'dating' ? 'dating' : 'chat';
+    const folderName = `community_talk_${context}_uploads`;
+
     return {
-      folder: 'community_talk_uploads',
+      folder: folderName,
       resource_type: resourceType,
       public_id: `${Date.now()}-${path.parse(file.originalname).name}`,
       // For raw files (PDFs), we want to keep the original extension
@@ -139,8 +143,12 @@ router.post('/base64', async (req, res) => {
       fileStr = `data:image/jpeg;base64,${image}`;
     }
 
+    // Determine folder from context if not provided
+    const contextParam = req.query.context === 'dating' ? 'dating' : 'chat';
+    const defaultFolder = `community_talk_${contextParam}_uploads`;
+
     const uploadResponse = await cloudinary.uploader.upload(fileStr, {
-      folder: folder || "community_talk_uploads",
+      folder: folder || defaultFolder,
       resource_type: "auto", // Handle video/image automatically
       public_id: `${Date.now()}-${path.parse(fileName || 'upload').name}`,
     });

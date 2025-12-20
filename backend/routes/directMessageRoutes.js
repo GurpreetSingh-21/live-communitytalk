@@ -52,10 +52,15 @@ router.get("/", async (req, res) => {
     // Iterate and pick first occurrence of each partner.
     // Stop after `limit` partners found (with some buffer).
 
-    // Fetch last 1000 messages involving me.
+    const context = (req.query.context || "community").trim(); // 'dating' or 'community'
+
+    // Fetch last 1000 messages involving me with specific context
     const recentMessages = await prisma.directMessage.findMany({
       where: {
-        OR: [{ fromId: me }, { toId: me }]
+        AND: [
+          { OR: [{ fromId: me }, { toId: me }] },
+          { context: context }
+        ]
       },
       orderBy: { createdAt: 'desc' },
       take: 1000,
@@ -181,11 +186,18 @@ router.get("/:memberId", async (req, res) => {
 
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
 
+    const context = (req.query.context || "community").trim();
+
     const docs = await prisma.directMessage.findMany({
       where: {
-        OR: [
-          { fromId: me, toId: them },
-          { fromId: them, toId: me }
+        AND: [
+          {
+            OR: [
+              { fromId: me, toId: them },
+              { fromId: them, toId: me }
+            ]
+          },
+          { context: context }
         ]
       },
       orderBy: { createdAt: 'desc' },
@@ -264,7 +276,8 @@ const handleSend = async (req, res) => {
         content: text,
         attachments: cleanAttachments, // JSONB
         status: "sent",
-        type: type
+        type: type,
+        context: req.body.context || "community"
       }
     });
 

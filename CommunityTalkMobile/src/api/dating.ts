@@ -125,7 +125,7 @@ const DatingAPI = {
 
   // Messages
   getConversations: async () => {
-      const { data } = await api.get('/api/direct-messages');
+      const { data } = await api.get('/api/direct-messages?context=dating');
       return data; // List of threads with lastMessage
   },
 
