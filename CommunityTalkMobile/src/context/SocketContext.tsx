@@ -251,12 +251,14 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
 
       const onConnect = () => {
         console.log("🔌 Socket connected:", socket?.id);
-        bindRooms();
+        setReady(true); // Ensure ready is true
+        bindRooms(); // Re-bind global rooms
         refreshUnread();
       };
 
       const onDisconnect = () => {
         console.log("⚠️ Socket disconnected");
+        setReady(false); // Update state so consumers know we lost connection
       };
 
       const onDM = (payload: any) => {
