@@ -20,6 +20,7 @@ model User {
   password String // Hashed
   avatar   String  @default("/default-avatar.png")
   bio      String?
+  publicKey String? // E2EE
 
   // Account Status
   emailVerified    Boolean @default(false)

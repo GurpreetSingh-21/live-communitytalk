@@ -668,6 +668,13 @@ router.patch("/profile", authenticate, async (req, res) => {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, "publicKey")) {
+      const raw = String(req.body.publicKey || "").trim();
+      if (raw.length > 0) {
+        updates.publicKey = raw;
+      }
+    }
+
     if (Object.keys(errors).length > 0) {
       return res.status(400).json({ error: errors });
     }
