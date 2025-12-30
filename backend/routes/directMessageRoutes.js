@@ -204,12 +204,25 @@ router.get("/:memberId", async (req, res) => {
       take: limit
     });
 
-    // Convert to frontend format
-    // Mongoose 'lean()' returns objects. Prisma returns objects (dates are Date objects).
-    // The previous code returned "items: docs.reverse()".
-    // We fetched DESC (newest first) for limit, so we reverse for chat consumption (oldest first).
+    // Convert to frontend format with both Prisma and legacy field names
+    const normalized = docs.reverse().map(m => ({
+      // Prisma fields
+      id: m.id,
+      fromId: m.fromId,
+      toId: m.toId,
+      content: m.content,
+      createdAt: m.createdAt,
+      type: m.type || 'text',
+      status: m.status,
+      attachments: m.attachments,
+      // Legacy MongoDB field names for frontend compatibility
+      _id: m.id,
+      from: m.fromId,
+      to: m.toId,
+      timestamp: m.createdAt,
+    }));
 
-    return res.json({ items: docs.reverse() });
+    return res.json({ items: normalized });
   } catch (err) {
     console.error("[DM Routes] GET error:", err);
     return res.status(500).json({ error: "Failed to fetch messages" });
