@@ -107,13 +107,24 @@ router.post("/", async (req, res) => {
     };
 
     // 5) Real-time emits
-    req.io?.to(ROOM(communityId)).emit("receive_message", payload);
-    req.io?.to(ROOM(communityId)).emit("message:new", {
+    const roomName = ROOM(communityId);
+    console.log(`📤 [MESSAGE EMIT] Broadcasting to room: ${roomName}`);
+    console.log(`📤 [MESSAGE EMIT] io available: ${!!req.io}`);
+
+    // Debug: Check how many sockets are in the room
+    if (req.io) {
+      const room = req.io.sockets.adapter.rooms.get(roomName);
+      console.log(`📤 [MESSAGE EMIT] Sockets in room ${roomName}: ${room ? room.size : 0}`);
+    }
+
+    req.io?.to(roomName).emit("receive_message", payload);
+    req.io?.to(roomName).emit("message:new", {
       communityId: String(communityId),
       message: payload,
     });
 
     if (gate.community && gate.community.key) {
+      console.log(`📤 [MESSAGE EMIT] Also emitting to community key: ${gate.community.key}`);
       req.io?.to(gate.community.key).emit("receive_message", payload);
       req.io?.to(gate.community.key).emit("message:new", {
         communityId: String(communityId),

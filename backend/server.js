@@ -153,6 +153,35 @@ app.get("/health", (_req, res) =>
   res.status(200).json({ ok: true, uptime: process.uptime() })
 );
 
+// 🔍 DEBUG: Socket rooms inspection endpoint
+app.get("/debug/sockets", (_req, res) => {
+  if (!io) return res.json({ error: "io not initialized" });
+
+  const sockets = [];
+  for (const [id, socket] of io.sockets.sockets) {
+    sockets.push({
+      id,
+      userId: socket.user?.id,
+      rooms: Array.from(socket.rooms),
+      communityIds: socket.user?.communityIds || [],
+    });
+  }
+
+  const rooms = {};
+  for (const [roomName, socketIds] of io.sockets.adapter.rooms) {
+    // Skip socket ID rooms (socket.io creates a room for each socket ID)
+    if (!io.sockets.sockets.has(roomName)) {
+      rooms[roomName] = socketIds.size;
+    }
+  }
+
+  res.json({
+    connectedSockets: sockets.length,
+    sockets,
+    rooms,
+  });
+});
+
 // ───────────────────────── Socket.IO ─────────────────────────
 io = new Server(server, {
   cors: { origin: ORIGIN, methods: ["GET", "POST"] },
@@ -235,6 +264,7 @@ io.on("connection", async (socket) => {
   if (!uid) return;
 
   console.log(`🔌 ${uid} connected (${socket.id})`);
+  console.log(`   User communities from Prisma:`, communities);
 
   // Track online presence (Redis-backed)
   const { isFirstConnection } = await presence.connect(uid);
@@ -242,9 +272,13 @@ io.on("connection", async (socket) => {
   // Join personal + community rooms
   socket.join(uid);
   for (const cid of communities) {
-    socket.join(communityRoom(cid));
+    const roomName = communityRoom(cid);
+    socket.join(roomName);
+    console.log(`   ✅ Auto-joined room: ${roomName}`);
     await presence.joinCommunity(uid, cid);
   }
+
+  console.log(`   All socket rooms:`, Array.from(socket.rooms));
 
   // Initial room info for client
   socket.emit("rooms:init", {
@@ -286,6 +320,26 @@ io.on("connection", async (socket) => {
 
     console.log(`   After leave - Socket rooms:`, Array.from(socket.rooms));
     await presence.leaveCommunity(uid, cid);
+  });
+
+  // 🔷 Bulk subscribe to communities (from SocketContext.tsx)
+  socket.on("subscribe:communities", async ({ ids }) => {
+    if (!Array.isArray(ids)) return;
+
+    for (const cid of ids) {
+      const roomName = communityRoom(cid);
+      socket.join(roomName);
+
+      // Update socket user state so typing/membership checks pass
+      if (socket.user?.communityIds && !socket.user.communityIds.includes(cid)) {
+        socket.user.communityIds.push(cid);
+      }
+
+      await presence.joinCommunity(uid, cid);
+    }
+
+    console.log(`🔷 [BACKEND] User ${uid} bulk-subscribed to ${ids.length} communities`);
+    console.log(`   Rooms after bulk subscribe:`, Array.from(socket.rooms));
   });
 
   // 🔥 Secure message handler with XSS protection

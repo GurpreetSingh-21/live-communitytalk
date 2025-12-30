@@ -48,19 +48,20 @@ router.get("/:communityId", async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit || "200", 10), 1), 500);
     const cursor = req.query.cursor || null;
 
-    // Live presence
-    const allOnlineUsers = new Set(
-      global.onlineUsers ? global.onlineUsers.keys() : []
-      // Note: req.presence.listOnlineUsers logic?
-      // Code used: `req.presence?.listOnlineUsers?.()`
-      // I will keep that logic.
-    );
-    // Let's reuse existing presence logic pattern
-    const liveUsers = new Set(
-      Array.isArray(req.presence?.listOnlineUsers?.())
-        ? req.presence.listOnlineUsers()
-        : []
-    );
+    // Live presence - listOnlineUsers is async!
+    let liveUsers = new Set();
+    try {
+      if (req.presence?.listOnlineUsers) {
+        const onlineList = await req.presence.listOnlineUsers();
+        if (Array.isArray(onlineList)) {
+          liveUsers = new Set(onlineList);
+        }
+      }
+    } catch (err) {
+      console.warn("[members] Failed to get online users:", err.message);
+    }
+
+    console.log(`👥 [MEMBERS] Online users in presence: ${liveUsers.size}`, Array.from(liveUsers));
 
     const where = { communityId: communityId };
 

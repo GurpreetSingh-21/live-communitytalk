@@ -28,7 +28,7 @@ import {
   Pressable,
 } from "react-native";
 import * as Haptics from 'expo-haptics';
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -914,45 +914,54 @@ export default function CommunityScreen() {
   }, [members]);
 
   const AppHeader = () => (
-    <LinearGradient
-      colors={isDark
-        ? ['rgba(0, 0, 0, 0.95)', 'rgba(20, 20, 30, 0.98)']
-        : ['rgba(255, 255, 255, 0.98)', 'rgba(250, 250, 255, 0.95)']}
+    <View
       style={{
-        paddingHorizontal: 20,
+        backgroundColor: isDark ? '#000000' : '#FFFFFF',
+        paddingHorizontal: 16,
         paddingTop: Platform.OS === "ios" ? 60 : 16,
-        paddingBottom: 20,
-        borderBottomWidth: 0,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        elevation: 8,
+        paddingBottom: 16,
+        borderBottomWidth: 0.5,
+        borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
       }}
     >
+      {/* Top Row: Back + Title + Menu */}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <View style={{ flex: 1, marginRight: 12 }}>
+        {/* Back Button */}
+        <TouchableOpacity
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            paddingVertical: 8,
+            paddingRight: 8,
+          }}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="chevron-back" size={22} color={colors.primary} />
+          <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '500', marginLeft: 2 }}>
+            Back
+          </Text>
+        </TouchableOpacity>
+
+        {/* Centered Title */}
+        <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 8 }}>
           <Text
             style={{
               color: colors.text,
-              fontSize: 22,
-              fontWeight: "700",
+              fontSize: 17,
+              fontWeight: "600",
               letterSpacing: -0.3,
-              marginBottom: 2,
             }}
-            numberOfLines={2}
+            numberOfLines={1}
           >
             {community?.name || "Community"}
           </Text>
-          <Text style={{
-            color: colors.textSecondary,
-            fontSize: 13,
-            marginTop: 2,
-          }}>
-            {members.length ? `${members.length} members` : "—"}
-            {isMember && onlineCount > 0 && ` • ${onlineCount} online`}
-          </Text>
         </View>
+
+        {/* Menu Button */}
         {isMember ? (
           <TouchableOpacity
             onPress={() => {
@@ -960,33 +969,30 @@ export default function CommunityScreen() {
               setShowCommunityMenu(true);
             }}
             style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.03)',
               alignItems: "center",
               justifyContent: "center",
-              shadowColor: colors.shadow,
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.15,
-              shadowRadius: 8,
-              borderWidth: isDark ? 0.5 : 0,
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
             }}
           >
-            <Ionicons name="ellipsis-horizontal" size={22} color={colors.text} />
+            <Ionicons name="ellipsis-horizontal" size={18} color={colors.text} />
           </TouchableOpacity>
-        ) : null}
+        ) : (
+          <View style={{ width: 36 }} />
+        )}
       </View>
 
-      {isMember ? (
+      {/* Segmented Control - Chat / Members */}
+      {isMember && (
         <View
           style={{
-            marginTop: 16,
+            marginTop: 14,
             flexDirection: "row",
-            borderRadius: 12,
+            borderRadius: 10,
             padding: 3,
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
           }}
         >
           {["Chat", "Members"].map((label, i) => {
@@ -1000,20 +1006,28 @@ export default function CommunityScreen() {
                 }}
                 style={{
                   flex: 1,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  borderRadius: 10,
-                  paddingVertical: 8,
+                  paddingVertical: 10,
+                  borderRadius: 8,
                   backgroundColor: active
-                    ? (isDark ? 'rgba(94, 92, 230, 0.2)' : 'rgba(94, 92, 230, 0.1)')
-                    : "transparent",
+                    ? (isDark ? 'rgba(255, 255, 255, 0.12)' : '#FFFFFF')
+                    : 'transparent',
+                  alignItems: "center",
+                  // Shadow for active tab
+                  ...(active && !isDark && {
+                    shadowColor: 'rgba(0, 0, 0, 0.08)',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 1,
+                    shadowRadius: 2,
+                    elevation: 1,
+                  }),
                 }}
               >
                 <Text
                   style={{
                     color: active ? colors.primary : colors.textSecondary,
-                    fontWeight: active ? "700" : "500",
+                    fontWeight: active ? "600" : "500",
                     fontSize: 14,
+                    letterSpacing: -0.2,
                   }}
                 >
                   {label}
@@ -1022,28 +1036,23 @@ export default function CommunityScreen() {
             );
           })}
         </View>
-      ) : (
+      )}
+
+      {/* Join Button for non-members */}
+      {!isMember && (
         <TouchableOpacity
           disabled={busy}
           onPress={join}
-          style={{
-            marginTop: 20,
-            borderRadius: 18,
-            overflow: "hidden",
-            shadowColor: colors.primary,
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.4,
-            shadowRadius: 16,
-            elevation: 12,
-          }}
+          activeOpacity={0.9}
+          style={{ marginTop: 16 }}
         >
           <LinearGradient
-            colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
+            colors={['#5E5CE6', '#007AFF']}
             start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
+            end={{ x: 1, y: 0 }}
             style={{
               paddingVertical: 16,
-              paddingHorizontal: 28,
+              borderRadius: 14,
               alignItems: "center",
             }}
           >
@@ -1051,16 +1060,16 @@ export default function CommunityScreen() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 18, letterSpacing: 0.5 }}>
+                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 16 }}>
                   Join Community
                 </Text>
-                <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
               </View>
             )}
           </LinearGradient>
         </TouchableOpacity>
       )}
-    </LinearGradient>
+    </View>
   );
 
   const Avatar = ({
@@ -1122,151 +1131,222 @@ export default function CommunityScreen() {
   };
   const MemberRowCard = ({ item }: { item: MemberRow }) => {
     const isOnline = item.status === "online";
+
     return (
-      <View
+      <TouchableOpacity
+        activeOpacity={0.7}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          if (item.person) {
+            handleAvatarPress(item.person, item.fullName);
+          }
+        }}
         style={{
           marginHorizontal: 16,
-          marginBottom: 14,
-          backgroundColor: isDark
-            ? 'rgba(255, 255, 255, 0.05)'
-            : 'rgba(255, 255, 255, 0.9)',
-          borderRadius: 20,
-          paddingHorizontal: 18,
-          paddingVertical: 16,
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.1,
-          shadowRadius: 12,
-          elevation: 4,
+          marginBottom: 10,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center" }}>
-          <View>
-            <Avatar
-              name={item.fullName}
-              email={item.email}
-              avatar={item.avatar} // ✅ Pass avatar
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: isDark
+              ? 'rgba(255, 255, 255, 0.04)'
+              : '#FFFFFF',
+            borderRadius: 14,
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            // Premium shadow
+            shadowColor: isDark ? 'rgba(0, 0, 0, 0.8)' : 'rgba(0, 0, 0, 0.06)',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 1,
+            shadowRadius: 6,
+            elevation: 2,
+          }}
+        >
+          {/* Avatar with status indicator */}
+          <View style={{ position: 'relative' }}>
+            <View
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 23,
+                backgroundColor: hueFrom(item.fullName || item.email || ''),
+                alignItems: "center",
+                justifyContent: "center",
+                // Subtle glow for online users
+                ...(isOnline && {
+                  shadowColor: '#34C759',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.35,
+                  shadowRadius: 6,
+                }),
+              }}
+            >
+              {item.avatar && item.avatar !== '/default-avatar.png' ? (
+                <Image
+                  source={{ uri: item.avatar }}
+                  style={{ width: 46, height: 46, borderRadius: 23 }}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={{
+                  color: "#fff",
+                  fontWeight: "700",
+                  fontSize: 16,
+                  letterSpacing: 0.3,
+                }}>
+                  {initials(item.fullName, item.email)}
+                </Text>
+              )}
+            </View>
+
+            {/* Status dot - always visible */}
+            <View
+              style={{
+                position: "absolute",
+                bottom: -1,
+                right: -1,
+                width: 12,
+                height: 12,
+                borderRadius: 6,
+                backgroundColor: isOnline ? '#34C759' : (isDark ? '#48484A' : '#C7C7CC'),
+                borderWidth: 2,
+                borderColor: isDark ? '#1C1C1E' : '#FFFFFF',
+                // Glow for online
+                ...(isOnline && {
+                  shadowColor: '#34C759',
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.5,
+                  shadowRadius: 3,
+                }),
+              }}
             />
-            {isOnline && (
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 2,
-                  right: 2,
-                  width: 14,
-                  height: 14,
-                  borderRadius: 7,
-                  backgroundColor: colors.success,
-                  borderWidth: 2.5,
-                  borderColor: colors.surfaceElevated,
-                }}
-              />
-            )}
           </View>
 
-          <View style={{ marginLeft: 14, flex: 1 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
-              <Text style={{ color: colors.text, fontWeight: "600", fontSize: 17 }}>{item.fullName}</Text>
+          {/* Name & Status */}
+          <View style={{ marginLeft: 12, flex: 1 }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text
+                style={{
+                  color: colors.text,
+                  fontWeight: "600",
+                  fontSize: 15,
+                  letterSpacing: -0.3,
+                }}
+                numberOfLines={1}
+              >
+                {item.fullName}
+              </Text>
               {item.isYou && (
                 <View
                   style={{
-                    marginLeft: 8,
-                    backgroundColor: colors.primary + "20",
-                    paddingHorizontal: 8,
+                    marginLeft: 6,
+                    backgroundColor: isDark ? 'rgba(94, 92, 230, 0.2)' : 'rgba(94, 92, 230, 0.12)',
+                    paddingHorizontal: 6,
                     paddingVertical: 2,
-                    borderRadius: 6,
+                    borderRadius: 4,
                   }}
                 >
-                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>YOU</Text>
+                  <Text style={{
+                    color: colors.primary,
+                    fontSize: 10,
+                    fontWeight: "700",
+                    letterSpacing: 0.2,
+                  }}>
+                    YOU
+                  </Text>
                 </View>
               )}
             </View>
-            {!!item.email && (
-              <Text style={{ color: colors.textSecondary, fontSize: 14, marginTop: 2 }} numberOfLines={1}>
-                {item.email}
-              </Text>
-            )}
-          </View>
-
-          <View
-            style={{
-              borderRadius: 16,
-              paddingHorizontal: 14,
-              paddingVertical: 8,
-              backgroundColor: isOnline
-                ? (isDark ? 'rgba(52, 199, 89, 0.2)' : 'rgba(52, 199, 89, 0.15)')
-                : (isDark ? 'rgba(142, 142, 147, 0.15)' : 'rgba(107, 114, 128, 0.1)'),
-              borderWidth: 1,
-              borderColor: isOnline
-                ? (isDark ? 'rgba(52, 199, 89, 0.4)' : 'rgba(52, 199, 89, 0.3)')
-                : (isDark ? 'rgba(142, 142, 147, 0.3)' : 'rgba(107, 114, 128, 0.2)'),
-            }}
-          >
+            {/* Status text instead of email - privacy friendly */}
             <Text
               style={{
-                color: isOnline ? colors.onlineText : colors.offlineText,
+                color: isOnline ? '#34C759' : colors.textSecondary,
                 fontSize: 12,
-                fontWeight: "800",
-                letterSpacing: 0.8,
+                marginTop: 2,
+                fontWeight: isOnline ? '500' : '400',
+                letterSpacing: -0.1,
               }}
             >
-              {item.status.toUpperCase()}
+              {isOnline ? 'Online' : 'Offline'}
             </Text>
           </View>
+
+          {/* Minimal chevron */}
+          <Ionicons
+            name="chevron-forward"
+            size={16}
+            color={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'}
+          />
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
   const MemberFilters = () => (
     <View style={{ paddingHorizontal: 16, paddingBottom: 16, paddingTop: 12 }}>
+      {/* Premium Search Bar */}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
           backgroundColor: isDark
-            ? 'rgba(255, 255, 255, 0.08)'
-            : 'rgba(0, 0, 0, 0.04)',
-          borderRadius: 16,
-          paddingHorizontal: 16,
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.05,
-          shadowRadius: 4,
+            ? 'rgba(255, 255, 255, 0.06)'
+            : 'rgba(0, 0, 0, 0.03)',
+          borderRadius: 12,
+          paddingHorizontal: 14,
+          shadowColor: isDark ? 'transparent' : 'rgba(0, 0, 0, 0.04)',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 1,
+          shadowRadius: 2,
         }}
       >
-        <Ionicons name="search" size={20} color={colors.textSecondary as any} />
+        <Ionicons name="search" size={18} color={colors.textSecondary as any} />
         <TextInput
           value={q}
           onChangeText={setQ}
-          placeholder="Search members"
-          placeholderTextColor={colors.textSecondary}
+          placeholder="Search members..."
+          placeholderTextColor={isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.35)'}
           style={{
             color: colors.text,
-            paddingVertical: 14,
+            paddingVertical: 12,
             flex: 1,
-            marginLeft: 12,
-            fontSize: 17,
-            fontWeight: '500',
+            marginLeft: 10,
+            fontSize: 15,
+            fontWeight: '400',
+            letterSpacing: -0.2,
           }}
           returnKeyType="search"
           onSubmitEditing={() => fetchMembers({ reset: true })}
         />
+        {q.length > 0 && (
+          <TouchableOpacity
+            onPress={() => {
+              setQ('');
+              fetchMembers({ reset: true });
+            }}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close-circle" size={18} color={colors.textSecondary as any} />
+          </TouchableOpacity>
+        )}
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={{ marginTop: 14 }}
-        contentContainerStyle={{ paddingRight: 16 }}
+      {/* Elegant Underline-Style Tabs */}
+      <View
+        style={{
+          flexDirection: 'row',
+          marginTop: 16,
+          borderBottomWidth: 1,
+          borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
+        }}
       >
         {(["all", "online", "offline"] as const).map((k) => {
           const active = filter === k;
           const count = k === "all" ? members.length : members.filter((m) => m.status === k).length;
+          const label = k.charAt(0).toUpperCase() + k.slice(1);
+
           return (
             <TouchableOpacity
               key={k}
@@ -1275,36 +1355,57 @@ export default function CommunityScreen() {
                 setFilter(k);
               }}
               style={{
-                paddingHorizontal: 18,
-                paddingVertical: 10,
-                borderRadius: 22,
-                marginRight: 10,
-                backgroundColor: active
-                  ? (isDark ? 'rgba(94, 92, 230, 0.3)' : 'rgba(94, 92, 230, 0.15)')
-                  : (isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'),
-                borderWidth: active ? 0 : 1,
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-                shadowColor: active ? colors.primary : '#000',
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: active ? 0.4 : 0.05,
-                shadowRadius: active ? 8 : 2,
-                elevation: active ? 6 : 2,
+                paddingVertical: 12,
+                paddingHorizontal: 4,
+                marginRight: 24,
+                borderBottomWidth: 2,
+                borderBottomColor: active ? colors.primary : 'transparent',
               }}
             >
-              <Text
-                style={{
-                  color: active ? "#FFFFFF" : colors.text,
-                  fontWeight: active ? "800" : "600",
-                  fontSize: 15,
-                  letterSpacing: active ? 0.3 : 0,
-                }}
-              >
-                {k.charAt(0).toUpperCase() + k.slice(1)} {count > 0 && `(${count})`}
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {/* Status indicator dot for Online/Offline tabs */}
+                {k === 'online' && (
+                  <View style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: '#34C759',
+                  }} />
+                )}
+                {k === 'offline' && (
+                  <View style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: isDark ? '#48484A' : '#C7C7CC',
+                  }} />
+                )}
+                <Text
+                  style={{
+                    color: active ? colors.primary : colors.textSecondary,
+                    fontWeight: active ? "600" : "500",
+                    fontSize: 14,
+                    letterSpacing: -0.1,
+                  }}
+                >
+                  {label}
+                </Text>
+                {count > 0 && (
+                  <Text
+                    style={{
+                      color: active ? colors.primary : (isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)'),
+                      fontWeight: "500",
+                      fontSize: 13,
+                    }}
+                  >
+                    {count}
+                  </Text>
+                )}
+              </View>
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
     </View>
   );
 

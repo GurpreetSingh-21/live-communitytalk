@@ -181,7 +181,7 @@ type RowProps = {
 const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: RowProps) => {
   const isDark = useColorScheme() === 'dark';
   const translateX = useSharedValue(0);
-  const ACTION_WIDTH = 90;
+  const ACTION_WIDTH = 80;
 
   // Track previous unread to animate when it increases
   const prevUnreadRef = useRef<number>(item.unread ?? 0);
@@ -211,12 +211,8 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
 
   const animatedRowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
 
-  // Read highlight styles
-  const bgTint = isDark ? 'rgba(99,102,241,0.14)' : 'rgba(99,102,241,0.10)';
-  const accentBar = isDark ? '#818cf8' : '#6366f1';
-
   const pulseStyle = useAnimatedStyle(() => ({
-    opacity: pulse.value,
+    opacity: pulse.value * 0.15,
   }));
 
   const animatedActionStyle = (inputRange: number[], outputRange: number[]) =>
@@ -226,110 +222,167 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
   const handlePin = () => { 'worklet'; runOnJS(onPinToggle)(item.id); translateX.value = withSpring(0); };
 
   return (
-    <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'timing', duration: 300 }}>
+    <MotiView from={{ opacity: 0, translateY: 8 }} animate={{ opacity: 1, translateY: 0 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'timing', duration: 250 }}>
       <GestureDetector gesture={pan}>
-        <View>
+        <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
           {/* Right swipe actions */}
-          <View className="absolute right-0 top-0 bottom-0 flex-row">
-            <Pressable onPress={handlePin} className="w-[90px] h-full bg-indigo-600 items-center justify-center">
-              <Animated.View style={animatedActionStyle([-180, -90], [1, 0.5])}>
-                <Ionicons name={item.pinned ? 'pin-outline' : 'pin'} size={24} color="white" />
+          <View style={{ position: 'absolute', right: 16, top: 0, bottom: 0, flexDirection: 'row', borderRadius: 16, overflow: 'hidden' }}>
+            <Pressable onPress={handlePin} style={{ width: 72, height: '100%', backgroundColor: '#5E5CE6', alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.View style={animatedActionStyle([-160, -80], [1, 0.5])}>
+                <Ionicons name={item.pinned ? 'pin-outline' : 'pin'} size={22} color="white" />
               </Animated.View>
             </Pressable>
-            <Pressable onPress={handleDelete} className="w-[90px] h-full bg-red-600 items-center justify-center">
-              <Animated.View style={animatedActionStyle([-90, 0], [1, 0.5])}>
-                <Ionicons name="trash" size={24} color="white" />
+            <Pressable onPress={handleDelete} style={{ width: 72, height: '100%', backgroundColor: '#FF453A', alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.View style={animatedActionStyle([-80, 0], [1, 0.5])}>
+                <Ionicons name="trash-outline" size={22} color="white" />
               </Animated.View>
             </Pressable>
           </View>
 
-          {/* Modern Row */}
+          {/* Modern Premium Card */}
           <Animated.View style={animatedRowStyle}>
             <Pressable
-              className="flex-row items-center px-5 h-[88px]"
               onPress={() => onOpen(item.id)}
               style={{
-                backgroundColor: isDark ? '#000000' : '#FFFFFF',
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 14,
+                // Premium shadow
+                shadowColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.06)',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 1,
+                shadowRadius: 8,
+                elevation: 3,
               }}
             >
-              {/* Subtle unread indicator */}
-              {isUnread && (
-                <View
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    top: 0,
-                    bottom: 0,
-                    width: 3,
-                    backgroundColor: '#6366F1',
-                    borderTopRightRadius: 2,
-                    borderBottomRightRadius: 2,
-                  }}
-                />
-              )}
-
-              {/* Subtle pulse overlay */}
+              {/* Pulse overlay */}
               <Animated.View
                 style={[
                   {
                     position: 'absolute',
-                    left: 3,
+                    left: 0,
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    backgroundColor: isDark ? 'rgba(99,102,241,0.08)' : 'rgba(99,102,241,0.04)',
-                    borderRadius: 0,
+                    backgroundColor: '#5E5CE6',
+                    borderRadius: 16,
                   },
                   pulseStyle,
                 ]}
                 pointerEvents="none"
               />
 
-              {/* Modern Avatar */}
-              <View style={{ width: 56, height: 56, borderRadius: 16, backgroundColor: isDark ? '#18181B' : '#F9FAFB', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                <Text style={{ fontSize: 28 }}>{item.avatar || '🏛️'}</Text>
+              {/* Modern Avatar with gradient background */}
+              <View style={{
+                width: 52,
+                height: 52,
+                borderRadius: 14,
+                backgroundColor: isDark ? '#1C1C1E' : '#F2F2F7',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 12,
+                // Subtle shadow on avatar
+                shadowColor: isDark ? 'transparent' : 'rgba(0, 0, 0, 0.04)',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 1,
+                shadowRadius: 2,
+              }}>
+                <Text style={{ fontSize: 26 }}>{item.avatar || '🏛️'}</Text>
+
+                {/* Pinned indicator */}
+                {item.pinned && (
+                  <View style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    backgroundColor: '#5E5CE6',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 2,
+                    borderColor: isDark ? '#000000' : '#FFFFFF',
+                  }}>
+                    <Ionicons name="pin" size={10} color="#FFFFFF" />
+                  </View>
+                )}
               </View>
 
               {/* Content */}
-              <View style={{ flex: 1, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: isDark ? '#18181B' : '#F9FAFB', height: '100%', justifyContent: 'center' }}>
-                <View className="flex-row items-center justify-between mb-1">
-                  <View className="flex-1">
+              <View style={{ flex: 1 }}>
+                {/* Top row: Name + Time */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}>
                     <Text
                       numberOfLines={1}
                       style={{
-                        color: isDark ? '#FFFFFF' : '#111827',
+                        color: isDark ? '#FFFFFF' : '#000000',
                         fontSize: 16,
                         fontWeight: isUnread ? '700' : '600',
-                        letterSpacing: -0.2,
+                        letterSpacing: -0.3,
+                        flex: 1,
                       }}
                     >
                       {item.name}
                     </Text>
-                    {!!item.memberCount && (
-                      <Text style={{ fontSize: 12, color: isDark ? '#71717A' : '#A1A1AA', marginTop: 2 }}>
-                        {item.memberCount} members
-                      </Text>
-                    )}
                   </View>
                   <Text
                     style={{
                       fontSize: 12,
                       marginLeft: 8,
-                      color: isUnread ? (isDark ? '#A1A1AA' : '#71717A') : (isDark ? '#71717A' : '#A1A1AA'),
-                      fontWeight: isUnread ? '600' : '500',
+                      color: isUnread ? '#5E5CE6' : (isDark ? '#48484A' : '#AEAEB2'),
+                      fontWeight: isUnread ? '600' : '400',
                     }}
                   >
                     {timeAgoLabel(item.lastAt, now)}
                   </Text>
                 </View>
 
-                <View className="flex-row items-center justify-between mt-0.5">
-                  <View className="flex-1">
+                {/* Middle row: Member count */}
+                <Text style={{
+                  fontSize: 12,
+                  color: isDark ? '#636366' : '#8E8E93',
+                  marginBottom: 4,
+                  fontWeight: '500',
+                }}>
+                  {item.memberCount || 0} members
+                </Text>
+
+                {/* Bottom row: Preview + Unread badge */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1 }}>
                     <SmartPreview msg={item.lastMsg} isUnread={isUnread} />
                   </View>
-                  {!!item.unread && <UnreadBadge count={item.unread} pulseKey={item.unread} />}
+                  {!!item.unread && (
+                    <View style={{
+                      backgroundColor: '#5E5CE6',
+                      borderRadius: 10,
+                      minWidth: 20,
+                      height: 20,
+                      paddingHorizontal: 6,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginLeft: 8,
+                    }}>
+                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
+                        {item.unread > 99 ? '99+' : item.unread}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
+
+              {/* Chevron */}
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'}
+                style={{ marginLeft: 8 }}
+              />
             </Pressable>
           </Animated.View>
         </View>
@@ -640,46 +693,52 @@ export default function CommunitiesScreen(): React.JSX.Element {
       />
 
       {/* Modern Frosted Header */}
-      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top }, animatedHeaderStyle]} className="px-5 pb-3">
-        <BlurView intensity={100} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
-        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 1, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }, animatedHeaderBorderStyle]} />
+      <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12 }, animatedHeaderStyle]}>
+        <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 0.5, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }, animatedHeaderBorderStyle]} />
 
         <Animated.View style={animatedHeaderTitleStyle}>
-          <View className="flex-row items-center justify-between mt-1 mb-4">
-            <Text style={{ fontSize: 32, fontWeight: '700', color: isDark ? '#FFFFFF' : '#111827', letterSpacing: -1 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, marginBottom: 14 }}>
+            <Text style={{ fontSize: 28, fontWeight: '700', color: isDark ? '#FFFFFF' : '#000000', letterSpacing: -0.8 }}>
               Communities
             </Text>
           </View>
         </Animated.View>
 
-        {/* Modern Search Bar */}
+        {/* Premium Search Bar */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: isDark ? '#18181B' : '#FFFFFF',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.03)',
             borderRadius: 12,
-            paddingHorizontal: 14,
-            height: 44,
-            borderWidth: 1,
-            borderColor: isDark ? '#27272A' : '#F4F4F5',
+            paddingHorizontal: 12,
+            height: 42,
           }}
         >
-          <Ionicons name="search-outline" size={20} color={isDark ? '#71717A' : '#A1A1AA'} />
+          <Ionicons name="search" size={18} color={isDark ? '#636366' : '#8E8E93'} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search communities"
+            placeholder="Search communities..."
             style={{
               flex: 1,
               marginLeft: 10,
               fontSize: 15,
-              color: isDark ? '#FFFFFF' : '#111827',
-              fontWeight: '500',
-              letterSpacing: 0,
+              color: isDark ? '#FFFFFF' : '#000000',
+              fontWeight: '400',
+              letterSpacing: -0.2,
             }}
-            placeholderTextColor={isDark ? '#71717A' : '#A1A1AA'}
+            placeholderTextColor={isDark ? '#48484A' : '#AEAEB2'}
           />
+          {searchQuery.length > 0 && (
+            <Pressable
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="close-circle" size={18} color={isDark ? '#636366' : '#8E8E93'} />
+            </Pressable>
+          )}
         </View>
       </Animated.View>
 

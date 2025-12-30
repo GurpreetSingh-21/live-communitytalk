@@ -64,14 +64,14 @@ function resolveBaseUrl(): string {
     normalizeBase(fromLegacy) ??
     (__DEV__
       ? "http://localhost:3000"
-      : "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev");
+      : "https://stephane-mastoparietal-saniyah.ngrok-free.dev");
 
   // Final validation fallback
   if (!isValidHttp(chosen)) {
     console.warn(
       `[config] ❌ Invalid API base URL resolved ('${chosen}'). Falling back to production fallback.`
     );
-    chosen = "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev";
+    chosen = "https://stephane-mastoparietal-saniyah.ngrok-free.dev";
   }
 
   if (__DEV__) {
