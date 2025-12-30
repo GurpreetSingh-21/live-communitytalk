@@ -37,6 +37,10 @@ import { AuthContext } from "@/src/context/AuthContext";
 import DMHeader from "@/components/dm/DMHeader";
 import { checkMessageToxicity } from '@/constants/safety';
 
+// 🔐 E2EE imports
+import { encryptMessage, decryptMessage, getPublicKey } from "@/src/utils/e2ee";
+import { fetchPublicKey } from "@/src/api/e2eeApi";
+
 /* ───────────────── Types & helpers ───────────────── */
 type DMMessage = {
   _id?: string;
@@ -224,6 +228,9 @@ export default function DMThreadScreen() {
   const [partnerTyping, setPartnerTyping] = useState(false);
   const typingTimeoutRef = useRef<any>(null);
 
+  // 🔐 E2EE: Recipient's public key for encryption
+  const [recipientPublicKey, setRecipientPublicKey] = useState<string | null>(null);
+
   const resolvedClientIdsRef = useRef<Set<string>>(new Set());
   const listRef = useRef<FlatList<DMMessage>>(null);
 
@@ -291,7 +298,17 @@ export default function DMThreadScreen() {
     if (!partnerId) return;
     setLoading(true);
     try {
-      const [metaData] = await Promise.all([fetchPartnerMeta()]);
+      // Fetch metadata and recipient's public key in parallel
+      const [metaData, partnerPubKey] = await Promise.all([
+        fetchPartnerMeta(),
+        fetchPublicKey(partnerId).catch(() => null),
+      ]);
+
+      // 🔐 Store recipient's public key for encryption
+      if (partnerPubKey) {
+        setRecipientPublicKey(partnerPubKey);
+        console.log('🔐 [E2EE] Loaded recipient public key');
+      }
 
       const finalMeta = {
         ...metaData,
@@ -310,8 +327,27 @@ export default function DMThreadScreen() {
         if (e?.response?.status !== 404) throw e;
       }
 
+      // 🔐 Decrypt encrypted messages
+      const myPubKey = await getPublicKey();
+      const decryptedMsgs = await Promise.all(
+        msgs.map(async (m: any) => {
+          if (m.isEncrypted && m.content && partnerPubKey && myPubKey) {
+            try {
+              // Determine sender's public key
+              const senderPubKey = m.from === myId ? myPubKey : partnerPubKey;
+              const decrypted = await decryptMessage(m.content, senderPubKey);
+              return { ...m, content: decrypted, _decrypted: true };
+            } catch (err) {
+              console.warn('🔐 [E2EE] Decryption failed for message:', m._id);
+              return { ...m, content: '[Encrypted]' };
+            }
+          }
+          return m;
+        })
+      );
+
       setMessages((prev) =>
-        finalizeUnique(upsertMessages(prev, msgs, { prefer: "server" }))
+        finalizeUnique(upsertMessages(prev, decryptedMsgs, { prefer: "server" }))
       );
       setHasMore((msgs?.length ?? 0) >= 50);
 
@@ -328,7 +364,7 @@ export default function DMThreadScreen() {
     } finally {
       setLoading(false);
     }
-  }, [partnerId, fetchPartnerMeta, socket, paramName, paramAvatar]);
+  }, [partnerId, fetchPartnerMeta, socket, paramName, paramAvatar, myId]);
 
   useEffect(() => {
     loadInitial();
@@ -362,7 +398,7 @@ export default function DMThreadScreen() {
   useEffect(() => {
     if (!socket) return;
 
-    const onDM = (p: any) => {
+    const onDM = async (p: any) => {
       const from = String(p?.from || p?.senderId || "");
       const to = String(p?.to || "");
       if (![from, to].includes(partnerId)) return;
@@ -370,11 +406,28 @@ export default function DMThreadScreen() {
       const cid = asId(p.clientMessageId);
       if (cid && resolvedClientIdsRef.current.has(cid)) return;
 
+      let content = String(p.content ?? "");
+
+      // 🔐 E2EE: Decrypt incoming encrypted messages
+      if (p.isEncrypted && content && recipientPublicKey) {
+        try {
+          const myPubKey = await getPublicKey();
+          const senderPubKey = from === myId ? myPubKey : recipientPublicKey;
+          if (senderPubKey) {
+            content = await decryptMessage(content, senderPubKey);
+            console.log('🔐 [E2EE] Real-time message decrypted');
+          }
+        } catch (err) {
+          console.warn('🔐 [E2EE] Real-time decryption failed:', err);
+          content = '[Encrypted]';
+        }
+      }
+
       const serverMsg: DMMessage = {
         _id: p?._id ? String(p._id) : undefined,
         from,
         to,
-        content: String(p.content ?? ""),
+        content,
         createdAt: p.timestamp || p.createdAt || new Date(),
         type: p.type || "text",
         clientMessageId: p.clientMessageId,
@@ -400,7 +453,7 @@ export default function DMThreadScreen() {
       socket.off?.("dm:message", onDM);
       socket.off?.("dm:typing", onTyping);
     };
-  }, [socket, partnerId]);
+  }, [socket, partnerId, recipientPublicKey, myId]);
 
   /* ─────── Consolidated Upload & Send Logic ─────── */
   const uploadAndSend = async (
@@ -604,7 +657,7 @@ export default function DMThreadScreen() {
     const optimistic: DMMessage = {
       from: myId,
       to: partnerId,
-      content: text,
+      content: text, // Show plaintext locally
       createdAt: new Date(),
       type: "text",
       clientMessageId,
@@ -620,7 +673,31 @@ export default function DMThreadScreen() {
 
     try {
       let data: any;
-      const payload = { content: text, type: 'text', clientMessageId, context };
+
+      // 🔐 E2EE: Encrypt message if recipient has a public key
+      let contentToSend = text;
+      let isEncrypted = false;
+
+      if (recipientPublicKey) {
+        try {
+          const encrypted = await encryptMessage(text, recipientPublicKey);
+          if (encrypted) {
+            contentToSend = encrypted;
+            isEncrypted = true;
+            console.log('🔐 [E2EE] Message encrypted successfully');
+          }
+        } catch (encErr) {
+          console.warn('🔐 [E2EE] Encryption failed, sending unencrypted:', encErr);
+        }
+      }
+
+      const payload = {
+        content: contentToSend,
+        type: 'text',
+        clientMessageId,
+        context,
+        isEncrypted, // 🔐 Tell server this is encrypted
+      };
 
       try {
         ({ data } = await api.post(`/api/direct-messages/${partnerId}`, payload));
@@ -634,7 +711,7 @@ export default function DMThreadScreen() {
         _id: data?._id ? String(data._id) : undefined,
         from: String(data.from || myId),
         to: String(data.to || partnerId),
-        content: String(data.content ?? text),
+        content: text, // Store plaintext locally (we encrypted only for server)
         createdAt: data.timestamp || data.createdAt || optimistic.createdAt,
         type: data.type || "text",
         clientMessageId,
@@ -657,7 +734,7 @@ export default function DMThreadScreen() {
     } finally {
       setSending(false);
     }
-  }, [myId, partnerId]);
+  }, [myId, partnerId, recipientPublicKey]);
 
   const sendText = useCallback(async () => {
     const text = input.trim();
