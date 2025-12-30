@@ -215,6 +215,7 @@ router.get("/:memberId", async (req, res) => {
       type: m.type || 'text',
       status: m.status,
       attachments: m.attachments,
+      isEncrypted: m.isEncrypted || false,  // E2EE flag
       // Legacy MongoDB field names for frontend compatibility
       _id: m.id,
       from: m.fromId,
@@ -253,7 +254,7 @@ const handleSend = async (req, res) => {
     if (String(to) === String(from))
       return res.status(400).json({ error: "Cannot message yourself" });
 
-    let { content = "", attachments = [], type = "text", clientMessageId } = req.body;
+    let { content = "", attachments = [], type = "text", clientMessageId, isEncrypted = false } = req.body;
 
     // Attachments check
     if (typeof attachments === 'string') {
@@ -290,7 +291,8 @@ const handleSend = async (req, res) => {
         attachments: cleanAttachments, // JSONB
         status: "sent",
         type: type,
-        context: req.body.context || "community"
+        context: req.body.context || "community",
+        isEncrypted: !!isEncrypted  // E2EE flag
       }
     });
 
@@ -304,6 +306,7 @@ const handleSend = async (req, res) => {
       timestamp: dm.createdAt,
       status: dm.status,
       type: dm.type,
+      isEncrypted: dm.isEncrypted,  // E2EE flag
       clientMessageId
     };
 

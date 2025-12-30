@@ -269,6 +269,7 @@ model DirectMessage {
   type        DMType  @default(text)
   context     String  @default("community") // "community" or "dating"
   attachments Json?
+  isEncrypted Boolean @default(false)  // E2EE flag - true if content is encrypted
 
   status      MessageStatus @default(sent)
   isDeleted   Boolean       @default(false)

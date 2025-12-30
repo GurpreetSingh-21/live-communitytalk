@@ -112,4 +112,65 @@ router.get("/:id", async (req, res) => {
   }
 });
 
+// ───────────────────────── E2EE Public Key Endpoints ─────────────────────────
+
+/**
+ * PUT /api/user/publicKey
+ * Upload/update the user's E2EE public key
+ */
+router.put("/publicKey", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { publicKey } = req.body;
+
+    if (!publicKey || typeof publicKey !== 'string') {
+      return res.status(400).json({ error: "publicKey is required" });
+    }
+
+    // Basic validation: Base64 encoded X25519 public key should be ~44 chars
+    if (publicKey.length < 40 || publicKey.length > 50) {
+      return res.status(400).json({ error: "Invalid publicKey format" });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { publicKey }
+    });
+
+    console.log(`🔐 [E2EE] User ${userId} uploaded public key`);
+    return res.json({ success: true, message: "Public key saved" });
+  } catch (err) {
+    console.error("[User Routes] PUT publicKey error:", err);
+    return res.status(500).json({ error: "Failed to save public key" });
+  }
+});
+
+/**
+ * GET /api/user/:id/publicKey
+ * Fetch a user's E2EE public key for encrypting messages to them
+ */
+router.get("/:id/publicKey", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, publicKey: true }
+    });
+
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    if (!user.publicKey) {
+      return res.status(404).json({ error: "User has no public key" });
+    }
+
+    return res.json({ publicKey: user.publicKey });
+  } catch (err) {
+    console.error("[User Routes] GET publicKey error:", err);
+    return res.status(500).json({ error: "Failed to fetch public key" });
+  }
+});
+
 module.exports = router;

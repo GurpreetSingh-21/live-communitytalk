@@ -22,6 +22,8 @@ import {
 } from "../utils/storage";
 import { refreshSocketAuth, disconnectSocket } from "../api/socket";
 import { registerForPushNotificationsAsync } from "../utils/notifications";
+import { getOrCreateKeyPair } from "../utils/e2ee";
+import { uploadPublicKey } from "../api/e2eeApi";
 
 /* ───────────────────────────────────────────
    Types
@@ -288,6 +290,14 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       await refreshSocketAuth(token);
       await refreshBootstrap();
       await registerForPushNotificationsAsync(); // SAFE
+
+      // 🔐 E2EE: Generate keypair and upload public key on login
+      try {
+        const { publicKey } = await getOrCreateKeyPair();
+        await uploadPublicKey(publicKey);
+      } catch (err) {
+        console.warn('[E2EE] Key initialization failed (non-fatal):', err);
+      }
     },
     [refreshBootstrap]
   );
