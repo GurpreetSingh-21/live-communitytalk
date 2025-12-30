@@ -449,6 +449,7 @@ export default function DMsScreen(): React.JSX.Element {
 
       const normalized: DMThread[] = list.map((t: any) => {
         const rawLast = t.lastMessage ?? t.threadData?.lastMessage;
+        const isEncrypted = t.isEncrypted || t.lastMessageEncrypted;
 
         let content = "";
         let type: MessageType = 'text';
@@ -460,6 +461,12 @@ export default function DMsScreen(): React.JSX.Element {
         else if (typeof rawLast === 'string') {
           content = rawLast;
           if (content.match(/\.(jpeg|jpg|gif|png)/i)) type = 'photo';
+        }
+
+        // 🔐 E2EE: If message is encrypted, show lock icon instead of cipher text
+        if (isEncrypted && content && content.length > 30) {
+          // Likely Base64 cipher text - show a decrypted indicator
+          content = '🔒 Encrypted message';
         }
 
         if (!content || content === '[Photo]') {

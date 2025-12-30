@@ -101,6 +101,7 @@ router.get("/", async (req, res) => {
           lastStatus: msg.status,
           lastId: msg.id,
           lastTimestamp: msg.createdAt,
+          isEncrypted: msg.isEncrypted || false, // E2EE flag for preview
           // unread stub, filled later
           unread: 0
         });
