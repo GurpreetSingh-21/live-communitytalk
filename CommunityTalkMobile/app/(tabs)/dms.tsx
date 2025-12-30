@@ -189,16 +189,14 @@ type RowProps = {
 const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle, onOpen, now }: RowProps) {
   const isDark = useColorScheme() === 'dark';
   const translateX = useSharedValue(0);
-  const ACTION_WIDTH = 70; // Width of each action button
+  const ACTION_WIDTH = 72;
 
   const pan = Gesture.Pan()
     .activeOffsetX([-20, 20])
     .onUpdate((e) => {
-      // Only allow swiping left
       if (e.translationX < 0) translateX.value = e.translationX;
     })
     .onEnd((e) => {
-      // Snap points: 0 (closed), -140 (2 buttons), -210 (3 buttons)
       const totalWidth = ACTION_WIDTH * 3;
       const shouldSnapOpen = e.translationX < -totalWidth / 2 || e.velocityX < -500;
       translateX.value = withSpring(shouldSnapOpen ? -totalWidth : 0, { damping: 15, mass: 0.8 });
@@ -207,7 +205,6 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
 
   const animatedRowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: translateX.value }] }));
 
-  // Action buttons animations
   const animatedPinStyle = useAnimatedStyle(() => ({
     transform: [{ scale: interpolate(translateX.value, [-ACTION_WIDTH, 0], [1, 0.5], 'clamp') }]
   }));
@@ -222,88 +219,187 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
   const handleArchive = () => { 'worklet'; runOnJS(onArchive)(item.id); translateX.value = withSpring(0); };
   const handleDelete = () => { 'worklet'; runOnJS(onDelete)(item.id); translateX.value = withSpring(0); };
 
-  // ✅ Avatar check
   const isAvatarUrl = item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('file'));
+  const hasUnread = !!item.unread && item.unread > 0;
 
   return (
-    <MotiView from={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'timing', duration: 300 }}>
+    <MotiView
+      from={{ opacity: 0, translateY: 8 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{ type: 'timing', duration: 250 }}
+    >
       <GestureDetector gesture={pan}>
-        <View className="relative">
-          {/* Hidden Actions Layer (Right Side) */}
-          <View className="absolute right-0 top-0 bottom-0 flex-row h-full">
-
-            {/* 1. PIN Button */}
-            <Pressable onPress={handlePin} style={{ width: ACTION_WIDTH, backgroundColor: '#4f46e5', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Animated.View style={animatedPinStyle} className="items-center">
-                <Ionicons name={item.pinned ? 'pin-outline' : 'pin'} size={22} color="white" />
-                <Text className="text-white text-[10px] font-bold mt-1">{item.pinned ? 'Unpin' : 'Pin'}</Text>
+        <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
+          {/* Swipe Actions */}
+          <View style={{ position: 'absolute', right: 16, top: 0, bottom: 0, flexDirection: 'row', borderRadius: 16, overflow: 'hidden' }}>
+            <Pressable onPress={handlePin} style={{ width: ACTION_WIDTH, backgroundColor: '#5E5CE6', alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.View style={animatedPinStyle}>
+                <Ionicons name={item.pinned ? 'pin-outline' : 'pin'} size={20} color="white" />
               </Animated.View>
             </Pressable>
-
-            {/* 2. ARCHIVE Button */}
-            <Pressable onPress={handleArchive} style={{ width: ACTION_WIDTH, backgroundColor: '#f59e0b', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Animated.View style={animatedArchiveStyle} className="items-center">
-                <Ionicons name="archive-outline" size={22} color="white" />
-                <Text className="text-white text-[10px] font-bold mt-1">Archive</Text>
+            <Pressable onPress={handleArchive} style={{ width: ACTION_WIDTH, backgroundColor: '#FF9F0A', alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.View style={animatedArchiveStyle}>
+                <Ionicons name="archive-outline" size={20} color="white" />
               </Animated.View>
             </Pressable>
-
-            {/* 3. DELETE Button */}
-            <Pressable onPress={handleDelete} style={{ width: ACTION_WIDTH, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-              <Animated.View style={animatedDeleteStyle} className="items-center">
-                <Ionicons name="trash-outline" size={22} color="white" />
-                <Text className="text-white text-[10px] font-bold mt-1">Delete</Text>
+            <Pressable onPress={handleDelete} style={{ width: ACTION_WIDTH, backgroundColor: '#FF453A', alignItems: 'center', justifyContent: 'center' }}>
+              <Animated.View style={animatedDeleteStyle}>
+                <Ionicons name="trash-outline" size={20} color="white" />
               </Animated.View>
             </Pressable>
-
           </View>
 
-          {/* Foreground Row */}
-          <Animated.View style={[animatedRowStyle, { backgroundColor: isDark ? '#000' : '#fff' }]}>
+          {/* Premium Card */}
+          <Animated.View style={animatedRowStyle}>
             <Pressable
-              className="flex-row items-center gap-4 px-4 h-[93px] active:bg-slate-50 dark:active:bg-zinc-900"
               onPress={() => onOpen(item.id)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 14,
+                shadowColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.06)',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 1,
+                shadowRadius: 8,
+                elevation: 3,
+              }}
             >
-              <View>
-                <View className="w-14 h-14 rounded-full items-center justify-center overflow-hidden bg-slate-200 dark:bg-zinc-800 border border-slate-100 dark:border-zinc-700">
+              {/* Avatar */}
+              <View style={{ position: 'relative', marginRight: 12 }}>
+                <View style={{
+                  width: 52,
+                  height: 52,
+                  borderRadius: 26,
+                  backgroundColor: isDark ? '#1C1C1E' : '#F2F2F7',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                }}>
                   {isAvatarUrl ? (
-                    <Image
-                      source={{ uri: item.avatar }}
-                      style={{ width: '100%', height: '100%' }}
-                      resizeMode="cover"
-                    />
+                    <Image source={{ uri: item.avatar }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
                   ) : (
-                    <Text className="text-3xl">{item.avatar || '🗣️'}</Text>
+                    <Text style={{ fontSize: 24 }}>{item.avatar || '🗣️'}</Text>
                   )}
                 </View>
+
+                {/* Online indicator */}
                 {item.online && !item.typing && (
-                  <View className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white dark:border-black" />
+                  <View style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    right: 0,
+                    width: 14,
+                    height: 14,
+                    borderRadius: 7,
+                    backgroundColor: '#34C759',
+                    borderWidth: 2,
+                    borderColor: isDark ? '#000' : '#FFF',
+                  }} />
                 )}
+
+                {/* Typing indicator */}
                 {item.typing && (
-                  <View className="absolute bottom-0 right-0"><TypingIndicator /></View>
+                  <View style={{ position: 'absolute', bottom: 0, right: 0 }}><TypingIndicator /></View>
+                )}
+
+                {/* Pinned badge */}
+                {item.pinned && (
+                  <View style={{
+                    position: 'absolute',
+                    top: -4,
+                    right: -4,
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    backgroundColor: '#5E5CE6',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderWidth: 2,
+                    borderColor: isDark ? '#000' : '#FFF',
+                  }}>
+                    <Ionicons name="pin" size={10} color="#FFF" />
+                  </View>
                 )}
               </View>
 
-              <View className="flex-1 py-4 h-full justify-center border-b border-slate-100 dark:border-zinc-800">
-                <View className="flex-row items-center justify-between mb-1">
-                  <View className="flex-row items-center gap-1">
-                    <Text className="text-base font-bold text-black dark:text-white" numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    {item.pinned && <Ionicons name="pin" size={12} color={isDark ? '#fbbf24' : '#d97706'} />}
-                  </View>
-                  <Text className="text-xs text-slate-400 dark:text-zinc-500">
+              {/* Content */}
+              <View style={{ flex: 1 }}>
+                {/* Name + Time */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: isDark ? '#FFFFFF' : '#000000',
+                      fontSize: 16,
+                      fontWeight: hasUnread ? '700' : '600',
+                      letterSpacing: -0.3,
+                      flex: 1,
+                    }}
+                  >
+                    {item.name}
+                  </Text>
+                  <Text style={{
+                    fontSize: 12,
+                    marginLeft: 8,
+                    color: hasUnread ? '#5E5CE6' : (isDark ? '#48484A' : '#AEAEB2'),
+                    fontWeight: hasUnread ? '600' : '400',
+                  }}>
                     {timeAgoLabel(item.lastAt, now)}
                   </Text>
                 </View>
 
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-1 mr-2">
-                    <SmartPreview msg={item.lastMsg} />
+                {/* Preview + Badge */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1, marginRight: 8 }}>
+                    <Text
+                      numberOfLines={1}
+                      style={{
+                        fontSize: 14,
+                        color: hasUnread ? (isDark ? '#E5E5EA' : '#3C3C43') : (isDark ? '#636366' : '#8E8E93'),
+                        fontWeight: hasUnread ? '500' : '400',
+                      }}
+                    >
+                      {item.lastMsg.type !== 'text' ? (
+                        <Text>
+                          <Ionicons
+                            name={item.lastMsg.type === 'photo' ? 'camera' : item.lastMsg.type === 'video' ? 'videocam' : item.lastMsg.type === 'audio' ? 'mic' : 'document'}
+                            size={12}
+                            color={isDark ? '#636366' : '#8E8E93'}
+                          />
+                          {' '}{item.lastMsg.content}
+                        </Text>
+                      ) : item.lastMsg.content}
+                    </Text>
                   </View>
-                  {!!item.unread && item.unread > 0 && <UnreadBadge count={item.unread} />}
+                  {hasUnread && (
+                    <View style={{
+                      backgroundColor: '#5E5CE6',
+                      borderRadius: 10,
+                      minWidth: 20,
+                      height: 20,
+                      paddingHorizontal: 6,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
+                        {item.unread! > 99 ? '99+' : item.unread}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
+
+              {/* Chevron */}
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'}
+                style={{ marginLeft: 8 }}
+              />
             </Pressable>
           </Animated.View>
         </View>
@@ -653,7 +749,7 @@ export default function DMsScreen(): React.JSX.Element {
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#000' : '#F3F4F6' }}>
+    <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F9FAFB' }}>
       {/* List */}
       <Animated.FlatList
         data={filteredThreads}
@@ -671,104 +767,117 @@ export default function DMsScreen(): React.JSX.Element {
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFF' : '#000'} />}
-        // ✅ Adjusted padding to prevent overlap
-        contentContainerStyle={{ paddingTop: 260, paddingBottom: insets.bottom + 80 }}
+        contentContainerStyle={{ paddingTop: 200, paddingBottom: insets.bottom + 100 }}
         ListEmptyComponent={
-          <View className="items-center mt-20 opacity-50">
+          <View style={{ alignItems: 'center', marginTop: 80, opacity: 0.6 }}>
             <Ionicons name="chatbubbles-outline" size={48} color={isDark ? '#FFF' : '#000'} />
-            <Text className="font-bold text-lg mt-2 text-black dark:text-white">No conversations</Text>
-            <Text className="text-sm mt-1 text-center px-6 text-slate-500">
+            <Text style={{ fontWeight: '700', fontSize: 18, marginTop: 12, color: isDark ? '#FFFFFF' : '#000000' }}>
+              No conversations
+            </Text>
+            <Text style={{ fontSize: 14, marginTop: 4, textAlign: 'center', paddingHorizontal: 32, color: isDark ? '#636366' : '#8E8E93' }}>
               {searchQuery ? 'Try a different search' : 'Tap "+" to start messaging'}
             </Text>
           </View>
         }
       />
 
-      {/* Fixed Header */}
+      {/* Premium Header */}
       <Animated.View
-        style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, zIndex: 10 }, animatedHeaderStyle]}
+        style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12, zIndex: 10 }, animatedHeaderStyle]}
       >
-        <BlurView intensity={95} tint={isDark ? 'dark' : 'light'} className="absolute inset-0" />
+        <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 0.5, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]} />
 
-        <View className="px-4 pb-2">
-          {/* Top Bar */}
-          <View className="flex-row items-center justify-between mt-2 mb-4">
-            <Text className="text-3xl font-extrabold text-black dark:text-white">Messages</Text>
+        {/* Title Row */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, marginBottom: 14 }}>
+          <Text style={{ fontSize: 28, fontWeight: '700', color: isDark ? '#FFFFFF' : '#000000', letterSpacing: -0.8 }}>
+            Messages
+          </Text>
+          <Pressable
+            onPress={() => router.push('/(tabs)/explore')}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="add" size={22} color={isDark ? '#FFFFFF' : '#000000'} />
+          </Pressable>
+        </View>
+
+        {/* Premium Search Bar */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.03)',
+            borderRadius: 12,
+            paddingHorizontal: 12,
+            height: 42,
+            marginBottom: 12,
+          }}
+        >
+          <Ionicons name="search" size={18} color={isDark ? '#636366' : '#8E8E93'} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search conversations..."
+            style={{
+              flex: 1,
+              marginLeft: 10,
+              fontSize: 15,
+              color: isDark ? '#FFFFFF' : '#000000',
+              fontWeight: '400',
+              letterSpacing: -0.2,
+            }}
+            placeholderTextColor={isDark ? '#48484A' : '#AEAEB2'}
+          />
+          {searchQuery.length > 0 && (
             <Pressable
-              className="h-10 w-10 items-center justify-center rounded-full bg-slate-200/80 dark:bg-zinc-800/80 active:opacity-70"
-              onPress={() => router.push('/(tabs)/explore')}
+              onPress={() => setSearchQuery('')}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <IconSymbol name="plus" size={20} color={isDark ? '#FFF' : '#000'} />
+              <Ionicons name="close-circle" size={18} color={isDark ? '#636366' : '#8E8E93'} />
             </Pressable>
-          </View>
+          )}
+        </View>
 
-          {/* Active Users Rail (Collapsible) */}
-          <Animated.View style={[{ overflow: 'hidden' }, animatedOpacityStyle]}>
-            {activeUsers.length > 0 ? (
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                data={activeUsers}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <Pressable onPress={() => openDM(item.id)} className="items-center mr-4">
-                    <View className="relative">
-                      <View className="w-14 h-14 rounded-full bg-slate-200 dark:bg-zinc-800 items-center justify-center border-2 border-transparent active:border-indigo-500 overflow-hidden">
-                        {item.avatar && (item.avatar.startsWith('http') || item.avatar.startsWith('file')) ? (
-                          <Image source={{ uri: item.avatar }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                        ) : (
-                          <Text className="text-2xl">{item.avatar || '🗣️'}</Text>
-                        )}
-                      </View>
-                      <View className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white dark:border-black" />
-                    </View>
-                    <Text className="text-[10px] mt-1 text-slate-600 dark:text-zinc-400 font-medium" numberOfLines={1}>
-                      {item.name.split(' ')[0]}
-                    </Text>
-                  </Pressable>
-                )}
-                className="mb-4"
-              />
-            ) : (
-              // Placeholder spacing if no active users
-              <View className="h-2" />
-            )}
-          </Animated.View>
-
-          {/* Search Bar */}
-          <View className="flex-row items-center gap-2 rounded-xl bg-black/5 dark:bg-white/10 px-3 h-11 mb-3">
-            <IconSymbol name="magnifyingglass" size={18} color={isDark ? '#9ca3af' : '#64748b'} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search conversations..."
-              className="flex-1 h-full text-base text-black dark:text-white"
-              placeholderTextColor={isDark ? '#9ca3af' : '#64748b'}
-              clearButtonMode="while-editing"
-            />
-          </View>
-
-          {/* Filters */}
-          <View className="flex-row gap-2">
-            {FILTERS.map((f) => (
+        {/* Elegant Underline Filter Tabs */}
+        <View style={{ flexDirection: 'row', gap: 20 }}>
+          {FILTERS.map((f) => {
+            const isActive = activeFilter === f;
+            return (
               <Pressable
                 key={f}
                 onPress={() => { setActiveFilter(f); Haptics.selectionAsync(); }}
-                className={`px-3 py-1.5 rounded-full border ${activeFilter === f
-                    ? 'bg-black dark:bg-white border-transparent'
-                    : 'bg-transparent border-slate-200 dark:border-zinc-700'
-                  }`}
+                style={{ paddingBottom: 8 }}
               >
-                <Text className={`text-xs font-semibold ${activeFilter === f ? 'text-white dark:text-black' : 'text-slate-600 dark:text-zinc-400'}`}>
+                <Text style={{
+                  fontSize: 14,
+                  fontWeight: isActive ? '600' : '400',
+                  color: isActive ? (isDark ? '#FFFFFF' : '#000000') : (isDark ? '#636366' : '#8E8E93'),
+                  letterSpacing: -0.2,
+                }}>
                   {f}
                 </Text>
+                {isActive && (
+                  <View style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: 2,
+                    backgroundColor: '#5E5CE6',
+                    borderRadius: 1,
+                  }} />
+                )}
               </Pressable>
-            ))}
-          </View>
+            );
+          })}
         </View>
-
-        {/* Divider Line */}
-        <View className="h-[1px] w-full bg-slate-200 dark:bg-zinc-800 mt-2" />
       </Animated.View>
 
       {/* Archive Snackbar */}
@@ -781,10 +890,10 @@ export default function DMsScreen(): React.JSX.Element {
             transition={{ type: 'spring' }}
             style={{ position: 'absolute', bottom: insets.bottom + 20, left: 20, right: 20 }}
           >
-            <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} className="flex-row items-center justify-between p-4 rounded-2xl overflow-hidden shadow-lg">
-              <Text className="text-black dark:text-white font-medium">{snackbarMsg}</Text>
+            <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 16, overflow: 'hidden' }}>
+              <Text style={{ color: isDark ? '#FFFFFF' : '#000000', fontWeight: '500' }}>{snackbarMsg}</Text>
               <Pressable onPress={handleUndo} hitSlop={10}>
-                <Text className="text-indigo-600 dark:text-indigo-400 font-bold">Undo</Text>
+                <Text style={{ color: '#5E5CE6', fontWeight: '700' }}>Undo</Text>
               </Pressable>
             </BlurView>
           </MotiView>
