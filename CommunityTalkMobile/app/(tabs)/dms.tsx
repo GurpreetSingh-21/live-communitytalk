@@ -43,6 +43,10 @@ import { AuthContext } from '@/src/context/AuthContext';
 import { api } from '@/src/api/api';
 import { useSocket } from '@/src/context/SocketContext';
 
+// 🔐 E2EE for decrypting message previews
+import { decryptMessage } from '@/src/utils/e2ee';
+import { fetchPublicKey } from '@/src/api/e2eeApi';
+
 /* ───────────────── Types ───────────────── */
 
 type MessageType = 'text' | 'photo' | 'video' | 'audio' | 'file';
@@ -447,7 +451,8 @@ export default function DMsScreen(): React.JSX.Element {
       const { data } = await api.get('/api/direct-messages', { signal });
       const list = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
 
-      const normalized: DMThread[] = list.map((t: any) => {
+      // 🔐 E2EE: First pass - normalize threads (without decryption)
+      const normalizedRaw = list.map((t: any) => {
         const rawLast = t.lastMessage ?? t.threadData?.lastMessage;
         const isEncrypted = t.isEncrypted || t.lastMessageEncrypted;
 
@@ -463,12 +468,9 @@ export default function DMsScreen(): React.JSX.Element {
           if (content.match(/\.(jpeg|jpg|gif|png)/i)) type = 'photo';
         }
 
-        // 🔐 E2EE: If message is encrypted, show lock icon instead of cipher text
-        // Check flag OR detect Base64 cipher text (long random-looking string)
+        // Detect if content looks like Base64 cipher text
         const looksLikeCipherText = content.length > 40 && /^[A-Za-z0-9+/=]+$/.test(content);
-        if ((isEncrypted || looksLikeCipherText) && content.length > 30) {
-          content = '🔒 Encrypted message';
-        }
+        const needsDecryption = isEncrypted || looksLikeCipherText;
 
         if (!content || content === '[Photo]') {
           if (type === 'photo') content = 'Photo';
@@ -491,11 +493,52 @@ export default function DMsScreen(): React.JSX.Element {
           online: !!t.online,
           typing: !!t.typing,
           pinned: !!t.pinned,
-          archived: false, // Default state from backend
+          archived: false,
+          _needsDecryption: needsDecryption, // Flag for second pass
         };
       });
 
-      return normalized;
+      // 🔐 E2EE: Second pass - decrypt encrypted previews (async)
+      const decrypted = await Promise.all(
+        normalizedRaw.map(async (thread: any) => {
+          if (!thread._needsDecryption) {
+            const { _needsDecryption, ...clean } = thread;
+            return clean;
+          }
+
+          try {
+            // Fetch partner's public key for decryption
+            const partnerPubKey = await fetchPublicKey(thread.id);
+            if (!partnerPubKey) {
+              // No key - show encrypted placeholder
+              return {
+                ...thread,
+                lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
+                _needsDecryption: undefined,
+              };
+            }
+
+            // Decrypt the message content
+            const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey);
+            console.log(`🔐 [E2EE] Preview decrypted for ${thread.name}`);
+
+            return {
+              ...thread,
+              lastMsg: { ...thread.lastMsg, content: decryptedContent },
+              _needsDecryption: undefined,
+            };
+          } catch (err) {
+            console.warn(`🔐 [E2EE] Preview decrypt failed for ${thread.name}:`, err);
+            return {
+              ...thread,
+              lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
+              _needsDecryption: undefined,
+            };
+          }
+        })
+      );
+
+      return decrypted as DMThread[];
     } catch (error) {
       return [] as DMThread[];
     }
