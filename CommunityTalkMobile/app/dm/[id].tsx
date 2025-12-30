@@ -337,17 +337,18 @@ export default function DMThreadScreen() {
       }
 
       // 🔐 Decrypt encrypted messages
-      const myPubKey = await getPublicKey();
+      // NOTE: In NaCl box, the shared key is ALWAYS computed as:
+      //   box.before(partner_public_key, my_secret_key)
+      // This is symmetric - works for both sent and received messages.
       const decryptedMsgs = await Promise.all(
         msgs.map(async (m: any) => {
-          if (m.isEncrypted && m.content && partnerPubKey && myPubKey) {
+          if (m.isEncrypted && m.content && partnerPubKey) {
             try {
-              // Determine sender's public key
-              const senderPubKey = m.from === myId ? myPubKey : partnerPubKey;
-              const decrypted = await decryptMessage(m.content, senderPubKey);
+              // ALWAYS use partner's public key - shared key is symmetric!
+              const decrypted = await decryptMessage(m.content, partnerPubKey);
               return { ...m, content: decrypted, _decrypted: true };
             } catch (err) {
-              console.warn('🔐 [E2EE] Decryption failed for message:', m._id);
+              console.warn('🔐 [E2EE] Decryption failed for message:', m._id, err);
               return { ...m, content: '[Encrypted]' };
             }
           }
@@ -418,14 +419,11 @@ export default function DMThreadScreen() {
       let content = String(p.content ?? "");
 
       // 🔐 E2EE: Decrypt incoming encrypted messages
+      // ALWAYS use partner's public key - shared key is symmetric!
       if (p.isEncrypted && content && recipientPublicKey) {
         try {
-          const myPubKey = await getPublicKey();
-          const senderPubKey = from === myId ? myPubKey : recipientPublicKey;
-          if (senderPubKey) {
-            content = await decryptMessage(content, senderPubKey);
-            console.log('🔐 [E2EE] Real-time message decrypted');
-          }
+          content = await decryptMessage(content, recipientPublicKey);
+          console.log('🔐 [E2EE] Real-time message decrypted');
         } catch (err) {
           console.warn('🔐 [E2EE] Real-time decryption failed:', err);
           content = '[Encrypted]';

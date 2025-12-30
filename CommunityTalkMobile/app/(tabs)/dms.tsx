@@ -464,8 +464,9 @@ export default function DMsScreen(): React.JSX.Element {
         }
 
         // 🔐 E2EE: If message is encrypted, show lock icon instead of cipher text
-        if (isEncrypted && content && content.length > 30) {
-          // Likely Base64 cipher text - show a decrypted indicator
+        // Check flag OR detect Base64 cipher text (long random-looking string)
+        const looksLikeCipherText = content.length > 40 && /^[A-Za-z0-9+/=]+$/.test(content);
+        if ((isEncrypted || looksLikeCipherText) && content.length > 30) {
           content = '🔒 Encrypted message';
         }
 
