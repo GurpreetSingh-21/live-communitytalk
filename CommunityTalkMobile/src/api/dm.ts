@@ -33,7 +33,8 @@ type CommonOpts = { signal?: AbortSignal };
 
 /* ---------- Small utils ---------- */
 
-const isLikelyObjectId = (s?: string) => !!s && /^[a-f\d]{24}$/i.test(s);
+// Validate Prisma CUID format (starts with 'c', ~25 alphanumeric chars)
+const isValidUserId = (s?: string) => !!s && /^c[a-z0-9]{20,30}$/i.test(s);
 
 /* ---------------------------------------------------------------------- */
 /*                          CONVERSATION LIST (INBOX)                     */
@@ -58,7 +59,7 @@ export async function getDMMessages(
   opts?: { limit?: number } & CommonOpts
 ): Promise<DMMessage[]> {
   const memberId = threadIdOrUserId;
-  if (!isLikelyObjectId(memberId)) throw new Error("Invalid memberId (must be a Mongo ObjectId)");
+  if (!isValidUserId(memberId)) throw new Error("Invalid memberId");
 
   const params: any = {};
   if (opts?.limit) params.limit = opts.limit;
@@ -93,7 +94,7 @@ export async function sendDMMessage(
   const { signal, ...rest } = input as any;
   const toUserId: string = rest.toUserId ?? rest.threadId;
 
-  if (!isLikelyObjectId(toUserId)) throw new Error("toUserId (partner id) must be a valid ObjectId");
+  if (!isValidUserId(toUserId)) throw new Error("toUserId (partner id) must be a valid user ID");
   if (!rest.content?.trim() && !Array.isArray(rest.attachments)) {
     throw new Error("content or attachments required");
   }
@@ -114,7 +115,7 @@ export async function sendDMMessage(
 /* ---------------------------------------------------------------------- */
 
 export async function markDMRead(memberId: string, opts?: CommonOpts): Promise<number> {
-  if (!isLikelyObjectId(memberId)) throw new Error("Invalid memberId");
+  if (!isValidUserId(memberId)) throw new Error("Invalid memberId");
   const { data } = await api.patch<{ updated: number }>(
     `/api/direct-messages/${memberId}/read`,
     {},
@@ -135,7 +136,7 @@ export async function markDMRead(memberId: string, opts?: CommonOpts): Promise<n
 export type DMThread = { _id: string; participants: string[]; lastMessage?: { content: string; timestamp: string | Date; senderId: string } };
 
 export async function getOrCreateDMThread(otherUserId: string, opts?: CommonOpts): Promise<DMThread> {
-  if (!isLikelyObjectId(otherUserId)) throw new Error("otherUserId must be a valid ObjectId");
+  if (!isValidUserId(otherUserId)) throw new Error("otherUserId must be a valid user ID");
 
   // Best-effort: fetch inbox to see if we already have history (optional)
   let lastMessage: DMThread["lastMessage"] | undefined;
