@@ -38,8 +38,8 @@ import DMHeader from "@/components/dm/DMHeader";
 import { checkMessageToxicity } from '@/constants/safety';
 
 // 🔐 E2EE imports
-import { encryptMessage, decryptMessage, getPublicKey } from "@/src/utils/e2ee";
-import { fetchPublicKey } from "@/src/api/e2eeApi";
+import { encryptMessage, decryptMessage, getPublicKey, ensureKeyPair } from "@/src/utils/e2ee";
+import { fetchPublicKey, uploadPublicKey } from "@/src/api/e2eeApi";
 
 /* ───────────────── Types & helpers ───────────────── */
 type DMMessage = {
@@ -298,6 +298,15 @@ export default function DMThreadScreen() {
     if (!partnerId) return;
     setLoading(true);
     try {
+      // 🔐 E2EE: Ensure we have a keypair (regenerates if missing)
+      try {
+        const { publicKey } = await ensureKeyPair();
+        // Upload the public key to ensure server is in sync
+        await uploadPublicKey(publicKey);
+      } catch (keyErr) {
+        console.warn('🔐 [E2EE] Key setup failed (non-fatal):', keyErr);
+      }
+
       // Fetch metadata and recipient's public key in parallel
       const [metaData, partnerPubKey] = await Promise.all([
         fetchPartnerMeta(),

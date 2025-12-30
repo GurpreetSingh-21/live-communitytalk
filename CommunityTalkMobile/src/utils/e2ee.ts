@@ -153,3 +153,43 @@ export async function clearKeys(): Promise<void> {
   await SecureStore.deleteItemAsync(SEC_KEY);
   console.log('🔐 [E2EE] Keys cleared');
 }
+
+/**
+ * Force regenerate keypair (useful when device was reset or keys are out of sync)
+ * This will create new keys even if old ones exist
+ */
+export async function forceRegenerateKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
+  console.log('🔐 [E2EE] Force regenerating keypair...');
+  
+  // Clear old keys
+  await SecureStore.deleteItemAsync(PUB_KEY);
+  await SecureStore.deleteItemAsync(SEC_KEY);
+  
+  // Generate new keypair
+  const kp = nacl.box.keyPair();
+  const publicKey = encodeBase64(kp.publicKey);
+  const secretKey = encodeBase64(kp.secretKey);
+  
+  await SecureStore.setItemAsync(PUB_KEY, publicKey);
+  await SecureStore.setItemAsync(SEC_KEY, secretKey);
+  
+  console.log('🔐 [E2EE] New keypair generated and stored');
+  return { publicKey, secretKey };
+}
+
+/**
+ * Ensure keys exist - regenerate if missing
+ * Returns the keypair, regenerating if necessary
+ */
+export async function ensureKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
+  const existingPub = await SecureStore.getItemAsync(PUB_KEY);
+  const existingSec = await SecureStore.getItemAsync(SEC_KEY);
+  
+  if (existingPub && existingSec) {
+    console.log('🔐 [E2EE] Keys verified in SecureStore');
+    return { publicKey: existingPub, secretKey: existingSec };
+  }
+  
+  console.log('🔐 [E2EE] Keys missing! Regenerating...');
+  return await forceRegenerateKeyPair();
+}
