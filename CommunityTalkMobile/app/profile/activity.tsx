@@ -6,29 +6,72 @@ import {
   ScrollView,
   Pressable,
   Platform,
-  useColorScheme as useDeviceColorScheme,
 } from 'react-native';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthContext } from '@/src/context/AuthContext';
+import { LinearGradient } from 'expo-linear-gradient';
+
+// Mock Data for Timeline
+const MOCK_HISTORY = [
+  {
+    id: '1',
+    type: 'joined_community',
+    title: 'Joined Queens College',
+    desc: 'You verified your .edu email and joined the main campus community.',
+    date: '2 days ago',
+    icon: 'school',
+    color: '#3B82F6', // blue
+  },
+  {
+    id: '2',
+    type: 'role_change',
+    title: 'Became a Member',
+    desc: 'You are now a verified member of the Queens College community.',
+    date: '2 days ago',
+    icon: 'shield-checkmark',
+    color: '#10B981', // green
+  },
+  {
+    id: '3',
+    type: 'joined_community',
+    title: 'Joined Computer Science',
+    desc: 'You joined the Computer Science major group.',
+    date: 'Yesterday',
+    icon: 'code-slash',
+    color: '#8B5CF6', // purple
+  },
+  {
+    id: '4',
+    type: 'profile_update',
+    title: 'Updated Avatar',
+    desc: 'You changed your profile picture.',
+    date: 'Just now',
+    icon: 'image',
+    color: '#F59E0B', // amber
+  }
+];
 
 export default function ActivityScreen() {
   const insets = useSafeAreaInsets();
-  const deviceScheme = useDeviceColorScheme();
-  const isDark = deviceScheme === 'dark';
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
+  const isDark = scheme === 'dark';
 
   const auth = useContext(AuthContext);
   const user = auth.user;
   const communities = Array.isArray(auth.communities) ? auth.communities : [];
 
-  const bg = isDark ? '#020617' : '#F1F5F9';
-  const cardBg = isDark ? '#020617' : '#FFFFFF';
-  const border = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(15,23,42,0.06)';
-  const textPrimary = isDark ? '#F9FAFB' : '#020617';
-  const textSecondary = isDark ? '#9CA3AF' : '#6B7280';
-  const accent = '#6366F1';
+  const bg = colors.background;
+  const cardBg = colors.surface;
+  const border = colors.border;
+  const textPrimary = colors.text;
+  const textSecondary = colors.textMuted;
+  const accent = colors.primary;
 
   const firstName = useMemo(() => {
     const full = (user?.fullName || '').trim();
@@ -36,26 +79,13 @@ export default function ActivityScreen() {
     return full.split(' ')[0];
   }, [user?.fullName]);
 
-  const joinedCommunitiesCount = communities.length;
+  const joinedCommunitiesCount = communities.length || 0;
   const roleLabel =
     user?.role === 'admin'
       ? 'Admin'
       : user?.role === 'mod'
-      ? 'Moderator'
-      : 'Member';
-
-  // simple derived scope text
-  const scopeLines: string[] = [];
-  if (user?.collegeSlug) {
-    scopeLines.push(
-      `College community: ${String(user.collegeSlug).replace(/[-_]/g, ' ')}`,
-    );
-  }
-  if (user?.religionKey) {
-    scopeLines.push(
-      `Faith community: ${String(user.religionKey).replace(/[-_]/g, ' ')}`,
-    );
-  }
+        ? 'Moderator'
+        : 'Member';
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: bg }}>
@@ -87,7 +117,7 @@ export default function ActivityScreen() {
             style={{
               color: textPrimary,
               fontSize: 18,
-              fontWeight: '700',
+              fontFamily: Fonts.bold,
             }}
           >
             Your Activity
@@ -104,396 +134,137 @@ export default function ActivityScreen() {
           paddingHorizontal: 16,
           paddingBottom: 32 + insets.bottom,
         }}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Overview card */}
-        <View
+        {/* Profile Snapshot Card */}
+        <LinearGradient
+          colors={isDark ? ['#1e293b', '#0f172a'] : ['#F0F9FF', '#E0F2FE']}
           style={{
-            backgroundColor: cardBg,
             borderRadius: 24,
-            padding: 16,
+            padding: 20,
             marginTop: 8,
             borderWidth: 1,
-            borderColor: border,
+            borderColor: isDark ? '#334155' : '#BAE6FD',
           }}
         >
-          <Text
-            style={{
-              color: textSecondary,
-              fontSize: 13,
-              fontWeight: '600',
-              textTransform: 'uppercase',
-              letterSpacing: 0.8,
-              marginBottom: 4,
-            }}
-          >
-            Overview
-          </Text>
-          <Text
-            style={{
-              color: textPrimary,
-              fontSize: 18,
-              fontWeight: '700',
-              marginBottom: 6,
-            }}
-          >
-            How {firstName} is using CommunityTalk
-          </Text>
-          <Text
-            style={{
-              color: textSecondary,
-              fontSize: 13,
-            }}
-          >
-            Quick snapshot of where you’re active and how you’re connected.
-            More detailed history will be added soon.
-          </Text>
-
-          {/* Stats row */}
-          <View
-            style={{
-              marginTop: 14,
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              gap: 12,
-            }}
-          >
-            {/* Joined communities */}
-            <View
-              style={{
-                flex: 1,
-                borderRadius: 18,
-                borderWidth: 1,
-                borderColor: border,
-                paddingVertical: 10,
-                paddingHorizontal: 12,
-              }}
-            >
-              <Text
-                style={{
-                  color: textSecondary,
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.8,
-                  marginBottom: 4,
-                  fontWeight: '600',
-                }}
-              >
-                Communities
-              </Text>
-              <Text
-                style={{
-                  color: textPrimary,
-                  fontSize: 20,
-                  fontWeight: '800',
-                }}
-              >
-                {joinedCommunitiesCount}
-              </Text>
-              <Text
-                style={{
-                  color: textSecondary,
-                  fontSize: 11,
-                  marginTop: 4,
-                }}
-              >
-                Joined groups linked to your account.
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+            <View style={{
+              height: 48,
+              width: 48,
+              borderRadius: 24,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'white',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 14,
+              borderWidth: 2,
+              borderColor: accent,
+            }}>
+              <Text style={{ fontSize: 18, fontFamily: Fonts.bold, color: textPrimary }}>
+                {firstName.charAt(0)}
               </Text>
             </View>
-
-            {/* Role */}
-            <View
-              style={{
-                flex: 1,
-                borderRadius: 18,
-                borderWidth: 1,
-                borderColor: border,
-                paddingVertical: 10,
-                paddingHorizontal: 12,
-              }}
-            >
-              <Text
-                style={{
-                  color: textSecondary,
-                  fontSize: 11,
-                  textTransform: 'uppercase',
-                  letterSpacing: 0.8,
-                  marginBottom: 4,
-                  fontWeight: '600',
-                }}
-              >
-                Role
+            <View>
+              <Text style={{ fontSize: 18, fontFamily: Fonts.bold, color: textPrimary, marginBottom: 2 }}>
+                {firstName}'s Snapshot
               </Text>
-              <Text
-                style={{
-                  color: textPrimary,
-                  fontSize: 18,
-                  fontWeight: '700',
-                }}
-              >
-                {roleLabel}
-              </Text>
-              <Text
-                style={{
-                  color: textSecondary,
-                  fontSize: 11,
-                  marginTop: 4,
-                }}
-                numberOfLines={2}
-              >
-                Permissions and tools depend on your role in each community.
+              <Text style={{ fontSize: 13, color: textSecondary }}>
+                {roleLabel} • Active since 2024
               </Text>
             </View>
           </View>
 
-          {/* Scope summary */}
-          {scopeLines.length > 0 && (
-            <View
-              style={{
-                marginTop: 14,
-                borderRadius: 16,
-                padding: 10,
-                backgroundColor: isDark ? '#020617' : '#EEF2FF',
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                <Ionicons
-                  name="school-outline"
-                  size={16}
-                  color={accent}
-                  style={{ marginRight: 6 }}
-                />
-                <Text
-                  style={{
-                    color: textPrimary,
-                    fontSize: 13,
-                    fontWeight: '600',
-                  }}
-                >
-                  Where your account lives
-                </Text>
-              </View>
-              {scopeLines.map((line, idx) => (
-                <Text
-                  key={idx}
-                  style={{
-                    color: textSecondary,
-                    fontSize: 12,
-                    marginTop: idx === 0 ? 0 : 2,
-                  }}
-                >
-                  • {line}
-                </Text>
-              ))}
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.6)', padding: 12, borderRadius: 16 }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 24, color: textPrimary }}>{joinedCommunitiesCount}</Text>
+              <Text style={{ fontSize: 12, color: textSecondary, marginTop: 2 }}>Communities</Text>
             </View>
-          )}
-        </View>
+            <View style={{ flex: 1, backgroundColor: isDark ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.6)', padding: 12, borderRadius: 16 }}>
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 24, color: textPrimary }}>0</Text>
+              <Text style={{ fontSize: 12, color: textSecondary, marginTop: 2 }}>Posts Created</Text>
+            </View>
+          </View>
+        </LinearGradient>
 
-        {/* Communities list */}
         <Text
           style={{
-            marginTop: 24,
-            marginBottom: 8,
+            marginTop: 28,
+            marginBottom: 12,
             color: textSecondary,
             fontSize: 13,
-            fontWeight: '600',
+            fontFamily: Fonts.bold,
             textTransform: 'uppercase',
             letterSpacing: 0.8,
+            marginLeft: 4,
           }}
         >
-          Communities you’re part of
+          Recent History
         </Text>
 
-        {joinedCommunitiesCount === 0 ? (
-          <View
-            style={{
-              backgroundColor: cardBg,
-              borderRadius: 18,
-              padding: 14,
-              borderWidth: 1,
-              borderColor: border,
-            }}
-          >
-            <Text
-              style={{
-                color: textPrimary,
-                fontSize: 14,
-                fontWeight: '600',
-                marginBottom: 4,
-              }}
-            >
-              No communities yet
-            </Text>
-            <Text
-              style={{
-                color: textSecondary,
-                fontSize: 13,
-                marginBottom: 10,
-              }}
-            >
-              Join a college or interest-based community to see your activity
-              show up here.
-            </Text>
-            <Pressable
-              onPress={() => router.push('/(tabs)/communities')}
-              style={{
-                alignSelf: 'flex-start',
-                borderRadius: 999,
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                backgroundColor: accent,
-              }}
-            >
-              <Text
-                style={{
-                  color: '#FFFFFF',
-                  fontSize: 13,
-                  fontWeight: '600',
-                }}
-              >
-                Browse communities
-              </Text>
-            </Pressable>
-          </View>
-        ) : (
-          <View
-            style={{
-              backgroundColor: cardBg,
-              borderRadius: 18,
-              borderWidth: 1,
-              borderColor: border,
-              paddingVertical: 4,
-            }}
-          >
-            {communities.slice(0, 5).map((c: any, idx: number) => {
-              const isLast = idx === Math.min(communities.length, 5) - 1;
-              const typeLabel =
-                typeof c?.type === 'string'
-                  ? c.type.charAt(0).toUpperCase() + c.type.slice(1)
-                  : 'Community';
-              return (
-                <View
-                  key={c?._id || idx}
-                  style={{
-                    flexDirection: 'row',
+        {/* Timeline */}
+        <View style={{ paddingLeft: 8 }}>
+          {MOCK_HISTORY.map((item, index) => {
+            const isLast = index === MOCK_HISTORY.length - 1;
+            return (
+              <View key={item.id} style={{ flexDirection: 'row' }}>
+                {/* Line and Dot */}
+                <View style={{ alignItems: 'center', marginRight: 16 }}>
+                  <View style={{
+                    height: 36,
+                    width: 36,
+                    borderRadius: 18,
+                    backgroundColor: cardBg,
+                    borderWidth: 2,
+                    borderColor: item.color,
                     alignItems: 'center',
-                    paddingHorizontal: 14,
-                    paddingVertical: 10,
-                    borderBottomWidth: isLast ? 0 : 1,
-                    borderBottomColor: border,
-                  }}
-                >
-                  <View
-                    style={{
-                      height: 32,
-                      width: 32,
-                      borderRadius: 12,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: isDark ? '#020617' : '#E0F2FE',
-                      marginRight: 10,
-                    }}
-                  >
-                    <Ionicons name="people-outline" size={18} color={textPrimary} />
+                    justifyContent: 'center',
+                    zIndex: 10,
+                  }}>
+                    <Ionicons name={item.icon as any} size={16} color={item.color} />
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text
-                      style={{
-                        color: textPrimary,
-                        fontSize: 15,
-                        fontWeight: '600',
-                      }}
-                      numberOfLines={1}
-                    >
-                      {c?.name || 'Community'}
-                    </Text>
-                    <Text
-                      style={{
-                        color: textSecondary,
-                        fontSize: 12,
-                        marginTop: 2,
-                      }}
-                      numberOfLines={1}
-                    >
-                      {typeLabel}
+                  {!isLast && (
+                    <View style={{
+                      width: 2,
+                      flex: 1,
+                      backgroundColor: border,
+                      marginVertical: 4,
+                    }} />
+                  )}
+                </View>
+
+                {/* Content */}
+                <View style={{ flex: 1, paddingBottom: 24 }}>
+                  <View style={{
+                    backgroundColor: cardBg,
+                    borderRadius: 18,
+                    padding: 16,
+                    borderWidth: 1,
+                    borderColor: border,
+                    shadowColor: '#000',
+                    shadowOpacity: 0.02,
+                    shadowRadius: 4,
+                    shadowOffset: { width: 0, height: 2 }
+                  }}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <Text style={{ fontFamily: Fonts.bold, fontSize: 15, color: textPrimary }}>{item.title}</Text>
+                      <Text style={{ fontSize: 11, color: textSecondary, marginTop: 2 }}>{item.date}</Text>
+                    </View>
+                    <Text style={{ fontSize: 13, color: textSecondary, lineHeight: 18 }}>
+                      {item.desc}
                     </Text>
                   </View>
                 </View>
-              );
-            })}
+              </View>
+            );
+          })}
+        </View>
 
-            {communities.length > 5 && (
-              <Pressable
-                onPress={() => router.push('/(tabs)/communities')}
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                }}
-              >
-                <Text
-                  style={{
-                    color: accent,
-                    fontSize: 13,
-                    fontWeight: '600',
-                  }}
-                >
-                  View all communities
-                </Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-
-        {/* Coming soon / explanation */}
-        <Text
-          style={{
-            marginTop: 24,
-            marginBottom: 8,
-            color: textSecondary,
-            fontSize: 13,
-            fontWeight: '600',
-            textTransform: 'uppercase',
-            letterSpacing: 0.8,
-          }}
-        >
-          Activity history
-        </Text>
-
-        <View
-          style={{
-            backgroundColor: cardBg,
-            borderRadius: 18,
-            padding: 14,
-            borderWidth: 1,
-            borderColor: border,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-            <Ionicons
-              name="time-outline"
-              size={18}
-              color={accent}
-              style={{ marginRight: 6 }}
-            />
-            <Text
-              style={{
-                color: textPrimary,
-                fontSize: 14,
-                fontWeight: '600',
-              }}
-            >
-              Detailed history coming soon
-            </Text>
-          </View>
-          <Text
-            style={{
-              color: textSecondary,
-              fontSize: 13,
-            }}
-          >
-            This page will later show a timeline of messages, replies, and new
-            communities you joined — all scoped to your verified .edu account.
+        {/* Footer */}
+        <View style={{ alignItems: 'center', marginTop: 8 }}>
+          <Text style={{ fontSize: 12, color: textSecondary }}>
+            Only you can see your activity history.
           </Text>
         </View>
+
       </ScrollView>
     </SafeAreaView>
   );

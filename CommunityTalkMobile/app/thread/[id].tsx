@@ -33,35 +33,12 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-/* ───────── Theme ───────── */
-const useTheme = () => {
-  const isDark = useColorScheme() === "dark";
-  return {
-    isDark,
-    colors: {
-      bg: isDark ? "#000000" : "#FFFFFF",
-      bgSecondary: isDark ? "#1C1C1E" : "#F2F2F7",
-      surface: isDark ? "#1C1C1E" : "#FFFFFF",
-      surfaceElevated: isDark ? "#2C2C2E" : "#FFFFFF",
-      text: isDark ? "#FFFFFF" : "#000000",
-      textSecondary: isDark ? "#EBEBF599" : "#3C3C4399",
-      textTertiary: isDark ? "#EBEBF54D" : "#3C3C434D",
-      border: isDark ? "#38383A" : "#E5E5EA",
-      primary: "#007AFF",
-      primaryGradientStart: "#5E5CE6",
-      primaryGradientEnd: "#007AFF",
-      destructive: "#FF3B30",
-      success: "#34C759",
-      warning: "#FF9500",
-      onlineBg: isDark ? "rgba(52, 199, 89, 0.2)" : "#D1FAE5",
-      onlineText: isDark ? "#34C759" : "#059669",
-      offlineBg: isDark ? "rgba(142, 142, 147, 0.2)" : "#F3F4F6",
-      offlineText: isDark ? "#8E8E93" : "#6B7280",
-      inputBg: isDark ? "#1C1C1E" : "#F2F2F7",
-      shadow: isDark ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.08)",
-    },
-  };
-};
+import { Colors, Fonts } from "@/constants/theme";
+import { useColorScheme as useAppColorScheme } from "@/hooks/use-color-scheme";
+
+/* ───────── Theme Adapter ───────── */
+// Replaced local useTheme with global constants
+
 
 const SCREEN_W = Dimensions.get("window").width;
 
@@ -105,7 +82,7 @@ const dayLabel = (d: Date | string | undefined | null) => {
   const date = d instanceof Date ? d : d ? new Date(d) : null;
 
   // bail if invalid date
-  if (!date || isNaN(date.getTime())) return ""; 
+  if (!date || isNaN(date.getTime())) return "";
 
   const today = new Date();
   const yesterday = new Date();
@@ -120,7 +97,7 @@ const dayLabel = (d: Date | string | undefined | null) => {
     month: "short",
     day: "numeric",
     year: date.getFullYear() !== today.getFullYear() ? "numeric" : undefined,
-  }).format(date); 
+  }).format(date);
 };
 const showGap15min = (prev?: ChatMessage, cur?: ChatMessage) => {
   if (!prev || !cur) return true;
@@ -145,7 +122,35 @@ const hueFrom = (s: string) => {
 export default function CommunityScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const communityId = String(id || "");
-  const { isDark, colors } = useTheme();
+
+  const colorScheme = useAppColorScheme();
+  const isDark = colorScheme === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
+
+  // Adapter for existing code
+  const colors = useMemo(() => ({
+    bg: theme.background,
+    bgSecondary: theme.muted,
+    surface: theme.surface,
+    surfaceElevated: theme.surface, // Simplified
+    text: theme.text,
+    textSecondary: theme.textMuted,
+    textTertiary: theme.textMuted, // Simplified
+    border: theme.border,
+    primary: theme.primary,
+    primaryGradientStart: theme.primary, // Using solid primary for now
+    primaryGradientEnd: theme.accent,    // Using accent for gradient end
+    destructive: theme.danger,
+    success: theme.success,
+    warning: theme.warning,
+    onlineBg: isDark ? "rgba(34, 197, 94, 0.2)" : "#DCFCE7",
+    onlineText: theme.success,
+    offlineBg: isDark ? "rgba(113, 113, 122, 0.2)" : "#F3F4F6",
+    offlineText: theme.textMuted,
+    inputBg: theme.surface,
+    shadow: isDark ? "#000" : "#000",
+  }), [theme, isDark]);
+
   const { user } = React.useContext(AuthContext) as any;
   const { socket, socketConnected } = useSocket() as any;
 
@@ -622,7 +627,7 @@ export default function CommunityScreen() {
     >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ color: colors.text, fontSize: 28, fontWeight: "700", letterSpacing: -0.5 }} numberOfLines={1}>
+          <Text style={{ color: colors.text, fontSize: 28, fontFamily: Fonts.bold, letterSpacing: -0.5 }} numberOfLines={1}>
             {community?.name || "Community"}
           </Text>
           <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4, flexWrap: "wrap" }}>
@@ -730,7 +735,7 @@ export default function CommunityScreen() {
                   shadowOffset: { width: 0, height: 2 },
                 }}
               >
-                <Text style={{ color: colors.text, fontWeight: active ? "700" : "600", fontSize: 15 }}>{label}</Text>
+                <Text style={{ color: colors.text, fontFamily: active ? Fonts.bold : Fonts.sans, fontSize: 15 }}>{label}</Text>
               </TouchableOpacity>
             );
           })}
@@ -762,7 +767,7 @@ export default function CommunityScreen() {
             {busy ? (
               <ActivityIndicator color="#FFFFFF" />
             ) : (
-              <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 17 }}>Join Community</Text>
+              <Text style={{ color: "#FFFFFF", fontFamily: Fonts.bold, fontSize: 17 }}>Join Community</Text>
             )}
           </LinearGradient>
         </TouchableOpacity>
@@ -789,7 +794,7 @@ export default function CommunityScreen() {
           shadowRadius: 4,
         }}
       >
-        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 18 }}>{label}</Text>
+        <Text style={{ color: "#fff", fontFamily: Fonts.bold, fontSize: 18 }}>{label}</Text>
       </View>
     );
   };
@@ -832,7 +837,7 @@ export default function CommunityScreen() {
           </View>
           <View style={{ marginLeft: 14, flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
-              <Text style={{ color: colors.text, fontWeight: "600", fontSize: 17 }}>{item.fullName}</Text>
+              <Text style={{ color: colors.text, fontFamily: Fonts.bold, fontSize: 17 }}>{item.fullName}</Text>
               {item.isYou && (
                 <View
                   style={{
@@ -843,7 +848,7 @@ export default function CommunityScreen() {
                     borderRadius: 6,
                   }}
                 >
-                  <Text style={{ color: colors.primary, fontSize: 12, fontWeight: "700" }}>YOU</Text>
+                  <Text style={{ color: colors.primary, fontSize: 12, fontFamily: Fonts.bold }}>YOU</Text>
                 </View>
               )}
             </View>
@@ -866,7 +871,7 @@ export default function CommunityScreen() {
               style={{
                 color: isOnline ? colors.onlineText : colors.offlineText,
                 fontSize: 12,
-                fontWeight: "700",
+                fontFamily: Fonts.bold,
                 letterSpacing: 0.5,
               }}
             >
@@ -900,7 +905,7 @@ export default function CommunityScreen() {
           onChangeText={setQ}
           placeholder="Search members"
           placeholderTextColor={colors.textSecondary}
-          style={{ color: colors.text, paddingVertical: 12, flex: 1, marginLeft: 10, fontSize: 17 }}
+          style={{ color: colors.text, paddingVertical: 12, flex: 1, marginLeft: 10, fontSize: 17, fontFamily: Fonts.regular }}
           returnKeyType="search"
           onSubmitEditing={() => fetchMembers({ reset: true })}
         />
@@ -935,7 +940,7 @@ export default function CommunityScreen() {
               <Text
                 style={{
                   color: active ? "#FFFFFF" : colors.text,
-                  fontWeight: "600",
+                  fontFamily: Fonts.bold,
                   fontSize: 15,
                 }}
               >
@@ -980,13 +985,13 @@ export default function CommunityScreen() {
                 shadowRadius: 2,
               }}
             >
-              <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "600" }}>{dayLabel(curDate)}</Text>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, fontFamily: Fonts.sans }}>{dayLabel(curDate)}</Text>
             </View>
           </View>
         )}
         <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
           {!mine && isFirstOfGroup && (
-            <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 4, marginLeft: 12, fontWeight: "500" }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 4, marginLeft: 12, fontFamily: Fonts.sans }}>
               {item.sender}
             </Text>
           )}
@@ -1013,7 +1018,7 @@ export default function CommunityScreen() {
                     Message deleted
                   </Text>
                 ) : (
-                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
+                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22, fontFamily: Fonts.regular }}>{item.content}</Text>
                 )}
               </LinearGradient>
             ) : (
@@ -1036,7 +1041,7 @@ export default function CommunityScreen() {
                     Message deleted
                   </Text>
                 ) : (
-                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22 }}>{item.content}</Text>
+                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22, fontFamily: Fonts.regular }}>{item.content}</Text>
                 )}
               </View>
             )}
@@ -1061,7 +1066,7 @@ export default function CommunityScreen() {
         </View>
       ) : !community ? (
         <View className="flex-1 items-center justify-center px-6">
-          <Text style={{ color: colors.text, fontSize: 16, textAlign: "center" }}>Community not found.</Text>
+          <Text style={{ color: colors.text, fontSize: 16, textAlign: "center", fontFamily: Fonts.regular }}>Community not found.</Text>
         </View>
       ) : (
         <>
@@ -1083,7 +1088,7 @@ export default function CommunityScreen() {
                 <View style={{ alignItems: "center", marginBottom: 12 }}>
                   <Ionicons name="lock-closed-outline" size={40} color={colors.textSecondary} />
                 </View>
-                <Text style={{ color: colors.text, fontSize: 17, textAlign: "center", fontWeight: "600" }}>
+                <Text style={{ color: colors.text, fontSize: 17, textAlign: "center", fontFamily: Fonts.bold }}>
                   Members Only
                 </Text>
                 <Text style={{ color: colors.textSecondary, marginTop: 8, textAlign: "center" }}>
@@ -1114,7 +1119,7 @@ export default function CommunityScreen() {
                       paddingVertical: 12,
                     }}
                   >
-                    <Text style={{ color: colors.destructive, fontSize: 14, fontWeight: "500" }}>{chatError}</Text>
+                    <Text style={{ color: colors.destructive, fontSize: 14, fontFamily: Fonts.sans }}>{chatError}</Text>
                   </View>
                 )}
 
@@ -1150,7 +1155,7 @@ export default function CommunityScreen() {
                                   borderRadius: 20,
                                 }}
                               >
-                                <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
+                                <Text style={{ color: colors.primary, fontSize: 14, fontFamily: Fonts.bold }}>
                                   Load earlier messages
                                 </Text>
                               </View>
@@ -1196,7 +1201,7 @@ export default function CommunityScreen() {
                         paddingVertical: 6,
                       }}
                     >
-                      <Text style={{ color: isDark ? "#34C759" : "#0F8C4C", fontSize: 13, fontWeight: "600" }}>
+                      <Text style={{ color: isDark ? "#34C759" : "#0F8C4C", fontSize: 13, fontFamily: Fonts.bold }}>
                         {typingLabel}
                       </Text>
                     </View>
@@ -1254,6 +1259,7 @@ export default function CommunityScreen() {
                       style={{
                         color: colors.text,
                         fontSize: 17,
+                        fontFamily: Fonts.regular,
                         flex: 1,
                         minHeight: 36,
                         maxHeight: 100,
@@ -1326,8 +1332,8 @@ export default function CommunityScreen() {
                         >
                           <Ionicons name="people-outline" size={32} color={colors.textSecondary} />
                         </View>
-                        <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>No members found</Text>
-                        <Text style={{ color: colors.textSecondary, fontSize: 15, marginTop: 4 }}>
+                        <Text style={{ color: colors.text, fontSize: 17, fontFamily: Fonts.bold }}>No members found</Text>
+                        <Text style={{ color: colors.textSecondary, fontSize: 15, marginTop: 4, fontFamily: Fonts.regular }}>
                           Try adjusting your filters
                         </Text>
                       </View>

@@ -8,8 +8,9 @@ import {
   Platform,
   Alert,
   Linking,
-  useColorScheme as useDeviceColorScheme,
 } from 'react-native';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
@@ -20,18 +21,19 @@ const SUPPORT_EMAIL = 'support@communitytalk.app'; // 🔧 change if you have a 
 
 export default function HelpAndSupportScreen() {
   const insets = useSafeAreaInsets();
-  const deviceScheme = useDeviceColorScheme();
-  const isDark = deviceScheme === 'dark';
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
+  const isDark = scheme === 'dark';
 
   const auth = useContext(AuthContext);
   const user = auth.user;
 
-  const bg = isDark ? '#020617' : '#F1F5F9';
-  const cardBg = isDark ? '#020617' : '#FFFFFF';
-  const border = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(15,23,42,0.06)';
-  const textPrimary = isDark ? '#F9FAFB' : '#020617';
-  const textSecondary = isDark ? '#9CA3AF' : '#6B7280';
-  const accent = '#6366F1';
+  const bg = colors.background;
+  const cardBg = colors.surface;
+  const border = colors.border;
+  const textPrimary = colors.text;
+  const textSecondary = colors.textMuted;
+  const accent = colors.primary;
 
   const firstName =
     (user?.fullName || '')
@@ -161,7 +163,7 @@ export default function HelpAndSupportScreen() {
             style={{
               color: textPrimary,
               fontSize: 18,
-              fontWeight: '700',
+              fontFamily: Fonts.bold,
             }}
           >
             Help &amp; Support
@@ -208,7 +210,7 @@ export default function HelpAndSupportScreen() {
               style={{
                 color: textPrimary,
                 fontSize: 16,
-                fontWeight: '700',
+                fontFamily: Fonts.bold,
               }}
             >
               Need help with CommunityTalk?
@@ -271,7 +273,7 @@ export default function HelpAndSupportScreen() {
                 <Ionicons name="bug-outline" size={18} color={textPrimary} />
               </View>
               <View style={{ maxWidth: '80%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+                <Text style={{ color: textPrimary, fontSize: 15, fontFamily: Fonts.bold }}>
                   Report a problem
                 </Text>
                 <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
@@ -316,7 +318,7 @@ export default function HelpAndSupportScreen() {
                 <Ionicons name="mail-unread-outline" size={18} color={textPrimary} />
               </View>
               <View style={{ maxWidth: '80%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+                <Text style={{ color: textPrimary, fontSize: 15, fontFamily: Fonts.bold }}>
                   Contact support
                 </Text>
                 <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
@@ -361,7 +363,7 @@ export default function HelpAndSupportScreen() {
                 <Ionicons name="key-outline" size={18} color={textPrimary} />
               </View>
               <View style={{ maxWidth: '80%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+                <Text style={{ color: textPrimary, fontSize: 15, fontFamily: Fonts.bold }}>
                   I’m not getting the 6-digit code
                 </Text>
                 <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
@@ -404,7 +406,7 @@ export default function HelpAndSupportScreen() {
                 <Ionicons name="shield-checkmark-outline" size={18} color={textPrimary} />
               </View>
               <View style={{ maxWidth: '80%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+                <Text style={{ color: textPrimary, fontSize: 15, fontFamily: Fonts.bold }}>
                   Safety & community guidelines
                 </Text>
                 <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
@@ -449,7 +451,7 @@ export default function HelpAndSupportScreen() {
             style={{
               color: textPrimary,
               fontSize: 14,
-              fontWeight: '600',
+              fontFamily: Fonts.bold,
               marginBottom: 4,
             }}
           >

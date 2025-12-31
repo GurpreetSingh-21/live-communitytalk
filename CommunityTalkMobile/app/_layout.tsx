@@ -4,13 +4,26 @@ import { Platform, LogBox } from "react-native";
 import "react-native-reanimated";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { Stack, useRouter, useSegments } from "expo-router"; 
+import { Stack, useRouter, useSegments } from "expo-router";
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import "../global.css";
-import { AuthProvider, AuthContext } from "../src/context/AuthContext"; 
+import { AuthProvider, AuthContext } from "../src/context/AuthContext";
 import { SocketProvider } from "../src/context/SocketContext";
 import { registerForPushNotificationsAsync } from "@/src/utils/notifications";
+import {
+  useFonts,
+  PlusJakartaSans_300Light,
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+} from '@expo-google-fonts/plus-jakarta-sans';
+import * as SplashScreen from 'expo-splash-screen';
+import { useEffect as useReactEffect } from 'react';
+
+// Prevent splash screen from auto-hiding
+SplashScreen.preventAutoHideAsync();
 
 LogBox.ignoreLogs(["[Reanimated]", "SafeAreaView"]);
 
@@ -29,10 +42,10 @@ function AppLayout() {
 
     // Define routes that are accessible without being logged in
     const publicRoutes = ["landing", "register", "verify-email"];
-    
+
     // Routes that should be accessible to both auth states (don't redirect)
     const neutralRoutes = ["modal"];
-    
+
     const currentRoute = segments[0] as string;
     const isPublicRoute = publicRoutes.includes(currentRoute);
     const isNeutralRoute = neutralRoutes.includes(currentRoute);
@@ -78,6 +91,20 @@ export default function RootLayout() {
   const scheme = useColorScheme();
   const navTheme = scheme === "dark" ? DarkTheme : DefaultTheme;
 
+  const [fontsLoaded] = useFonts({
+    PlusJakartaSans_300Light,
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+  });
+
+  useReactEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -88,6 +115,10 @@ export default function RootLayout() {
       }
     })();
   }, []);
+
+  if (!fontsLoaded) {
+    return null;
+  }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

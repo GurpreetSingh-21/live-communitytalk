@@ -46,6 +46,7 @@ import { useSocket } from '@/src/context/SocketContext';
 // 🔐 E2EE for decrypting message previews
 import { decryptMessage } from '@/src/utils/e2ee';
 import { fetchPublicKey } from '@/src/api/e2eeApi';
+import { Colors, Fonts } from '@/constants/theme';
 
 /* ───────────────── Types ───────────────── */
 
@@ -125,9 +126,19 @@ const UnreadBadge = ({ count }: { count: number }) => (
     from={{ scale: 0.5 }}
     animate={{ scale: 1 }}
     transition={{ type: 'spring' }}
-    className="bg-indigo-600 rounded-full h-6 w-6 items-center justify-center border-2 border-white dark:border-black"
+    style={{
+      backgroundColor: Colors.light.danger,
+      borderRadius: 12,
+      height: 20,
+      minWidth: 20,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 6,
+      borderWidth: 2,
+      borderColor: 'white', // border color logic handled by theme? just kept white/black for contrast
+    }}
   >
-    <Text className="text-white text-xs font-bold">{count > 99 ? '99+' : count}</Text>
+    <Text style={{ color: 'white', fontSize: 10, fontFamily: Fonts.bold }}>{count > 99 ? '99+' : count}</Text>
   </MotiView>
 );
 
@@ -137,11 +148,12 @@ const TypingIndicator = () => {
     scale.value = withRepeat(withTiming(1.2, { duration: 800, easing: Easing.inOut(Easing.ease) }), -1, true);
   }, []);
   const animatedStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-  return <Animated.View className="w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-white dark:border-black" style={animatedStyle} />;
+  return <Animated.View style={[{ width: 14, height: 14, borderRadius: 7, backgroundColor: Colors.light.success, borderWidth: 2, borderColor: 'white' }, animatedStyle]} />;
 };
 
 const SmartPreview = ({ msg }: { msg: MessageContent }) => {
   const isDark = useColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
 
   let iconName: any = 'text-outline';
   let label = msg.content;
@@ -152,13 +164,13 @@ const SmartPreview = ({ msg }: { msg: MessageContent }) => {
   else if (msg.type === 'file') { iconName = 'document-text-outline'; label = 'File'; }
 
   if (msg.type === 'text') {
-    return <Text className="text-slate-600 dark:text-zinc-400" numberOfLines={1}>{msg.content}</Text>;
+    return <Text style={{ color: theme.textMuted, fontSize: 13, fontFamily: Fonts.regular }} numberOfLines={1}>{msg.content}</Text>;
   }
 
   return (
-    <View className="flex-row items-center gap-1.5 self-start rounded-lg">
-      <Ionicons name={iconName} size={14} color={isDark ? '#a1a1aa' : '#64748b'} />
-      <Text className="text-sm text-slate-600 dark:text-zinc-400 italic">{label}</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+      <Ionicons name={iconName} size={14} color={theme.icon} />
+      <Text style={{ fontSize: 13, color: theme.textMuted, fontFamily: Fonts.regular, fontStyle: 'italic' }}>{label}</Text>
     </View>
   );
 };
@@ -192,6 +204,7 @@ type RowProps = {
 
 const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle, onOpen, now }: RowProps) {
   const isDark = useColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
   const translateX = useSharedValue(0);
   const ACTION_WIDTH = 72;
 
@@ -237,17 +250,17 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
         <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
           {/* Swipe Actions */}
           <View style={{ position: 'absolute', right: 16, top: 0, bottom: 0, flexDirection: 'row', borderRadius: 16, overflow: 'hidden' }}>
-            <Pressable onPress={handlePin} style={{ width: ACTION_WIDTH, backgroundColor: '#5E5CE6', alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable onPress={handlePin} style={{ width: ACTION_WIDTH, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={animatedPinStyle}>
                 <Ionicons name={item.pinned ? 'pin-outline' : 'pin'} size={20} color="white" />
               </Animated.View>
             </Pressable>
-            <Pressable onPress={handleArchive} style={{ width: ACTION_WIDTH, backgroundColor: '#FF9F0A', alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable onPress={handleArchive} style={{ width: ACTION_WIDTH, backgroundColor: theme.warning, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={animatedArchiveStyle}>
                 <Ionicons name="archive-outline" size={20} color="white" />
               </Animated.View>
             </Pressable>
-            <Pressable onPress={handleDelete} style={{ width: ACTION_WIDTH, backgroundColor: '#FF453A', alignItems: 'center', justifyContent: 'center' }}>
+            <Pressable onPress={handleDelete} style={{ width: ACTION_WIDTH, backgroundColor: theme.danger, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={animatedDeleteStyle}>
                 <Ionicons name="trash-outline" size={20} color="white" />
               </Animated.View>
@@ -261,15 +274,17 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                backgroundColor: theme.surface,
                 borderRadius: 16,
                 paddingHorizontal: 14,
                 paddingVertical: 14,
-                shadowColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.06)',
-                shadowOffset: { width: 0, height: 2 },
+                shadowColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.05)',
+                shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 1,
-                shadowRadius: 8,
+                shadowRadius: 10,
                 elevation: 3,
+                borderWidth: isDark ? 1 : 0,
+                borderColor: theme.border,
               }}
             >
               {/* Avatar */}
@@ -278,7 +293,7 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
                   width: 52,
                   height: 52,
                   borderRadius: 26,
-                  backgroundColor: isDark ? '#1C1C1E' : '#F2F2F7',
+                  backgroundColor: theme.muted,
                   alignItems: 'center',
                   justifyContent: 'center',
                   overflow: 'hidden',
@@ -319,11 +334,11 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
                     width: 18,
                     height: 18,
                     borderRadius: 9,
-                    backgroundColor: '#5E5CE6',
+                    backgroundColor: theme.primary,
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 2,
-                    borderColor: isDark ? '#000' : '#FFF',
+                    borderColor: theme.surface,
                   }}>
                     <Ionicons name="pin" size={10} color="#FFF" />
                   </View>
@@ -337,9 +352,9 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
                   <Text
                     numberOfLines={1}
                     style={{
-                      color: isDark ? '#FFFFFF' : '#000000',
+                      color: theme.text,
                       fontSize: 16,
-                      fontWeight: hasUnread ? '700' : '600',
+                      fontFamily: hasUnread ? Fonts.bold : Fonts.sans,
                       letterSpacing: -0.3,
                       flex: 1,
                     }}
@@ -349,8 +364,8 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
                   <Text style={{
                     fontSize: 12,
                     marginLeft: 8,
-                    color: hasUnread ? '#5E5CE6' : (isDark ? '#48484A' : '#AEAEB2'),
-                    fontWeight: hasUnread ? '600' : '400',
+                    color: hasUnread ? theme.primary : theme.textMuted,
+                    fontFamily: hasUnread ? Fonts.sans : Fonts.regular,
                   }}>
                     {timeAgoLabel(item.lastAt, now)}
                   </Text>
@@ -381,7 +396,7 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
                   </View>
                   {hasUnread && (
                     <View style={{
-                      backgroundColor: '#5E5CE6',
+                      backgroundColor: Colors.light.danger,
                       borderRadius: 10,
                       minWidth: 20,
                       height: 20,
@@ -389,7 +404,7 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>
-                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
+                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontFamily: Fonts.bold }}>
                         {item.unread! > 99 ? '99+' : item.unread}
                       </Text>
                     </View>
@@ -401,7 +416,7 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
               <Ionicons
                 name="chevron-forward"
                 size={16}
-                color={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'}
+                color={theme.icon}
                 style={{ marginLeft: 8 }}
               />
             </Pressable>
@@ -417,6 +432,7 @@ const DMRow = React.memo(function DMRow({ item, onArchive, onDelete, onPinToggle
 export default function DMsScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
   const { socket, unreadThreads = {}, refreshUnread, markThreadRead } = useSocket();
 
   const { isAuthed, user } = React.useContext(AuthContext) as any;
@@ -644,12 +660,33 @@ export default function DMsScreen(): React.JSX.Element {
       ));
     };
 
-    const onDirectMsg = (payload: any) => {
+    const onDirectMsg = async (payload: any) => {
       const from = String(payload?.from || payload?.senderId || '');
+      const to = String(payload?.to || '');
+
+      // Skip if it's our own sent message (we don't need to show it as "new")
+      if (from === myId) return;
       if (!from) return;
 
       const type = payload?.type || 'text';
       let contentStr = String(payload?.content ?? '');
+      const isEncrypted = payload?.isEncrypted;
+
+      // 🔐 E2EE: Decrypt encrypted message preview
+      if (isEncrypted && contentStr && contentStr.length > 40) {
+        try {
+          const partnerPubKey = await fetchPublicKey(from);
+          if (partnerPubKey) {
+            contentStr = await decryptMessage(contentStr, partnerPubKey);
+            console.log('🔐 [E2EE] Real-time DM list preview decrypted');
+          } else {
+            contentStr = '🔒 Encrypted';
+          }
+        } catch (err) {
+          console.warn('🔐 [E2EE] Real-time preview decrypt failed:', err);
+          contentStr = '🔒 Encrypted';
+        }
+      }
 
       if (!contentStr) {
         if (type === 'photo') contentStr = 'Photo';
@@ -792,15 +829,15 @@ export default function DMsScreen(): React.JSX.Element {
 
   if (isLoading && !threads.length) {
     return (
-      <View style={{ flex: 1, paddingTop: insets.top }} className="bg-white dark:bg-black">
-        <Text className="text-3xl font-extrabold text-black dark:text-white px-4 mt-2 mb-4">Messages</Text>
+      <View style={{ flex: 1, paddingTop: insets.top, backgroundColor: theme.background }}>
+        <Text style={{ fontSize: 30, fontFamily: Fonts.bold, color: theme.text, paddingHorizontal: 16, marginTop: 8, marginBottom: 16 }}>Messages</Text>
         {[...Array(6)].map((_, i) => (<DMRowSkeleton key={i} />))}
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: isDark ? '#000000' : '#F9FAFB' }}>
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       {/* List */}
       <Animated.FlatList
         data={filteredThreads}
@@ -817,15 +854,15 @@ export default function DMsScreen(): React.JSX.Element {
         )}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFF' : '#000'} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={theme.text} />}
         contentContainerStyle={{ paddingTop: 200, paddingBottom: insets.bottom + 100 }}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', marginTop: 80, opacity: 0.6 }}>
-            <Ionicons name="chatbubbles-outline" size={48} color={isDark ? '#FFF' : '#000'} />
-            <Text style={{ fontWeight: '700', fontSize: 18, marginTop: 12, color: isDark ? '#FFFFFF' : '#000000' }}>
+            <Ionicons name="chatbubbles-outline" size={48} color={theme.text} />
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 18, marginTop: 12, color: theme.text }}>
               No conversations
             </Text>
-            <Text style={{ fontSize: 14, marginTop: 4, textAlign: 'center', paddingHorizontal: 32, color: isDark ? '#636366' : '#8E8E93' }}>
+            <Text style={{ fontSize: 14, marginTop: 4, textAlign: 'center', paddingHorizontal: 32, color: theme.textMuted, fontFamily: Fonts.regular }}>
               {searchQuery ? 'Try a different search' : 'Tap "+" to start messaging'}
             </Text>
           </View>
@@ -837,11 +874,11 @@ export default function DMsScreen(): React.JSX.Element {
         style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12, zIndex: 10 }, animatedHeaderStyle]}
       >
         <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 0.5, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]} />
+        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 0.5, backgroundColor: theme.border }]} />
 
         {/* Title Row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, marginBottom: 14 }}>
-          <Text style={{ fontSize: 28, fontWeight: '700', color: isDark ? '#FFFFFF' : '#000000', letterSpacing: -0.8 }}>
+          <Text style={{ fontSize: 28, fontFamily: Fonts.bold, color: theme.text, letterSpacing: -0.8 }}>
             Messages
           </Text>
           <Pressable
@@ -850,12 +887,12 @@ export default function DMsScreen(): React.JSX.Element {
               width: 36,
               height: 36,
               borderRadius: 18,
-              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+              backgroundColor: theme.muted,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Ionicons name="add" size={22} color={isDark ? '#FFFFFF' : '#000000'} />
+            <Ionicons name="add" size={22} color={theme.icon} />
           </Pressable>
         </View>
 
@@ -864,14 +901,16 @@ export default function DMsScreen(): React.JSX.Element {
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.03)',
+            backgroundColor: theme.surface,
             borderRadius: 12,
             paddingHorizontal: 12,
             height: 42,
             marginBottom: 12,
+            borderWidth: 1,
+            borderColor: theme.border,
           }}
         >
-          <Ionicons name="search" size={18} color={isDark ? '#636366' : '#8E8E93'} />
+          <Ionicons name="search" size={18} color={theme.textMuted} />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -880,11 +919,11 @@ export default function DMsScreen(): React.JSX.Element {
               flex: 1,
               marginLeft: 10,
               fontSize: 15,
-              color: isDark ? '#FFFFFF' : '#000000',
-              fontWeight: '400',
+              color: theme.text,
+              fontFamily: Fonts.regular,
               letterSpacing: -0.2,
             }}
-            placeholderTextColor={isDark ? '#48484A' : '#AEAEB2'}
+            placeholderTextColor={theme.textMuted}
           />
           {searchQuery.length > 0 && (
             <Pressable
@@ -908,8 +947,8 @@ export default function DMsScreen(): React.JSX.Element {
               >
                 <Text style={{
                   fontSize: 14,
-                  fontWeight: isActive ? '600' : '400',
-                  color: isActive ? (isDark ? '#FFFFFF' : '#000000') : (isDark ? '#636366' : '#8E8E93'),
+                  fontFamily: isActive ? Fonts.bold : Fonts.regular,
+                  color: isActive ? theme.text : theme.textMuted,
                   letterSpacing: -0.2,
                 }}>
                   {f}
@@ -921,7 +960,7 @@ export default function DMsScreen(): React.JSX.Element {
                     left: 0,
                     right: 0,
                     height: 2,
-                    backgroundColor: '#5E5CE6',
+                    backgroundColor: theme.primary,
                     borderRadius: 1,
                   }} />
                 )}
@@ -941,10 +980,10 @@ export default function DMsScreen(): React.JSX.Element {
             transition={{ type: 'spring' }}
             style={{ position: 'absolute', bottom: insets.bottom + 20, left: 20, right: 20 }}
           >
-            <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 16, overflow: 'hidden' }}>
-              <Text style={{ color: isDark ? '#FFFFFF' : '#000000', fontWeight: '500' }}>{snackbarMsg}</Text>
+            <BlurView intensity={90} tint={isDark ? 'dark' : 'light'} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
+              <Text style={{ color: theme.text, fontFamily: Fonts.sans }}>{snackbarMsg}</Text>
               <Pressable onPress={handleUndo} hitSlop={10}>
-                <Text style={{ color: '#5E5CE6', fontWeight: '700' }}>Undo</Text>
+                <Text style={{ color: theme.primary, fontFamily: Fonts.bold }}>Undo</Text>
               </Pressable>
             </BlurView>
           </MotiView>

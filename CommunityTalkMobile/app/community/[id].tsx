@@ -48,35 +48,12 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-/* ───────── Theme ───────── */
-const useTheme = () => {
-  const isDark = useColorScheme() === "dark";
-  return {
-    isDark,
-    colors: {
-      bg: isDark ? "#000000" : "#FFFFFF",
-      bgSecondary: isDark ? "#1C1C1E" : "#F2F2F7",
-      surface: isDark ? "#1C1C1E" : "#FFFFFF",
-      surfaceElevated: isDark ? "#2C2C2E" : "#FFFFFF",
-      text: isDark ? "#FFFFFF" : "#000000",
-      textSecondary: isDark ? "#EBEBF599" : "#3C3C4399",
-      textTertiary: isDark ? "#EBEBF54D" : "#3C3C434D",
-      border: isDark ? "#38383A" : "#E5E5EA",
-      primary: "#007AFF",
-      primaryGradientStart: "#5E5CE6",
-      primaryGradientEnd: "#007AFF",
-      destructive: "#FF3B30",
-      success: "#34C759",
-      warning: "#FF9500",
-      onlineBg: isDark ? "rgba(52, 199, 89, 0.2)" : "#D1FAE5",
-      onlineText: isDark ? "#34C759" : "#059669",
-      offlineBg: isDark ? "rgba(142, 142, 147, 0.2)" : "#F3F4F6",
-      offlineText: isDark ? "#8E8E93" : "#6B7280",
-      inputBg: isDark ? "#1C1C1E" : "#F2F2F7",
-      shadow: isDark ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.08)",
-    },
-  };
-};
+import { Colors, Fonts } from "@/constants/theme";
+import { useColorScheme as useAppColorScheme } from "@/hooks/use-color-scheme";
+
+/* ───────── Theme Adapter ───────── */
+// Replaced local useTheme with global constants
+
 
 const SCREEN_W = Dimensions.get("window").width;
 
@@ -165,9 +142,36 @@ const hueFrom = (s: string) => {
 
 /* ───────── Screen ───────── */
 export default function CommunityScreen() {
+  // Adapter for existing code
+  const colorScheme = useAppColorScheme();
+  const isDark = colorScheme === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
+
+  const colors = useMemo(() => ({
+    bg: theme.background,
+    bgSecondary: theme.muted,
+    surface: theme.surface,
+    surfaceElevated: theme.surface,
+    text: theme.text,
+    textSecondary: theme.textMuted,
+    textTertiary: theme.textMuted,
+    border: theme.border,
+    primary: theme.primary,
+    primaryGradientStart: theme.primary,
+    primaryGradientEnd: theme.accent,
+    destructive: theme.danger,
+    success: theme.success,
+    warning: theme.warning,
+    onlineBg: isDark ? "rgba(34, 197, 94, 0.2)" : "#DCFCE7",
+    onlineText: theme.success,
+    offlineBg: isDark ? "rgba(113, 113, 122, 0.2)" : "#F3F4F6",
+    offlineText: theme.textMuted,
+    inputBg: theme.surface,
+    shadow: isDark ? "#000" : "#000",
+  }), [theme, isDark]);
+
   const { id } = useLocalSearchParams<{ id: string }>();
   const communityId = String(id || "");
-  const { isDark, colors } = useTheme();
   const { user } = React.useContext(AuthContext) as any;
   const { socket, socketConnected, uploadAndSendFile } = useSocket() as any;
   const insets = useSafeAreaInsets();
@@ -941,7 +945,7 @@ export default function CommunityScreen() {
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons name="chevron-back" size={22} color={colors.primary} />
-          <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '500', marginLeft: 2 }}>
+          <Text style={{ color: colors.primary, fontSize: 16, fontFamily: Fonts.sans, marginLeft: 2 }}>
             Back
           </Text>
         </TouchableOpacity>
@@ -952,7 +956,7 @@ export default function CommunityScreen() {
             style={{
               color: colors.text,
               fontSize: 17,
-              fontWeight: "600",
+              fontFamily: Fonts.bold,
               letterSpacing: -0.3,
             }}
             numberOfLines={1}
@@ -1025,7 +1029,7 @@ export default function CommunityScreen() {
                 <Text
                   style={{
                     color: active ? colors.primary : colors.textSecondary,
-                    fontWeight: active ? "600" : "500",
+                    fontFamily: active ? Fonts.bold : Fonts.sans,
                     fontSize: 14,
                     letterSpacing: -0.2,
                   }}
@@ -1046,11 +1050,9 @@ export default function CommunityScreen() {
           activeOpacity={0.9}
           style={{ marginTop: 16 }}
         >
-          <LinearGradient
-            colors={['#5E5CE6', '#007AFF']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
+          <View
             style={{
+              backgroundColor: colors.primary,
               paddingVertical: 16,
               borderRadius: 14,
               alignItems: "center",
@@ -1060,13 +1062,13 @@ export default function CommunityScreen() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ color: "#FFFFFF", fontWeight: "700", fontSize: 16 }}>
+                <Text style={{ color: "#FFFFFF", fontFamily: Fonts.bold, fontSize: 16 }}>
                   Join Community
                 </Text>
                 <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
               </View>
             )}
-          </LinearGradient>
+          </View>
         </TouchableOpacity>
       )}
     </View>
@@ -1117,7 +1119,7 @@ export default function CommunityScreen() {
         ) : (
           <Text style={{
             color: "#fff",
-            fontWeight: "800",
+            fontFamily: Fonts.bold,
             fontSize: size * 0.375,
             textShadowColor: 'rgba(0, 0, 0, 0.3)',
             textShadowOffset: { width: 0, height: 1 },
@@ -1192,7 +1194,7 @@ export default function CommunityScreen() {
               ) : (
                 <Text style={{
                   color: "#fff",
-                  fontWeight: "700",
+                  fontFamily: Fonts.bold,
                   fontSize: 16,
                   letterSpacing: 0.3,
                 }}>
@@ -1230,7 +1232,7 @@ export default function CommunityScreen() {
               <Text
                 style={{
                   color: colors.text,
-                  fontWeight: "600",
+                  fontFamily: Fonts.bold,
                   fontSize: 15,
                   letterSpacing: -0.3,
                 }}
@@ -1251,7 +1253,7 @@ export default function CommunityScreen() {
                   <Text style={{
                     color: colors.primary,
                     fontSize: 10,
-                    fontWeight: "700",
+                    fontFamily: Fonts.bold,
                     letterSpacing: 0.2,
                   }}>
                     YOU
@@ -1265,7 +1267,7 @@ export default function CommunityScreen() {
                 color: isOnline ? '#34C759' : colors.textSecondary,
                 fontSize: 12,
                 marginTop: 2,
-                fontWeight: isOnline ? '500' : '400',
+                fontFamily: isOnline ? Fonts.sans : Fonts.regular,
                 letterSpacing: -0.1,
               }}
             >
@@ -1314,7 +1316,7 @@ export default function CommunityScreen() {
             flex: 1,
             marginLeft: 10,
             fontSize: 15,
-            fontWeight: '400',
+            fontFamily: Fonts.regular,
             letterSpacing: -0.2,
           }}
           returnKeyType="search"
@@ -1383,7 +1385,7 @@ export default function CommunityScreen() {
                 <Text
                   style={{
                     color: active ? colors.primary : colors.textSecondary,
-                    fontWeight: active ? "600" : "500",
+                    fontFamily: active ? Fonts.bold : Fonts.sans,
                     fontSize: 14,
                     letterSpacing: -0.1,
                   }}
@@ -1394,7 +1396,7 @@ export default function CommunityScreen() {
                   <Text
                     style={{
                       color: active ? colors.primary : (isDark ? 'rgba(255, 255, 255, 0.3)' : 'rgba(0, 0, 0, 0.3)'),
-                      fontWeight: "500",
+                      fontFamily: Fonts.sans,
                       fontSize: 13,
                     }}
                   >
@@ -1562,7 +1564,7 @@ export default function CommunityScreen() {
                 shadowRadius: 4,
               }}
             >
-              <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "700", letterSpacing: 0.5 }}>
+              <Text style={{ color: colors.textSecondary, fontSize: 13, fontFamily: Fonts.sans, letterSpacing: 0.5 }}>
                 {dayLabel(curDate)}
               </Text>
             </View>
@@ -1635,11 +1637,11 @@ export default function CommunityScreen() {
               <View style={{ flex: 1, maxWidth: "80%", position: 'relative' }}>
                 {isFirstOfGroup && (
                   <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 }}>
-                    <Text style={{ color: colors.text, fontSize: 14, fontWeight: "600", marginRight: 6 }}>
+                    <Text style={{ color: colors.text, fontSize: 14, fontFamily: Fonts.bold, marginRight: 6 }}>
                       {item.sender}
                     </Text>
                     {!isLastOfGroup && (
-                      <Text style={{ color: colors.textSecondary, fontSize: 10 }}>
+                      <Text style={{ color: colors.textSecondary, fontSize: 10, fontFamily: Fonts.sans }}>
                         {new Date(item.timestamp).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     )}
@@ -1671,7 +1673,7 @@ export default function CommunityScreen() {
                     }}
                   >
                     <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
-                    <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+                    <Text style={{ color: colors.primary, fontSize: 13, fontFamily: Fonts.bold }}>
                       Replying to {item.replyTo.sender}
                     </Text>
                   </TouchableOpacity>
@@ -1767,7 +1769,7 @@ export default function CommunityScreen() {
                                   marginLeft: 3,
                                   fontSize: 10,
                                   color: data.hasYou ? '#fff' : colors.text,
-                                  fontWeight: '600'
+                                  fontFamily: Fonts.bold
                                 }}>
                                   {data.count}
                                 </Text>
@@ -1852,7 +1854,7 @@ export default function CommunityScreen() {
                                   marginLeft: 3,
                                   fontSize: 10,
                                   color: data.hasYou ? '#fff' : colors.text,
-                                  fontWeight: '600'
+                                  fontFamily: Fonts.bold
                                 }}>
                                   {data.count}
                                 </Text>
@@ -1938,7 +1940,7 @@ export default function CommunityScreen() {
                                   marginLeft: 3,
                                   fontSize: 10,
                                   color: data.hasYou ? '#fff' : colors.text,
-                                  fontWeight: '600'
+                                  fontFamily: Fonts.bold
                                 }}>
                                   {data.count}
                                 </Text>
@@ -1980,7 +1982,7 @@ export default function CommunityScreen() {
                       elevation: 2,
                     }}
                   >
-                    <Text style={{ color: colors.primary, fontSize: 13, fontWeight: '700' }}>
+                    <Text style={{ color: colors.primary, fontSize: 13, fontFamily: Fonts.bold }}>
                       Replying to {item.replyTo.sender}
                     </Text>
                     <Ionicons name="arrow-undo-outline" size={13} color={colors.primary} />
@@ -1993,11 +1995,9 @@ export default function CommunityScreen() {
                   activeOpacity={0.9}
                   style={{ position: 'relative' }}
                 >
-                  <LinearGradient
-                    colors={['#007AFF', '#5E5CE6']}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
+                  <View
                     style={{
+                      backgroundColor: colors.primary,
                       paddingHorizontal: 12,
                       paddingVertical: 8,
                       borderRadius: 12,
@@ -2233,7 +2233,7 @@ export default function CommunityScreen() {
                         )}
                       </View>
                     )}
-                  </LinearGradient>
+                  </View>
                 </TouchableOpacity>
 
                 {/* Reactions Display (Right Aligned) - Premium Pill Style */}
@@ -2281,7 +2281,7 @@ export default function CommunityScreen() {
                             marginLeft: 5,
                             fontSize: 11,
                             color: data.hasYou ? colors.primary : colors.textSecondary,
-                            fontWeight: '700'
+                            fontFamily: Fonts.bold
                           }}>
                             {data.count}
                           </Text>
@@ -2363,7 +2363,7 @@ export default function CommunityScreen() {
                   <View style={{ alignItems: "center", marginBottom: 12 }}>
                     <Ionicons name="lock-closed-outline" size={40} color={colors.textSecondary} />
                   </View>
-                  <Text style={{ color: colors.text, fontSize: 17, textAlign: "center", fontWeight: "600" }}>
+                  <Text style={{ color: colors.text, fontSize: 17, textAlign: "center", fontFamily: Fonts.bold }}>
                     Members Only
                   </Text>
                   <Text style={{ color: colors.textSecondary, marginTop: 8, textAlign: "center" }}>
@@ -2394,7 +2394,7 @@ export default function CommunityScreen() {
                         paddingVertical: 12,
                       }}
                     >
-                      <Text style={{ color: colors.destructive, fontSize: 14, fontWeight: "500" }}>{chatError}</Text>
+                      <Text style={{ color: colors.destructive, fontSize: 14, fontFamily: Fonts.sans }}>{chatError}</Text>
                     </View>
                   )}
 
@@ -2430,7 +2430,7 @@ export default function CommunityScreen() {
                                     borderRadius: 20,
                                   }}
                                 >
-                                  <Text style={{ color: colors.primary, fontSize: 14, fontWeight: "600" }}>
+                                  <Text style={{ color: colors.primary, fontSize: 14, fontFamily: Fonts.bold }}>
                                     Load earlier messages
                                   </Text>
                                 </View>
@@ -2452,7 +2452,7 @@ export default function CommunityScreen() {
                                 >
                                   <Ionicons name="chatbubbles-outline" size={24} color={colors.textSecondary} />
                                 </View>
-                                <Text style={{ color: colors.textSecondary, fontSize: 15, fontWeight: "500" }}>
+                                <Text style={{ color: colors.textSecondary, fontSize: 15, fontFamily: Fonts.sans }}>
                                   Start of conversation
                                 </Text>
                               </View>
@@ -2497,7 +2497,7 @@ export default function CommunityScreen() {
                           <Text style={{
                             color: colors.success,
                             fontSize: 13,
-                            fontWeight: "700",
+                            fontFamily: Fonts.bold,
                             letterSpacing: 0.3,
                           }}>
                             {typingLabel}
@@ -2543,7 +2543,7 @@ export default function CommunityScreen() {
                           borderLeftColor: colors.primary,
                         }}>
                           <View style={{ flex: 1 }}>
-                            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>
+                            <Text style={{ fontSize: 12, color: colors.primary, fontFamily: Fonts.bold }}>
                               Replying to {replyingTo.sender}
                             </Text>
                             <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }} numberOfLines={1}>
@@ -2652,7 +2652,7 @@ export default function CommunityScreen() {
                                     >
                                       <Ionicons name="image" size={18} color="#fff" />
                                     </View>
-                                    <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
+                                    <Text style={{ color: colors.text, fontSize: 16, fontFamily: Fonts.bold, flex: 1 }}>
                                       Photo
                                     </Text>
                                     <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
@@ -2691,7 +2691,7 @@ export default function CommunityScreen() {
                                     >
                                       <Ionicons name="videocam" size={18} color="#fff" />
                                     </View>
-                                    <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
+                                    <Text style={{ color: colors.text, fontSize: 16, fontFamily: Fonts.bold, flex: 1 }}>
                                       Video
                                     </Text>
                                     <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
@@ -2735,7 +2735,7 @@ export default function CommunityScreen() {
                                     >
                                       <Ionicons name="camera" size={18} color="#fff" />
                                     </View>
-                                    <Text style={{ color: colors.text, fontSize: 16, fontWeight: '600', flex: 1 }}>
+                                    <Text style={{ color: colors.text, fontSize: 16, fontFamily: Fonts.bold, flex: 1 }}>
                                       Camera
                                     </Text>
                                     <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
@@ -2905,7 +2905,7 @@ export default function CommunityScreen() {
                           >
                             <Ionicons name="people-outline" size={32} color={colors.textSecondary} />
                           </View>
-                          <Text style={{ color: colors.text, fontSize: 17, fontWeight: "600" }}>No members found</Text>
+                          <Text style={{ color: colors.text, fontSize: 17, fontFamily: Fonts.bold }}>No members found</Text>
                           <Text style={{ color: colors.textSecondary, fontSize: 15, marginTop: 4 }}>
                             Try adjusting your filters
                           </Text>
@@ -2919,7 +2919,7 @@ export default function CommunityScreen() {
                         </View>
                       ) : members.length > 0 ? (
                         <View style={{ paddingVertical: 20, alignItems: "center" }}>
-                          <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: "500" }}>
+                          <Text style={{ color: colors.textSecondary, fontSize: 13, fontFamily: Fonts.sans }}>
                             • • •
                           </Text>
                         </View>

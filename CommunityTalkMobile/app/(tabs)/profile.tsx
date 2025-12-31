@@ -34,6 +34,7 @@ import * as ImagePicker from "expo-image-picker";
 import { AuthContext } from "@/src/context/AuthContext";
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
+import { Colors, Fonts } from "@/constants/theme";
 
 /* ───────────────── types ───────────────── */
 type ProfileData = {
@@ -75,68 +76,68 @@ const buildSections = (
   profile: ProfileData,
   notificationsBadge?: string
 ): SectionData[] => [
-  { title: "Profile", data: [profile] },
-  {
-    title: "Settings",
-    data: [
-      {
-        type: "setting",
-        title: "Account Settings",
-        icon: "person-circle-outline",
-        screen: "/profile/account",
-      },
-      {
-        type: "setting",
-        title: "Notifications",
-        icon: "notifications-outline",
-        badge: notificationsBadge,
-        screen: "/profile/notifications",
-      },
-      {
-        type: "setting",
-        title: "Privacy & Security",
-        icon: "shield-checkmark-outline",
-        screen: "/profile/security",
-      },
-      {
-        type: "setting",
-        title: "Help & Support",
-        icon: "help-circle-outline",
-        screen: "/profile/help",
-      },
-    ],
-  },
-  {
-    title: "Quick Actions",
-    data: [
-      {
-        type: "quick_action",
-        title: "View Landing",
-        icon: "color-wand-outline",
-        color: "#8B5CF6",
-        screen: "/landing",
-      },
-      {
-        type: "quick_action",
-        title: "Your Activity",
-        icon: "stats-chart-outline",
-        color: "#10B981",
-        screen: "/profile/activity",
-      },
-      {
-        type: "quick_action",
-        title: "Invite Friends",
-        icon: "person-add-outline",
-        color: "#3B82F6",
-        screen: "/profile/invite",
-      },
-    ],
-  },
-  {
-    title: "Danger Zone",
-    data: [{ type: "logout", title: "Log Out", icon: "log-out-outline" }],
-  },
-];
+    { title: "Profile", data: [profile] },
+    {
+      title: "Settings",
+      data: [
+        {
+          type: "setting",
+          title: "Account Settings",
+          icon: "person-circle-outline",
+          screen: "/profile/account",
+        },
+        {
+          type: "setting",
+          title: "Notifications",
+          icon: "notifications-outline",
+          badge: notificationsBadge,
+          screen: "/profile/notifications",
+        },
+        {
+          type: "setting",
+          title: "Privacy & Security",
+          icon: "shield-checkmark-outline",
+          screen: "/profile/security",
+        },
+        {
+          type: "setting",
+          title: "Help & Support",
+          icon: "help-circle-outline",
+          screen: "/profile/help",
+        },
+      ],
+    },
+    {
+      title: "Quick Actions",
+      data: [
+        {
+          type: "quick_action",
+          title: "Edit Profile",
+          icon: "create-outline",
+          color: "#8B5CF6",
+          screen: "/profile/edit",
+        },
+        {
+          type: "quick_action",
+          title: "Your Activity",
+          icon: "stats-chart-outline",
+          color: "#10B981",
+          screen: "/profile/activity",
+        },
+        {
+          type: "quick_action",
+          title: "Invite Friends",
+          icon: "person-add-outline",
+          color: "#3B82F6",
+          screen: "/profile/invite",
+        },
+      ],
+    },
+    {
+      title: "Danger Zone",
+      data: [{ type: "logout", title: "Log Out", icon: "log-out-outline" }],
+    },
+  ];
 
 /* ───────────────── REUSABLE COMPONENTS ───────────────── */
 const ProfileHeader = ({
@@ -154,7 +155,8 @@ const ProfileHeader = ({
   onEditAvatar: () => void;
   isUploading: boolean;
 }) => {
-  console.log("ProfileHeader render - avatar:", item.avatar);
+  const theme = isDark ? Colors.dark : Colors.light;
+
   const animatedContentStyle = useAnimatedStyle(() => ({
     transform: [
       { translateY: interpolate(scrollY.value, [-200, 0], [-50, 0], "clamp") },
@@ -167,48 +169,65 @@ const ProfileHeader = ({
     ],
   }));
 
-  const gradientColors = isDark
-    ? (["#581c87", "#1e293b"] as const)
-    : (["#f5f3ff", "#e0e7ff"] as const);
+  const gradientColors = [theme.muted, theme.border] as const;
   const initials = item.name.slice(0, 2).toUpperCase() || "CT";
   const avatarUri = item.avatar;
   console.log("avatarUri:", avatarUri);
 
   return (
-    <View className="mb-6 overflow-hidden">
+    <View style={{ marginBottom: 24, overflow: 'hidden' }}>
       <Animated.View
-        style={animatedBackgroundStyle}
-        className="absolute inset-0"
+        style={[animatedBackgroundStyle, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }]}
       >
-        <LinearGradient colors={gradientColors} className="w-full h-full" />
+        <LinearGradient colors={gradientColors} style={{ width: '100%', height: '100%' }} />
       </Animated.View>
 
       <Animated.View
         style={[
           animatedContentStyle,
           {
-            paddingTop: insets.top + 80,
-            paddingBottom: 32,
+            paddingTop: insets.top + 60,
+            paddingBottom: 24,
             paddingHorizontal: 24,
+            alignItems: 'center',
           },
         ]}
-        className="items-center"
       >
         <Pressable
           onPress={onEditAvatar}
           disabled={isUploading}
-          className="h-24 w-24 mb-4 relative shadow-lg"
+          style={{
+            height: 110,
+            width: 110,
+            marginBottom: 16,
+            alignItems: 'center',
+            justifyContent: 'center',
+            shadowColor: '#000',
+            shadowOpacity: 0.1,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 4 }
+          }}
         >
-          <View className="h-full w-full rounded-full overflow-hidden border-4 border-white bg-gray-200 dark:border-zinc-800 dark:bg-zinc-700 items-center justify-center">
+          <View style={{
+            height: '100%',
+            width: '100%',
+            borderRadius: 999,
+            overflow: 'hidden',
+            borderWidth: 4,
+            borderColor: theme.surface,
+            backgroundColor: theme.surface,
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}>
             {avatarUri ? (
               <Image
-                key={avatarUri} // ✅ FORCE RE-RENDER WHEN URL CHANGES
+                key={avatarUri}
                 source={{ uri: avatarUri }}
                 className="w-full h-full"
                 resizeMode="cover"
               />
             ) : (
-              <Text className="font-black text-3xl tracking-tighter text-gray-500 dark:text-gray-400">
+              <Text style={{ fontFamily: Fonts.bold, fontSize: 36, color: theme.textMuted }}>
                 {initials}
               </Text>
             )}
@@ -219,50 +238,74 @@ const ProfileHeader = ({
             )}
           </View>
           {!isUploading && (
-            <View className="absolute bottom-0 right-0 bg-indigo-600 h-8 w-8 rounded-full items-center justify-center border-2 border-white dark:border-zinc-900 shadow-sm">
-              <Ionicons name="pencil" size={14} color="white" />
+            <View style={{
+              position: 'absolute',
+              bottom: 4,
+              right: 4,
+              backgroundColor: theme.primary,
+              height: 34,
+              width: 34,
+              borderRadius: 17,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 3,
+              borderColor: theme.surface
+            }}>
+              <Ionicons name="pencil" size={16} color="white" />
             </View>
           )}
         </Pressable>
 
-        <Text className="text-2xl font-bold shadow-sm text-gray-900 dark:text-white">
+        <Text style={{ fontSize: 26, fontFamily: Fonts.bold, color: theme.text, marginBottom: 4, textAlign: 'center' }}>
           {item.name}
         </Text>
-        
-        {/* Bio Section - don't show if it's just the email */}
+
+        {/* Bio Section */}
         {item.bio && item.bio.trim() && !item.bio.includes('@') && (
-          <Text className="text-sm text-gray-600 dark:text-gray-300 mt-2 text-center px-4">
+          <Text style={{
+            fontSize: 15,
+            color: theme.textMuted,
+            fontFamily: Fonts.regular,
+            textAlign: 'center',
+            paddingHorizontal: 24,
+            marginTop: 6,
+            lineHeight: 22
+          }}>
             {item.bio}
           </Text>
         )}
 
-        <View className="flex-row justify-center items-center mt-6 gap-6 p-4 rounded-2xl border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
-          <View className="items-center px-2">
-            <Text className="font-bold text-lg text-gray-900 dark:text-white">
-              {item.stats.communities}
-            </Text>
-            <Text className="text-xs text-gray-600 dark:text-slate-300">
-              Communities
-            </Text>
-          </View>
-          <View className="w-px h-6 bg-black/10 dark:bg-white/20" />
-          <View className="items-center px-2">
-            <Text className="font-bold text-lg text-gray-900 dark:text-white">
-              {item.stats.messages}
-            </Text>
-            <Text className="text-xs text-gray-600 dark:text-slate-300">
-              Messages
-            </Text>
-          </View>
-          <View className="w-px h-6 bg-black/10 dark:bg-white/20" />
-          <View className="items-center px-2">
-            <Text className="font-bold text-lg text-gray-900 dark:text-white">
-              {item.stats.connections}
-            </Text>
-            <Text className="text-xs text-gray-600 dark:text-slate-300">
-              Connections
-            </Text>
-          </View>
+        <View style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginTop: 28,
+          width: '100%',
+          paddingVertical: 18,
+          paddingHorizontal: 16,
+          borderRadius: 24,
+          backgroundColor: theme.surface,
+          shadowColor: '#000',
+          shadowOpacity: 0.03,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 2 },
+          borderWidth: 1,
+          borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'
+        }}>
+          {[
+            { label: 'Communities', value: item.stats.communities },
+            { label: 'Messages', value: item.stats.messages },
+            { label: 'Connections', value: item.stats.connections }
+          ].map((stat, i) => (
+            <View key={stat.label} style={{ alignItems: 'center', flex: 1 }}>
+              <Text style={{ fontSize: 20, fontFamily: Fonts.bold, color: theme.text, marginBottom: 2 }}>
+                {stat.value}
+              </Text>
+              <Text style={{ fontSize: 12, color: theme.textMuted, fontFamily: Fonts.bold, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                {stat.label}
+              </Text>
+            </View>
+          ))}
         </View>
       </Animated.View>
     </View>
@@ -271,79 +314,127 @@ const ProfileHeader = ({
 
 const SettingsRow = ({
   item,
-  isDark,
 }: {
   item: SettingRowData;
-  isDark: boolean;
-}) => (
-  <Pressable
-    onPress={() => router.push(item.screen as any)}
-    className="flex-row items-center justify-between p-4 bg-white dark:bg-zinc-900"
-  >
-    <View className="flex-row items-center gap-4">
-      <View className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-zinc-800 items-center justify-center">
+  isDark: boolean; // kept for compatibility if needed, but we use hook now or pass theme? Better to use hook inside if we want context, but parent passes isDark.
+}) => {
+  const isDark = useDeviceColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
+
+  return (
+    <Pressable
+      onPress={() => router.push(item.screen as any)}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 18,
+        backgroundColor: theme.surface,
+        marginHorizontal: 16,
+        marginBottom: 8,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+        shadowColor: '#000',
+        shadowOpacity: 0.02,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 2 }
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+        <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: theme.muted, alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons
+            name={item.icon}
+            size={18}
+            color={theme.icon}
+          />
+        </View>
+        <Text style={{ fontSize: 16, fontFamily: Fonts.bold, color: theme.text }}>
+          {item.title}
+        </Text>
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        {item.badge && (
+          <View
+            style={{
+              paddingHorizontal: 10,
+              paddingVertical: 4,
+              borderRadius: 8,
+              backgroundColor: item.badge === "Required" ? theme.danger + '15' : theme.primary + '15'
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                fontFamily: Fonts.bold,
+                color: item.badge === "Required" ? theme.danger : theme.primary
+              }}
+            >
+              {item.badge}
+            </Text>
+          </View>
+        )}
         <Ionicons
-          name={item.icon}
+          name="chevron-forward"
           size={18}
-          color={isDark ? "#FFFFFF" : "#000000"}
+          color={theme.border}
         />
       </View>
-      <Text className="font-semibold text-base text-black dark:text-white">
-        {item.title}
-      </Text>
-    </View>
-    <View className="flex-row items-center gap-2">
-      {item.badge && (
-        <View
-          className={`px-2 py-0.5 rounded-full ${item.badge === "Required" ? "bg-red-100 dark:bg-red-900/30" : "bg-indigo-100 dark:bg-indigo-900/30"}`}
-        >
-          <Text
-            className={`text-xs font-bold ${item.badge === "Required" ? "text-red-600 dark:text-red-400" : "text-indigo-600 dark:text-indigo-400"}`}
-          >
-            {item.badge}
-          </Text>
-        </View>
-      )}
-      <Ionicons
-        name="chevron-forward-outline"
-        size={18}
-        color={isDark ? "#71717a" : "#9ca3af"}
-      />
-    </View>
-  </Pressable>
-);
+    </Pressable>
+  );
+};
 
 const QuickActionsRow = ({
   items,
-  isDark,
 }: {
   items: QuickActionData[];
   isDark: boolean;
-}) => (
-  <View className="flex-row gap-3 mx-4">
-    {items.map((item) => (
-      <Pressable
-        key={item.title}
-        onPress={() => router.push(item.screen as any)}
-        className="flex-1 bg-white dark:bg-zinc-900 p-4 rounded-2xl items-center shadow-sm"
-      >
-        <View
+}) => {
+  const isDark = useDeviceColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
+
+  return (
+    <View style={{ flexDirection: 'row', gap: 12, marginHorizontal: 16, marginBottom: 8 }}>
+      {items.map((item) => (
+        <Pressable
+          key={item.title}
+          onPress={() => router.push(item.screen as any)}
           style={{
-            backgroundColor: isDark
-              ? "rgba(255, 255, 255, 0.1)"
-              : (`${item.color}1A` as any),
+            flex: 1,
+            backgroundColor: theme.surface,
+            paddingVertical: 20,
+            paddingHorizontal: 8,
+            borderRadius: 24,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOpacity: 0.03,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 },
+            borderWidth: 1,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)'
           }}
-          className="w-12 h-12 rounded-lg items-center justify-center mb-2"
         >
-          <Ionicons name={item.icon} size={24} color={item.color} />
-        </View>
-        <Text className="font-semibold text-sm text-center text-black dark:text-white">
-          {item.title}
-        </Text>
-      </Pressable>
-    ))}
-  </View>
-);
+          <View
+            style={{
+              backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : item.color + '10',
+              width: 52,
+              height: 52,
+              borderRadius: 26,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 10
+            }}
+          >
+            <Ionicons name={item.icon} size={24} color={item.color} />
+          </View>
+          <Text style={{ fontFamily: Fonts.bold, fontSize: 13, textAlign: 'center', color: theme.text }}>
+            {item.title}
+          </Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+};
 
 const AnimatedSectionList = Animated.createAnimatedComponent(
   SectionList<SectionItem, SectionData>
@@ -364,6 +455,8 @@ const AuthedProfileView = ({
   scrollY,
   unreadDMs,
 }: any) => {
+  const theme = isDark ? Colors.dark : Colors.light;
+
   const animatedLargeHeaderStyle = useAnimatedStyle(() => ({
     opacity: interpolate(scrollY.value, [0, 40], [1, 0]),
     transform: [{ translateY: interpolate(scrollY.value, [0, 40], [0, -10]) }],
@@ -407,10 +500,24 @@ const AuthedProfileView = ({
         return (
           <Pressable
             onPress={handleLogout}
-            className="bg-white dark:bg-zinc-900 p-4 rounded-2xl flex-row items-center gap-4 mx-4 shadow-sm"
+            style={{
+              backgroundColor: theme.surface, // Clean surface
+              padding: 18,
+              borderRadius: 20,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 16,
+              marginHorizontal: 16,
+              borderWidth: 1,
+              borderColor: Colors.light.danger + '20', // Subtle red border
+              shadowColor: Colors.light.danger,
+              shadowOpacity: 0.05,
+              shadowRadius: 8,
+              shadowOffset: { width: 0, height: 4 }
+            }}
           >
-            <Ionicons name={item.icon} size={18} color="#EF4444" />
-            <Text className="font-semibold text-base text-red-500">
+            <Ionicons name={item.icon} size={18} color={Colors.light.danger} />
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 16, color: Colors.light.danger }}>
               {item.title}
             </Text>
           </Pressable>
@@ -445,7 +552,7 @@ const AuthedProfileView = ({
         }
         renderSectionHeader={({ section: { title } }) =>
           title === "Profile" || title === "Settings" ? null : (
-            <Text className="text-lg font-bold text-black dark:text-white mx-6 mt-6 mb-2">
+            <Text style={{ fontSize: 18, fontFamily: Fonts.bold, color: theme.text, marginLeft: 24, marginTop: 24, marginBottom: 8 }}>
               {title}
             </Text>
           )
@@ -454,16 +561,15 @@ const AuthedProfileView = ({
 
       {/* Sticky Header */}
       <View
-        style={{ paddingTop: insets.top, height: insets.top + 56 }}
-        className="absolute top-0 left-0 right-0 z-10 px-5 justify-end pb-2"
+        style={{ paddingTop: insets.top, height: insets.top + 56, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10, paddingHorizontal: 20, justifyContent: 'flex-end', paddingBottom: 8 }}
       >
         <BlurView
           intensity={80}
           tint={isDark ? "dark" : "light"}
-          className="absolute inset-0"
+          style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
         />
         <Animated.View style={animatedLargeHeaderStyle}>
-          <Text className="text-3xl font-bold text-black dark:text-white">
+          <Text style={{ fontSize: 30, fontFamily: Fonts.bold, color: theme.text }}>
             Profile
           </Text>
         </Animated.View>
@@ -471,10 +577,10 @@ const AuthedProfileView = ({
           style={[
             { position: "absolute", bottom: 12, left: 0, right: 0 },
             animatedSmallHeaderStyle,
+            { alignItems: 'center' }
           ]}
-          className="items-center"
         >
-          <Text className="text-base font-semibold text-black dark:text-white">
+          <Text style={{ fontSize: 16, fontFamily: Fonts.bold, color: theme.text }}>
             {profile.name}
           </Text>
         </Animated.View>
@@ -488,6 +594,7 @@ export default function ProfileScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const deviceScheme = useDeviceColorScheme();
   const isDark = deviceScheme === "dark";
+  const theme = isDark ? Colors.dark : Colors.light;
 
   const auth = React.useContext(AuthContext) as any;
   const isAuthed = !!auth?.user;
@@ -643,28 +750,27 @@ export default function ProfileScreen(): React.JSX.Element {
 
   if (loading) {
     return (
-      <View className="flex-1 justify-center items-center bg-slate-100 dark:bg-zinc-950">
-        <ActivityIndicator />
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.background }}>
+        <ActivityIndicator color={theme.primary} />
       </View>
     );
   }
 
   if (!isAuthed) {
     return (
-      <View className="flex-1 bg-slate-100 dark:bg-zinc-950">
+      <View style={{ flex: 1, backgroundColor: theme.background }}>
         <StatusBar style={isDark ? "light" : "dark"} />
         <View
-          className="flex-1 items-center justify-center"
-          style={{ paddingTop: insets.top }}
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: insets.top }}
         >
-          <Text className="text-2xl font-bold text-black dark:text-white">
+          <Text style={{ fontSize: 24, fontFamily: Fonts.bold, color: theme.text }}>
             You’re not signed in
           </Text>
           <Pressable
             onPress={() => router.push("/modal?context=auth")}
-            className="mt-6 px-5 py-3 rounded-2xl bg-indigo-600"
+            style={{ marginTop: 24, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 16, backgroundColor: theme.primary }}
           >
-            <Text className="text-white font-semibold">Log in</Text>
+            <Text style={{ color: '#FFF', fontFamily: Fonts.bold }}>Log in</Text>
           </Pressable>
         </View>
       </View>
@@ -672,7 +778,7 @@ export default function ProfileScreen(): React.JSX.Element {
   }
 
   return (
-    <View className="flex-1 bg-slate-100 dark:bg-zinc-950">
+    <View style={{ flex: 1, backgroundColor: theme.background }}>
       <StatusBar style={isDark ? "light" : "dark"} />
       <AuthedProfileView
         profile={profile}

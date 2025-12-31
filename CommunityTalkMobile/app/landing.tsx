@@ -10,27 +10,11 @@ import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 
 import { ThemedText } from "@/components/themed-text";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { AuthContext } from "@/src/context/AuthContext";
-
-const useTokens = (isDark: boolean) => ({
-  pageBg: isDark ? "#000000" : "#FFFFFF",
-  cardBg: isDark ? "#0F0F0F" : "#FAFBFC",
-  textPrimary: isDark ? "#FFFFFF" : "#111827",
-  textSecondary: isDark ? "#A1A1AA" : "#71717A",
-  textTertiary: isDark ? "#71717A" : "#A1A1AA",
-  border: isDark ? "#27272A" : "#F4F4F5",
-  borderSubtle: isDark ? "#18181B" : "#FAFAFA",
-  shadow: Platform.OS === "ios" ? (isDark ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.04)") : undefined,
-  primary: "#6366F1",
-  primaryLight: isDark ? "#818CF8" : "#6366F1",
-  primaryAlt: "#10B981",
-  accentPurple: "#8B5CF6",
-  accentPink: "#EC4899",
-});
+import { Colors, Fonts } from "@/constants/theme";
 
 type Feature = {
   emoji: string;
@@ -200,7 +184,6 @@ const PulseButton: React.FC<PulseButtonProps> = ({ children, onPress, style }) =
   const glowAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    // Subtle pulse glow effect
     Animated.loop(
       Animated.sequence([
         Animated.timing(glowAnim, {
@@ -280,7 +263,7 @@ const PulsingLogo: React.FC = () => {
         transform: [{ scale: pulseAnim }],
       }}
     >
-      <ThemedText style={{ fontSize: 18, fontWeight: "700", color: "#FFFFFF" }}>
+      <ThemedText style={{ fontSize: 18, fontFamily: Fonts.bold, color: "#FFFFFF" }}>
         CT
       </ThemedText>
     </Animated.View>
@@ -328,9 +311,9 @@ const StaggeredText: React.FC<StaggeredTextProps> = ({ text, delay = 0, style })
 };
 
 export default function Landing() {
-  const scheme = useColorScheme();
+  const scheme = useColorScheme() ?? 'light';
   const isDark = scheme === "dark";
-  const t = useTokens(isDark);
+  const colors = Colors[scheme];
   const auth = React.useContext(AuthContext);
   const insets = useSafeAreaInsets();
 
@@ -348,46 +331,46 @@ export default function Landing() {
     () => [
       {
         emoji: "🎓",
-        title: "Verified Communities",
-        desc: "Connect with 25+ NYC campuses through .edu verification",
-        gradient: ["#6366F1", "#8B5CF6"] as const,
+        title: "Verified Students Only",
+        desc: "Join your official campus network with .edu verification.",
+        gradient: [Colors.light.primary, "#2E8B57"] as const,
+      },
+      {
+        emoji: "💘",
+        title: "Student Dating",
+        desc: "Find your match within your campus or nearby colleges.",
+        gradient: ["#FF6B6B", "#EE5253"] as const,
       },
       {
         emoji: "🛕",
-        title: "Faith Groups",
-        desc: "Sikh, Muslim, Hindu, Christian, Jewish & Buddhist communities",
-        gradient: ["#8B5CF6", "#EC4899"] as const,
-      },
-      {
-        emoji: "📅",
-        title: "Campus Events",
-        desc: "Discover and share what's happening around you",
-        gradient: ["#F59E0B", "#EF4444"] as const,
-      },
-      {
-        emoji: "🔒",
-        title: "Private & Secure",
-        desc: "End-to-end encryption with no ads or tracking",
-        gradient: ["#10B981", "#14B8A6"] as const,
+        title: "Faith & Culture",
+        desc: "Connect with Sikh, Hindu, Muslim, Christian & Jewish groups.",
+        gradient: ["#FFA502", "#FF7F50"] as const,
       },
       {
         emoji: "💬",
         title: "Real-time Chat",
-        desc: "Fast messaging that works anywhere on campus",
-        gradient: ["#06B6D4", "#3B82F6"] as const,
+        desc: "Instant messaging that actually works on campus wifi.",
+        gradient: [Colors.light.primary, "#00CEC9"] as const,
       },
       {
-        emoji: "🛡️",
-        title: "Safe Communities",
-        desc: "Built-in moderation and safety tools",
-        gradient: ["#EF4444", "#F97316"] as const,
+        emoji: "📅",
+        title: "Campus Events",
+        desc: "Never miss out on what's happening around you.",
+        gradient: ["#A855F7", "#EC4899"] as const,
+      },
+      {
+        emoji: "🔒",
+        title: "Private & Secure",
+        desc: "End-to-end encrypted. No ads. No tracking.",
+        gradient: ["#10B981", "#059669"] as const,
       },
     ],
     []
   );
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: t.pageBg }} edges={["top", "left", "right"]}>
+    <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "left", "right"]}>
       <StatusBar style={isDark ? "light" : "dark"} translucent={false} />
 
       <ScrollView
@@ -404,16 +387,16 @@ export default function Landing() {
                   width: 40,
                   height: 40,
                   borderRadius: 10,
-                  backgroundColor: t.primary,
+                  backgroundColor: colors.primary,
                 }}
               >
                 <PulsingLogo />
               </View>
               <ThemedText
                 style={{
-                  color: t.textPrimary,
+                  color: colors.text,
                   fontSize: 18,
-                  fontWeight: "600",
+                  fontFamily: Fonts.bold,
                   letterSpacing: -0.3,
                 }}
               >
@@ -425,12 +408,12 @@ export default function Landing() {
               <View
                 className="px-4 py-1.5 rounded-lg"
                 style={{
-                  backgroundColor: isDark ? t.cardBg : "#F5F5F5",
+                  backgroundColor: colors.surface,
                   borderWidth: 1,
-                  borderColor: isDark ? t.border : "transparent",
+                  borderColor: isDark ? colors.border : "transparent",
                 }}
               >
-                <ThemedText style={{ color: t.textPrimary, fontWeight: "500", fontSize: 14 }}>
+                <ThemedText style={{ color: colors.text, fontFamily: Fonts.sans, fontSize: 14 }}>
                   Sign in
                 </ThemedText>
               </View>
@@ -443,52 +426,65 @@ export default function Landing() {
           <View style={{ marginBottom: 14 }}>
             <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
               <StaggeredText
-                text="Connect "
+                text="Your "
                 delay={150}
                 style={{
-                  color: t.textPrimary,
+                  color: colors.text,
                   fontSize: 46,
-                  fontWeight: "700",
+                  fontFamily: Fonts.bold,
                   lineHeight: 52,
                   letterSpacing: -1.4,
                 }}
               />
               <StaggeredText
-                text="campus"
+                text="Campus."
                 delay={250}
                 style={{
-                  color: t.primary,
+                  color: colors.primary,
                   fontSize: 46,
-                  fontWeight: "700",
+                  fontFamily: Fonts.bold,
                   lineHeight: 52,
                   letterSpacing: -1.4,
                 }}
               />
             </View>
-            <StaggeredText
-              text="and faith groups"
-              delay={350}
-              style={{
-                color: t.textPrimary,
-                fontSize: 46,
-                fontWeight: "700",
-                lineHeight: 52,
-                letterSpacing: -1.4,
-              }}
-            />
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
+              <StaggeredText
+                text="Your "
+                delay={350}
+                style={{
+                  color: colors.text,
+                  fontSize: 46,
+                  fontFamily: Fonts.bold,
+                  lineHeight: 52,
+                  letterSpacing: -1.4,
+                }}
+              />
+              <StaggeredText
+                text="People."
+                delay={450}
+                style={{
+                  color: colors.primary,
+                  fontSize: 46,
+                  fontFamily: Fonts.bold,
+                  lineHeight: 52,
+                  letterSpacing: -1.4,
+                }}
+              />
+            </View>
           </View>
 
           <AnimatedCard delay={450}>
             <ThemedText
               style={{
-                color: t.textSecondary,
+                color: colors.textMuted,
                 fontSize: 16,
                 lineHeight: 24,
                 marginBottom: 32,
-                fontWeight: "400",
+                fontFamily: Fonts.regular,
               }}
             >
-              NYC's hub for verified student communities
+              The exclusive network for verified students. Connect, date, and vibe with your campus community.
             </ThemedText>
           </AnimatedCard>
 
@@ -497,7 +493,7 @@ export default function Landing() {
               <View
                 className="rounded-xl py-3.5 items-center"
                 style={{
-                  backgroundColor: t.primary,
+                  backgroundColor: colors.primary,
                   shadowColor: "#000000",
                   shadowOpacity: isDark ? 0.3 : 0.08,
                   shadowRadius: 8,
@@ -505,7 +501,7 @@ export default function Landing() {
                   elevation: 2,
                 }}
               >
-                <ThemedText style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 16 }}>
+                <ThemedText style={{ color: "#FFFFFF", fontFamily: Fonts.bold, fontSize: 16 }}>
                   Get Started →
                 </ThemedText>
               </View>
@@ -518,14 +514,14 @@ export default function Landing() {
           <AnimatedCard delay={650}>
             <ThemedText
               style={{
-                color: t.textPrimary,
+                color: colors.text,
                 fontSize: 26,
-                fontWeight: "600",
+                fontFamily: Fonts.bold,
                 letterSpacing: -0.6,
                 marginBottom: 20,
               }}
             >
-              Why students love us
+              Everything you need
             </ThemedText>
           </AnimatedCard>
 
@@ -536,9 +532,9 @@ export default function Landing() {
                   <View
                     className="rounded-xl p-4"
                     style={{
-                      backgroundColor: t.cardBg,
+                      backgroundColor: colors.surface,
                       borderWidth: 1,
-                      borderColor: t.border,
+                      borderColor: colors.border,
                     }}
                   >
                     <View className="flex-row items-start gap-3">
@@ -557,9 +553,9 @@ export default function Landing() {
                       <View className="flex-1" style={{ paddingTop: 1 }}>
                         <ThemedText
                           style={{
-                            color: t.textPrimary,
+                            color: colors.text,
                             fontSize: 16,
-                            fontWeight: "600",
+                            fontFamily: Fonts.bold,
                             marginBottom: 3,
                             letterSpacing: -0.1,
                           }}
@@ -568,10 +564,10 @@ export default function Landing() {
                         </ThemedText>
                         <ThemedText
                           style={{
-                            color: t.textSecondary,
+                            color: colors.textMuted,
                             fontSize: 14,
                             lineHeight: 19,
-                            fontWeight: "400",
+                            fontFamily: Fonts.regular,
                           }}
                         >
                           {f.desc}
@@ -591,29 +587,29 @@ export default function Landing() {
             <View
               className="rounded-xl p-5"
               style={{
-                backgroundColor: isDark ? "#0F0F0F" : "#FAFAFA",
+                backgroundColor: colors.surface,
                 borderWidth: 1,
-                borderColor: t.border,
+                borderColor: colors.border,
               }}
             >
               <ThemedText
                 style={{
-                  color: t.textPrimary,
+                  color: colors.text,
                   fontSize: 22,
-                  fontWeight: "600",
+                  fontFamily: Fonts.bold,
                   marginBottom: 8,
                   letterSpacing: -0.4,
                 }}
               >
-                Ready to connect?
+                Ready to join?
               </ThemedText>
               <ThemedText
                 style={{
-                  color: t.textSecondary,
+                  color: colors.textMuted,
                   lineHeight: 22,
                   marginBottom: 20,
                   fontSize: 14,
-                  fontWeight: "400",
+                  fontFamily: Fonts.regular,
                 }}
               >
                 Join authentic student communities across NYC—no noise, no ads, just real connections.
@@ -623,7 +619,7 @@ export default function Landing() {
                 <View
                   className="rounded-xl py-3.5 items-center"
                   style={{
-                    backgroundColor: t.primary,
+                    backgroundColor: colors.primary,
                     shadowColor: "#000000",
                     shadowOpacity: isDark ? 0.3 : 0.08,
                     shadowRadius: 8,
@@ -631,7 +627,7 @@ export default function Landing() {
                     elevation: 2,
                   }}
                 >
-                  <ThemedText style={{ color: "#FFFFFF", fontWeight: "600", fontSize: 16 }}>
+                  <ThemedText style={{ color: "#FFFFFF", fontFamily: Fonts.bold, fontSize: 16 }}>
                     Create Account
                   </ThemedText>
                 </View>

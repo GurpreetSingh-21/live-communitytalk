@@ -9,8 +9,9 @@ import {
   Platform,
   Alert,
   Linking,
-  useColorScheme as useDeviceColorScheme,
 } from 'react-native';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { router } from 'expo-router';
@@ -38,8 +39,9 @@ const DEFAULT_PRIVACY_PREFS: PrivacyPrefs = {
 
 export default function SecurityAndPrivacyScreen() {
   const insets = useSafeAreaInsets();
-  const deviceScheme = useDeviceColorScheme();
-  const isDark = deviceScheme === 'dark';
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
+  const isDark = scheme === 'dark';
 
   const auth = useContext(AuthContext);
   const user = auth.user;
@@ -48,12 +50,12 @@ export default function SecurityAndPrivacyScreen() {
   const [loadingPrefs, setLoadingPrefs] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  const bg = isDark ? '#020617' : '#F1F5F9';
-  const cardBg = isDark ? '#020617' : '#FFFFFF';
-  const border = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(15,23,42,0.06)';
-  const textPrimary = isDark ? '#F9FAFB' : '#020617';
-  const textSecondary = isDark ? '#9CA3AF' : '#6B7280';
-  const accent = '#6366F1';
+  const bg = colors.background;
+  const cardBg = colors.surface;
+  const border = colors.border;
+  const textPrimary = colors.text;
+  const textSecondary = colors.textMuted;
+  const accent = colors.primary;
 
   // ───────────────── Load cached prefs (local) ─────────────────
   useEffect(() => {
@@ -214,7 +216,7 @@ export default function SecurityAndPrivacyScreen() {
         onPress: async () => {
           try {
             await auth.signOut();
-          } catch {}
+          } catch { }
           router.replace('/landing');
         },
       },
@@ -328,7 +330,7 @@ export default function SecurityAndPrivacyScreen() {
             style={{
               color: textPrimary,
               fontSize: 18,
-              fontWeight: '700',
+              fontFamily: Fonts.bold,
             }}
           >
             Privacy &amp; Security
@@ -350,44 +352,36 @@ export default function SecurityAndPrivacyScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 24,
-            padding: 16,
+            borderRadius: 20,
+            padding: 18,
             marginTop: 8,
             borderWidth: 1,
-            borderColor: border,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', marginBottom: 16, gap: 14 }}>
             <View
               style={{
-                height: 32,
-                width: 32,
-                borderRadius: 12,
+                height: 40,
+                width: 40,
+                borderRadius: 20,
                 alignItems: 'center',
                 justifyContent: 'center',
-                backgroundColor: isDark ? '#0F172A' : '#EEF2FF',
-                marginRight: 10,
+                backgroundColor: isDark ? '#0F172A' : '#EFF6FF',
+                marginTop: 2
               }}
             >
-              <Ionicons name="lock-closed-outline" size={18} color={accent} />
+              <Ionicons name="lock-closed" size={20} color={accent} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text
-                style={{
-                  color: textPrimary,
-                  fontSize: 16,
-                  fontWeight: '700',
-                }}
-              >
+              <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 4 }}>
                 Login & sessions
               </Text>
-              <Text
-                style={{
-                  color: textSecondary,
-                  fontSize: 13,
-                  marginTop: 2,
-                }}
-              >
+              <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
                 View the basics of your account and sign out safely on this device.
               </Text>
             </View>
@@ -395,43 +389,33 @@ export default function SecurityAndPrivacyScreen() {
 
           <View
             style={{
-              marginTop: 10,
               borderRadius: 16,
               borderWidth: 1,
               borderColor: border,
-              paddingHorizontal: 12,
-              paddingVertical: 10,
-              backgroundColor: isDark ? '#020617' : '#F9FAFB',
+              padding: 16,
+              backgroundColor: isDark ? '#020617' : '#F8FAFC',
+              marginBottom: 16
             }}
           >
             <Text
               style={{
                 color: textSecondary,
-                fontSize: 12,
+                fontSize: 11,
                 textTransform: 'uppercase',
-                letterSpacing: 0.8,
-                marginBottom: 4,
-                fontWeight: '600',
+                letterSpacing: 1,
+                marginBottom: 6,
+                fontFamily: Fonts.bold,
               }}
             >
               Signed in as
             </Text>
-            <Text
-              style={{
-                color: textPrimary,
-                fontSize: 14,
-                fontWeight: '600',
-              }}
-            >
-              {maskedEmail}
-            </Text>
-            <Text
-              style={{
-                color: textSecondary,
-                fontSize: 12,
-                marginTop: 4,
-              }}
-            >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E' }} />
+              <Text style={{ color: textPrimary, fontSize: 15, fontFamily: Fonts.bold }}>
+                {maskedEmail}
+              </Text>
+            </View>
+            <Text style={{ color: textSecondary, fontSize: 12, marginTop: 4 }}>
               Device: {Platform.OS === 'ios' ? 'iOS' : 'Android'} app
             </Text>
           </View>
@@ -439,39 +423,21 @@ export default function SecurityAndPrivacyScreen() {
           <Pressable
             onPress={handleSignOut}
             style={{
-              marginTop: 12,
               alignSelf: 'flex-start',
-              borderRadius: 999,
-              paddingVertical: 8,
-              paddingHorizontal: 14,
-              backgroundColor: isDark ? '#111827' : '#0F172A',
+              borderRadius: 14,
+              paddingVertical: 10,
+              paddingHorizontal: 16,
+              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.8)',
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 6,
+              gap: 8,
             }}
           >
-            <Ionicons name="log-out-outline" size={16} color="#F9FAFB" />
-            <Text
-              style={{
-                color: '#F9FAFB',
-                fontSize: 13,
-                fontWeight: '600',
-              }}
-            >
+            <Ionicons name="log-out-outline" size={18} color="#FFF" />
+            <Text style={{ color: '#FFF', fontSize: 14, fontFamily: Fonts.bold }}>
               Sign out on this device
             </Text>
           </Pressable>
-
-          <Text
-            style={{
-              color: textSecondary,
-              fontSize: 11,
-              marginTop: 6,
-            }}
-          >
-            If you think someone else has access to your account, sign out here and
-            then contact support from your .edu email so we can review it.
-          </Text>
         </View>
 
         {/* Privacy controls */}
@@ -493,35 +459,38 @@ export default function SecurityAndPrivacyScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
-            marginBottom: 10,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between" style={rowWithSwitchStyle}>
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: isDark ? '#020617' : '#ECFEFF',
                 }}
               >
-                <Ionicons name="ellipse-outline" size={18} color={textPrimary} />
+                <Ionicons name="ellipse" size={18} color={textPrimary} />
               </View>
-              <View style={{ maxWidth: '75%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   Show online status
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
-                  Let people see when you’re active or recently online. Turning this
-                  off will hide your green dot / “last seen”.
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
+                  Let people see when you’re active or recently online.
                 </Text>
               </View>
             </View>
@@ -530,7 +499,8 @@ export default function SecurityAndPrivacyScreen() {
               value={prefs.showOnlineStatus}
               onValueChange={(v) => handleToggle('showOnlineStatus', v)}
               thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-              trackColor={{ false: '#6B7280', true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>
@@ -539,35 +509,38 @@ export default function SecurityAndPrivacyScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
-            marginBottom: 10,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between" style={rowWithSwitchStyle}>
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: isDark ? '#020617' : '#E0F2FE',
                 }}
               >
-                <Ionicons name="school-outline" size={18} color={textPrimary} />
+                <Ionicons name="school" size={20} color={textPrimary} />
               </View>
-              <View style={{ maxWidth: '75%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   Message requests from your college
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={3}>
-                  Allow new message requests from people who share your verified
-                  college community.
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
+                  Allow new message requests from people who share your verified college community.
                 </Text>
               </View>
             </View>
@@ -576,7 +549,8 @@ export default function SecurityAndPrivacyScreen() {
               value={prefs.allowDMsFromSameCollege}
               onValueChange={(v) => handleToggle('allowDMsFromSameCollege', v)}
               thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-              trackColor={{ false: '#6B7280', true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>
@@ -585,35 +559,38 @@ export default function SecurityAndPrivacyScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
-            marginBottom: 10,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between" style={rowWithSwitchStyle}>
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: isDark ? '#020617' : '#FEF2F2',
                 }}
               >
-                <Ionicons name="people-outline" size={18} color={textPrimary} />
+                <Ionicons name="people" size={20} color={textPrimary} />
               </View>
-              <View style={{ maxWidth: '75%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   Message requests from other communities
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={3}>
-                  Let people from other approved communities send you message
-                  requests. You can always ignore or decline requests you don’t want.
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
+                  Let people from other approved communities send you message requests.
                 </Text>
               </View>
             </View>
@@ -622,7 +599,8 @@ export default function SecurityAndPrivacyScreen() {
               value={prefs.allowDMsFromOthers}
               onValueChange={(v) => handleToggle('allowDMsFromOthers', v)}
               thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-              trackColor={{ false: '#6B7280', true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>
@@ -631,39 +609,41 @@ export default function SecurityAndPrivacyScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between" style={rowWithSwitchStyle}>
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: 'center',
                   justifyContent: 'center',
                   backgroundColor: isDark ? '#020617' : '#EEF2FF',
                 }}
               >
                 <Ionicons
-                  name="notifications-circle-outline"
-                  size={18}
+                  name="notifications-circle"
+                  size={22}
                   color={textPrimary}
                 />
               </View>
-              <View style={{ maxWidth: '75%' }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: '600' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   Show message previews
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={3}>
-                  When this is on, new message notifications can show a preview of the
-                  content on your lock screen. Turning it off will keep content more
-                  private.
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
+                  When this is on, new message notifications can show a preview of the content.
                 </Text>
               </View>
             </View>
@@ -672,7 +652,8 @@ export default function SecurityAndPrivacyScreen() {
               value={prefs.showMessagePreviews}
               onValueChange={(v) => handleToggle('showMessagePreviews', v)}
               thumbColor={Platform.OS === 'android' ? '#FFFFFF' : undefined}
-              trackColor={{ false: '#6B7280', true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>
@@ -680,13 +661,14 @@ export default function SecurityAndPrivacyScreen() {
         {/* Danger zone */}
         <Text
           style={{
-            marginTop: 24,
-            marginBottom: 8,
+            marginTop: 32,
+            marginBottom: 12,
             color: textSecondary,
             fontSize: 13,
             fontWeight: '600',
             textTransform: 'uppercase',
             letterSpacing: 0.8,
+            paddingHorizontal: 4
           }}
         >
           Danger zone
@@ -695,52 +677,62 @@ export default function SecurityAndPrivacyScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            padding: 14,
+            borderRadius: 20,
+            padding: 18,
             borderWidth: 1,
-            borderColor: isDark ? 'rgba(248,113,113,0.4)' : 'rgba(248,113,113,0.4)',
+            borderColor: colors.danger + '40',
+            shadowColor: colors.danger,
+            shadowOpacity: 0.05,
+            shadowRadius: 8,
+            shadowOffset: { width: 0, height: 4 }
           }}
         >
-          <Text
-            style={{
-              color: textPrimary,
-              fontSize: 14,
-              fontWeight: '600',
-              marginBottom: 6,
-            }}
-          >
-            Delete my account
-          </Text>
-          <Text
-            style={{
-              color: textSecondary,
-              fontSize: 13,
-              marginBottom: 10,
-            }}
-          >
-            This is permanent. Your communities, messages, and connections will be
-            removed according to our data retention policy.
-          </Text>
+          <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+            <Ionicons name="warning-outline" size={24} color={colors.danger} />
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: textPrimary,
+                  fontSize: 16,
+                  fontFamily: Fonts.bold,
+                  marginBottom: 6,
+                }}
+              >
+                Delete my account
+              </Text>
+              <Text
+                style={{
+                  color: textSecondary,
+                  fontSize: 13,
+                  lineHeight: 20
+                }}
+              >
+                This is permanent. Your communities, messages, and connections will be removed.
+              </Text>
+            </View>
+          </View>
 
           <Pressable
             onPress={handleDeleteAccount}
             style={{
-              alignSelf: 'flex-start',
-              borderRadius: 999,
-              paddingVertical: 8,
-              paddingHorizontal: 14,
-              backgroundColor: '#991B1B',
+              width: '100%',
+              borderRadius: 14,
+              paddingVertical: 12,
+              backgroundColor: colors.danger + '15',
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 6,
+              justifyContent: 'center',
+              gap: 8,
+              borderWidth: 1,
+              borderColor: colors.danger + '30'
             }}
           >
-            <Ionicons name="trash-outline" size={16} color="#FEE2E2" />
+            <Ionicons name="trash-outline" size={18} color={colors.danger} />
             <Text
               style={{
-                color: '#FEE2E2',
-                fontSize: 13,
-                fontWeight: '600',
+                color: colors.danger,
+                fontSize: 14,
+                fontFamily: Fonts.bold,
               }}
             >
               Request account deletion

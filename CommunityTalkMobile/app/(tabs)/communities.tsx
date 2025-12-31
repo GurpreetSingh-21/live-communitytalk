@@ -38,6 +38,7 @@ import { router } from 'expo-router';
 import { AuthContext } from '@/src/context/AuthContext';
 import { api } from '@/src/api/api';
 import { useSocket } from '@/src/context/SocketContext';
+import { Colors, Fonts } from '@/constants/theme';
 
 /* ───────────────── Types ───────────────── */
 
@@ -93,62 +94,57 @@ const CommunityRowSkeleton = () => {
   );
 };
 
-const UnreadBadge = ({ count, pulseKey }: { count: number; pulseKey?: number }) => (
-  <MotiView
-    key={pulseKey} // re-run tiny pop when unread changes
-    from={{ scale: 0.8, opacity: 0.8 }}
-    animate={{ scale: 1, opacity: 1 }}
-    transition={{ type: 'spring', damping: 12, mass: 0.6 }}
-    className="bg-indigo-600 rounded-full h-6 px-2 min-w-[24px] items-center justify-center border-2 border-white dark:border-black"
-  >
-    <Text className="text-white text-xs font-bold">{count}</Text>
-  </MotiView>
-);
+const UnreadBadge = ({ count, pulseKey }: { count: number; pulseKey?: number }) => {
+  const isDark = useColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
+  return (
+    <MotiView
+      key={pulseKey}
+      from={{ scale: 0.8, opacity: 0.8 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: 'spring', damping: 12, mass: 0.6 }}
+      style={{
+        backgroundColor: Colors.light.danger, // Always red for urgency
+        borderRadius: 12,
+        height: 20,
+        paddingHorizontal: 6,
+        minWidth: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderColor: theme.background,
+        borderWidth: 2,
+      }}
+    >
+      <Text style={{ color: 'white', fontSize: 10, fontFamily: Fonts.bold }}>{count}</Text>
+    </MotiView>
+  );
+};
 
 const SmartPreview = ({ msg, isUnread }: { msg: MessageContent; isUnread: boolean }) => {
   const isDark = useColorScheme() === 'dark';
-  const baseColor = isUnread ? (isDark ? '#A1A1AA' : '#71717A') : (isDark ? '#71717A' : '#A1A1AA');
-  const baseWeight: any = isUnread ? '600' : '400';
+  const theme = isDark ? Colors.dark : Colors.light;
+  // 600 weight -> Fonts.ios.sans (Medium), 400 -> Regular/Light
+  // But isUnread usually implies Bold.
 
-  if (msg.type === 'text') {
-    return (
-      <Text
-        numberOfLines={1}
-        style={{ color: baseColor, fontWeight: baseWeight, fontSize: 14, letterSpacing: 0 }}
-      >
-        {msg.content}
-      </Text>
-    );
-  }
   return (
-    <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 8,
-        backgroundColor: isDark ? '#18181B' : '#F9FAFB',
-        alignSelf: 'flex-start',
-      }}
-    >
-      <Ionicons
-        name={(msg.type === 'photo' ? 'image-outline' : 'mic-outline') as any}
-        size={14}
-        color={isDark ? '#71717A' : '#A1A1AA'}
-      />
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      {msg.type !== 'text' && (
+        <Ionicons
+          name={(msg.type === 'photo' ? 'image-outline' : 'mic-outline') as any}
+          size={14}
+          color={isUnread ? theme.primary : theme.textMuted}
+          style={{ marginRight: 4 }}
+        />
+      )}
       <Text
-        style={{
-          flexShrink: 1,
-          color: baseColor,
-          fontWeight: baseWeight,
-          fontSize: 13,
-          letterSpacing: 0,
-        }}
         numberOfLines={1}
+        style={{
+          color: isUnread ? theme.text : theme.textMuted,
+          fontFamily: isUnread ? Fonts.sans : Fonts.regular, // Medium if unread
+          fontSize: 14,
+        }}
       >
-        {msg.content}
+        {msg.type !== 'text' ? (msg.type === 'photo' ? 'Photo' : 'Voice Memo') : msg.content}
       </Text>
     </View>
   );
@@ -221,18 +217,22 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
   const handleDelete = () => { 'worklet'; runOnJS(onDelete)(item.id); };
   const handlePin = () => { 'worklet'; runOnJS(onPinToggle)(item.id); translateX.value = withSpring(0); };
 
+  const theme = isDark ? Colors.dark : Colors.light;
+
   return (
     <MotiView from={{ opacity: 0, translateY: 8 }} animate={{ opacity: 1, translateY: 0 }} exit={{ height: 0, opacity: 0 }} transition={{ type: 'timing', duration: 250 }}>
       <GestureDetector gesture={pan}>
         <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
           {/* Right swipe actions */}
           <View style={{ position: 'absolute', right: 16, top: 0, bottom: 0, flexDirection: 'row', borderRadius: 16, overflow: 'hidden' }}>
-            <Pressable onPress={handlePin} style={{ width: 72, height: '100%', backgroundColor: '#5E5CE6', alignItems: 'center', justifyContent: 'center' }}>
+            {/* Primary Action: Pin */}
+            <Pressable onPress={handlePin} style={{ width: 72, height: '100%', backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={animatedActionStyle([-160, -80], [1, 0.5])}>
                 <Ionicons name={item.pinned ? 'pin-outline' : 'pin'} size={22} color="white" />
               </Animated.View>
             </Pressable>
-            <Pressable onPress={handleDelete} style={{ width: 72, height: '100%', backgroundColor: '#FF453A', alignItems: 'center', justifyContent: 'center' }}>
+            {/* Destructive Action: Delete */}
+            <Pressable onPress={handleDelete} style={{ width: 72, height: '100%', backgroundColor: theme.danger, alignItems: 'center', justifyContent: 'center' }}>
               <Animated.View style={animatedActionStyle([-80, 0], [1, 0.5])}>
                 <Ionicons name="trash-outline" size={22} color="white" />
               </Animated.View>
@@ -246,16 +246,18 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
               style={{
                 flexDirection: 'row',
                 alignItems: 'center',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.04)' : '#FFFFFF',
+                backgroundColor: theme.surface,
                 borderRadius: 16,
                 paddingHorizontal: 14,
                 paddingVertical: 14,
                 // Premium shadow
-                shadowColor: isDark ? 'rgba(0, 0, 0, 0.6)' : 'rgba(0, 0, 0, 0.06)',
-                shadowOffset: { width: 0, height: 2 },
+                shadowColor: isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.05)',
+                shadowOffset: { width: 0, height: 4 },
                 shadowOpacity: 1,
-                shadowRadius: 8,
+                shadowRadius: 10,
                 elevation: 3,
+                borderWidth: isDark ? 1 : 0,
+                borderColor: theme.border,
               }}
             >
               {/* Pulse overlay */}
@@ -267,7 +269,7 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                     right: 0,
                     top: 0,
                     bottom: 0,
-                    backgroundColor: '#5E5CE6',
+                    backgroundColor: theme.primary,
                     borderRadius: 16,
                   },
                   pulseStyle,
@@ -280,15 +282,10 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                 width: 52,
                 height: 52,
                 borderRadius: 14,
-                backgroundColor: isDark ? '#1C1C1E' : '#F2F2F7',
+                backgroundColor: theme.muted,
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginRight: 12,
-                // Subtle shadow on avatar
-                shadowColor: isDark ? 'transparent' : 'rgba(0, 0, 0, 0.04)',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 1,
-                shadowRadius: 2,
               }}>
                 <Text style={{ fontSize: 26 }}>{item.avatar || '🏛️'}</Text>
 
@@ -301,11 +298,11 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                     width: 18,
                     height: 18,
                     borderRadius: 9,
-                    backgroundColor: '#5E5CE6',
+                    backgroundColor: theme.primary,
                     alignItems: 'center',
                     justifyContent: 'center',
                     borderWidth: 2,
-                    borderColor: isDark ? '#000000' : '#FFFFFF',
+                    borderColor: theme.surface,
                   }}>
                     <Ionicons name="pin" size={10} color="#FFFFFF" />
                   </View>
@@ -320,9 +317,9 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                     <Text
                       numberOfLines={1}
                       style={{
-                        color: isDark ? '#FFFFFF' : '#000000',
+                        color: theme.text,
                         fontSize: 16,
-                        fontWeight: isUnread ? '700' : '600',
+                        fontFamily: isUnread ? Fonts.bold : Fonts.sans, // Bold if unread, Medium otherwise
                         letterSpacing: -0.3,
                         flex: 1,
                       }}
@@ -334,8 +331,8 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                     style={{
                       fontSize: 12,
                       marginLeft: 8,
-                      color: isUnread ? '#5E5CE6' : (isDark ? '#48484A' : '#AEAEB2'),
-                      fontWeight: isUnread ? '600' : '400',
+                      color: isUnread ? theme.primary : theme.textMuted,
+                      fontFamily: isUnread ? Fonts.sans : Fonts.regular,
                     }}
                   >
                     {timeAgoLabel(item.lastAt, now)}
@@ -345,9 +342,9 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                 {/* Middle row: Member count */}
                 <Text style={{
                   fontSize: 12,
-                  color: isDark ? '#636366' : '#8E8E93',
+                  color: theme.textMuted,
                   marginBottom: 4,
-                  fontWeight: '500',
+                  fontFamily: Fonts.regular,
                 }}>
                   {item.memberCount || 0} members
                 </Text>
@@ -358,20 +355,7 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                     <SmartPreview msg={item.lastMsg} isUnread={isUnread} />
                   </View>
                   {!!item.unread && (
-                    <View style={{
-                      backgroundColor: '#5E5CE6',
-                      borderRadius: 10,
-                      minWidth: 20,
-                      height: 20,
-                      paddingHorizontal: 6,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      marginLeft: 8,
-                    }}>
-                      <Text style={{ color: '#FFFFFF', fontSize: 11, fontWeight: '700' }}>
-                        {item.unread > 99 ? '99+' : item.unread}
-                      </Text>
-                    </View>
+                    <UnreadBadge count={item.unread} pulseKey={item.unread} />
                   )}
                 </View>
               </View>
@@ -380,7 +364,7 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
               <Ionicons
                 name="chevron-forward"
                 size={16}
-                color={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.12)'}
+                color={theme.icon}
                 style={{ marginLeft: 8 }}
               />
             </Pressable>
@@ -398,6 +382,7 @@ const AnimatedFlatList = Animated.createAnimatedComponent(FlatList<CommunityThre
 export default function CommunitiesScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
   const { socket, unreadThreads = {}, refreshUnread } = useSocket();
   const { isAuthed, communities: myCommunities } = React.useContext(AuthContext) as any;
 
@@ -662,7 +647,7 @@ export default function CommunitiesScreen(): React.JSX.Element {
   }
 
   return (
-    <View className="flex-1" style={{ backgroundColor: isDark ? '#000000' : '#FFFFFF' }}>
+    <View className="flex-1" style={{ backgroundColor: theme.background }}>
       <AnimatedFlatList
         data={filteredThreads}
         keyExtractor={(item) => item.id}
@@ -677,15 +662,15 @@ export default function CommunitiesScreen(): React.JSX.Element {
         )}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={isDark ? '#FFF' : '#000'} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={theme.text} />}
         contentContainerStyle={{ paddingTop: 200, paddingBottom: insets.bottom + 40 }}
         ListEmptyComponent={
           <View className="items-center mt-20">
             <Text className="text-2xl">🏛️</Text>
-            <Text style={{ fontWeight: '700', fontSize: 18, marginTop: 8, color: isDark ? '#FFFFFF' : '#111827' }}>
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 18, marginTop: 8, color: theme.text }}>
               No Communities
             </Text>
-            <Text style={{ color: isDark ? '#71717A' : '#A1A1AA', marginTop: 4, textAlign: 'center', paddingHorizontal: 24, fontSize: 14 }}>
+            <Text style={{ color: theme.textMuted, marginTop: 4, textAlign: 'center', paddingHorizontal: 24, fontSize: 14, fontFamily: Fonts.regular }}>
               {searchQuery ? 'No communities match your search' : 'Join a community to get started'}
             </Text>
           </View>
@@ -695,11 +680,11 @@ export default function CommunitiesScreen(): React.JSX.Element {
       {/* Modern Frosted Header */}
       <Animated.View style={[{ position: 'absolute', top: 0, left: 0, right: 0, paddingTop: insets.top, paddingHorizontal: 16, paddingBottom: 12 }, animatedHeaderStyle]}>
         <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 0.5, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }, animatedHeaderBorderStyle]} />
+        <Animated.View style={[{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 0.5, backgroundColor: theme.border }, animatedHeaderBorderStyle]} />
 
         <Animated.View style={animatedHeaderTitleStyle}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, marginBottom: 14 }}>
-            <Text style={{ fontSize: 28, fontWeight: '700', color: isDark ? '#FFFFFF' : '#000000', letterSpacing: -0.8 }}>
+            <Text style={{ fontSize: 28, fontFamily: Fonts.bold, color: theme.text, letterSpacing: -0.8 }}>
               Communities
             </Text>
           </View>
@@ -752,9 +737,9 @@ export default function CommunitiesScreen(): React.JSX.Element {
             transition={{ type: 'spring' }}
             style={{ position: 'absolute', bottom: insets.bottom + 10, left: 20, right: 20 }}
           >
-            <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} className="flex-row items-center justify-between p-3 rounded-xl overflow-hidden border border-black/10 dark:border-white/10">
-              <Text className="text-black dark:text-white font-medium">Community archived</Text>
-              <Pressable onPress={handleUndoArchive}><Text className="text-indigo-600 dark:text-indigo-400 font-bold">Undo</Text></Pressable>
+            <BlurView intensity={80} tint={isDark ? 'dark' : 'light'} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: theme.border }}>
+              <Text style={{ color: theme.text, fontFamily: Fonts.sans }}>Community archived</Text>
+              <Pressable onPress={handleUndoArchive}><Text style={{ color: theme.primary, fontFamily: Fonts.bold }}>Undo</Text></Pressable>
             </BlurView>
           </MotiView>
         )}

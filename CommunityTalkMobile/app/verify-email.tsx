@@ -5,14 +5,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '@/src/api/api';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthContext } from '@/src/context/AuthContext';
 
 export default function VerifyEmailScreen() {
   const params = useLocalSearchParams();
-  const email = String(params.email || ""); 
+  const email = String(params.email || "");
   const message = String(params.message || "Please check your email for a 6-digit code.");
 
-  const auth = useContext(AuthContext);
+  const auth = useContext(AuthContext) as any;
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
 
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,12 +38,12 @@ export default function VerifyEmailScreen() {
 
     try {
       console.log("1. Starting verification...");
-      
+
       // Add 15 second timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error("Request timed out")), 15000)
       );
-      
+
       const apiPromise = api.post("/api/verify-code", {
         email: email,
         code: code,
@@ -55,7 +59,7 @@ export default function VerifyEmailScreen() {
       }
 
       console.log("3. Setting token...");
-      
+
       // Set the token - this is critical
       if (typeof auth.setToken === "function") {
         await auth.setToken(data.token);
@@ -73,7 +77,7 @@ export default function VerifyEmailScreen() {
         console.log("6. Starting bootstrap (background)...");
         // Fire and forget - don't block on this
         setTimeout(() => {
-          auth.bootstrap().catch(err => {
+          auth.bootstrap().catch((err: any) => {
             console.error("Bootstrap error (non-blocking):", err);
           });
         }, 0);
@@ -97,10 +101,10 @@ export default function VerifyEmailScreen() {
     } catch (err: any) {
       console.error("Verification error:", err);
       console.error("Error details:", err?.response?.data);
-      
+
       // CRITICAL: Always clear loading state
       setLoading(false);
-      
+
       // User-friendly error messages
       if (err.message === "Request timed out") {
         setError("Request timed out. Please check your connection and try again.");
@@ -115,34 +119,35 @@ export default function VerifyEmailScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#0B0F19' }}>
-      <KeyboardAvoidingView 
+    <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+      <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}
       >
-        <Ionicons name="mail-unread-outline" size={80} color="#6366F1" />
-        <Text style={{ fontSize: 28, fontWeight: 'bold', color: 'white', marginTop: 20, textAlign: 'center' }}>
+        <Ionicons name="mail-unread-outline" size={80} color={colors.primary} />
+        <Text style={{ fontSize: 28, fontFamily: Fonts.bold, color: colors.text, marginTop: 20, textAlign: 'center' }}>
           Check Your Email
         </Text>
-        <Text style={{ fontSize: 16, color: '#9CA3AF', marginTop: 10, textAlign: 'center', paddingHorizontal: 20 }}>
+        <Text style={{ fontSize: 16, color: colors.textMuted, marginTop: 10, textAlign: 'center', paddingHorizontal: 20 }}>
           {message}
         </Text>
 
         <TextInput
           style={{
-            backgroundColor: '#1F2937',
-            color: 'white',
+            backgroundColor: colors.surface,
+            color: colors.text,
             fontSize: 24,
-            fontWeight: 'bold',
+            fontFamily: Fonts.bold,
             textAlign: 'center',
             letterSpacing: 10,
             borderRadius: 10,
             padding: 20,
             marginTop: 30,
             width: '80%',
+            fontWeight: undefined, // ensure font weight isn't overriding font family
           }}
           placeholder="123456"
-          placeholderTextColor="#4B5563"
+          placeholderTextColor={colors.textMuted}
           keyboardType="number-pad"
           maxLength={6}
           value={code}
@@ -150,7 +155,7 @@ export default function VerifyEmailScreen() {
         />
 
         {error ? (
-          <Text style={{ color: '#EF4444', marginTop: 15, textAlign: 'center' }}>
+          <Text style={{ color: colors.danger, marginTop: 15, textAlign: 'center', fontFamily: Fonts.regular }}>
             {error}
           </Text>
         ) : null}
@@ -159,7 +164,7 @@ export default function VerifyEmailScreen() {
           onPress={handleSubmit}
           disabled={loading}
           style={{
-            backgroundColor: '#6366F1',
+            backgroundColor: colors.primary,
             paddingHorizontal: 30,
             paddingVertical: 15,
             borderRadius: 10,
@@ -170,7 +175,7 @@ export default function VerifyEmailScreen() {
           {loading ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={{ color: 'white', fontSize: 16, fontWeight: 'bold' }}>
+            <Text style={{ color: 'white', fontSize: 16, fontFamily: Fonts.bold }}>
               Verify Account
             </Text>
           )}
@@ -180,7 +185,7 @@ export default function VerifyEmailScreen() {
           onPress={() => router.back()}
           style={{ marginTop: 20 }}
         >
-          <Text style={{ color: '#9CA3AF', fontSize: 14 }}>
+          <Text style={{ color: colors.textMuted, fontSize: 14, fontFamily: Fonts.regular }}>
             Back
           </Text>
         </TouchableOpacity>

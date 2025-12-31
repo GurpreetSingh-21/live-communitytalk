@@ -10,81 +10,108 @@
 import { Platform } from "react-native";
 
 /* ─────────────── Brand + Semantic Colors ─────────────── */
-const brandPrimary = "#6366F1"; // Modern indigo-violet
-const brandPrimaryDark = "#818CF8";
-const success = "#10B981";
+// Campus Warmth Palette
+const brandPrimary = "#2D5A47"; // Forest Green (Professional, collegiate)
+const brandPrimaryDark = "#86EFAC"; // Light Green for Dark Mode (High contrast)
+const brandAccent = "#FF7F6E"; // Warm Coral (Energetic, friendly)
+
+const success = "#22C55E";
 const danger = "#EF4444";
 const warning = "#F59E0B";
+const info = "#3B82F6";
 
 /* ─────────────── Theme Palette ─────────────── */
 export const Colors = {
   light: {
     // Core surfaces
-    background: "#F9FAFB", // App background (soft gray-white)
-    surface: "#FFFFFF", // Cards, modals, etc.
-    muted: "#F3F4F6", // For subtle blocks and input backgrounds
+    background: "#FAF9F7", // Warm Off-white
+    surface: "#FFFFFF",     // Pure white for cards
+    muted: "#F5F4F2",       // Warm gray for inputs/backgrounds
+    border: "#E5E5E5",
+    
     // Text
-    text: "#111827",
-    textMuted: "rgba(17,24,39,0.65)",
+    text: "#1A1A1A",        // Soft Black
+    textMuted: "#6B6B6B",   // Warm Dark Gray
+    
     // Icons
-    icon: "#6B7280",
+    icon: "#6B6B6B",
+    
     // Brand / semantic
     primary: brandPrimary,
+    accent: brandAccent,
     success,
     danger,
     warning,
+    info,
+    
     // Navigation
-    tabIconDefault: "#9CA3AF",
+    tabIconDefault: "#A3A3A3",
     tabIconSelected: brandPrimary,
     tint: brandPrimary,
   },
 
   dark: {
     // Core surfaces
-    background: "#0A0A0A", // true dark
-    surface: "#111111", // slightly lighter for cards
-    muted: "#1C1C1C", // input backgrounds
+    background: "#111110",  // Warm Black
+    surface: "#1A1917",     // Dark Warm Gray
+    muted: "#252422",       // Lighter Warm Gray
+    border: "#2C2C2C",
+    
     // Text
-    text: "#F3F4F6",
-    textMuted: "rgba(243,244,246,0.6)",
+    text: "#F5F4F2",        // Off-white
+    textMuted: "#A3A3A3",   // Light Gray
+    
     // Icons
     icon: "#A1A1AA",
+    
     // Brand / semantic
-    primary: brandPrimaryDark,
+    primary: brandPrimaryDark, // Lighter green for dark mode visibility
+    accent: brandAccent,
     success,
     danger,
     warning,
+    info,
+    
     // Navigation
-    tabIconDefault: "#6B7280",
+    tabIconDefault: "#525252",
     tabIconSelected: brandPrimaryDark,
     tint: brandPrimaryDark,
   },
 };
 
 /* ─────────────── Font Stack ─────────────── */
+// Premium Font: Plus Jakarta Sans
 export const Fonts = Platform.select({
   ios: {
-    sans: "Inter", // Modern, clean sans-serif (Google Fonts)
-    serif: "ui-serif",
-    rounded: "ui-rounded",
-    mono: "ui-monospace",
+    sans: "PlusJakartaSans_500Medium",
+    bold: "PlusJakartaSans_700Bold",
+    regular: "PlusJakartaSans_400Regular",
+    light: "PlusJakartaSans_300Light",
+    serif: "Georgia",
+    mono: "Menlo",
   },
   android: {
-    sans: "Inter",
+    sans: "PlusJakartaSans_500Medium",
+    bold: "PlusJakartaSans_700Bold",
+    regular: "PlusJakartaSans_400Regular",
+    light: "PlusJakartaSans_300Light",
     serif: "serif",
-    rounded: "sans-serif-rounded",
     mono: "monospace",
   },
   web: {
-    sans: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    sans: "'Plus Jakarta Sans', system-ui, sans-serif",
+    bold: "'Plus Jakarta Sans', system-ui, sans-serif",
+    regular: "'Plus Jakarta Sans', system-ui, sans-serif",
+    light: "'Plus Jakarta Sans', system-ui, sans-serif",
+    serif: "Georgia, serif",
+    mono: "monospace",
   },
   default: {
-    sans: "system-ui",
+    sans: "System",
+    bold: "System",
+    regular: "System",
+    light: "System",
     serif: "serif",
-    rounded: "system-ui",
     mono: "monospace",
   },
 });

@@ -11,14 +11,14 @@ import {
   ActivityIndicator,
   Pressable,
 } from "react-native";
+import { Colors, Fonts } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import { api } from "@/src/api/api";
 import React from "react";
 import { AuthContext } from "@/src/context/AuthContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useColorScheme } from "react-native";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -109,7 +109,7 @@ const InputField = ({
             marginLeft: 10,
             fontSize: 15,
             color: textColor,
-            fontWeight: "500",
+            fontFamily: Fonts.sans,
           }}
           {...props}
         />
@@ -134,12 +134,18 @@ const Pill = ({
   onPress,
   isDark,
   textColor,
+  primaryColor,
+  borderColor,
+  bgColor,
 }: {
   active: boolean;
   label: string;
   onPress: () => void;
   isDark: boolean;
   textColor: string;
+  primaryColor: string;
+  borderColor: string;
+  bgColor: string;
 }) => {
   const scale = useSharedValue(1);
   const anim = useAnimatedStyle(() => ({
@@ -162,9 +168,9 @@ const Pill = ({
             paddingHorizontal: 14,
             paddingVertical: 9,
             borderRadius: 12,
-            backgroundColor: active ? "#6366F1" : isDark ? "#18181B" : "#F5F5F5",
+            backgroundColor: active ? primaryColor : bgColor,
             borderWidth: 1,
-            borderColor: active ? "#6366F1" : isDark ? "#27272A" : "#E5E7EB",
+            borderColor: active ? primaryColor : borderColor,
             flexDirection: "row",
             alignItems: "center",
           },
@@ -181,7 +187,7 @@ const Pill = ({
         <Text
           style={{
             fontSize: 14,
-            fontWeight: active ? "600" : "500",
+            fontFamily: active ? Fonts.bold : Fonts.sans,
             color: active ? "#fff" : textColor,
           }}
         >
@@ -196,10 +202,12 @@ const SubmitButton = ({
   loading,
   disabled,
   onPress,
+  primaryColor,
 }: {
   loading: boolean;
   disabled: boolean;
   onPress: () => void;
+  primaryColor: string;
 }) => {
   const scale = useSharedValue(1);
 
@@ -227,14 +235,14 @@ const SubmitButton = ({
             borderRadius: 12,
             justifyContent: "center",
             alignItems: "center",
-            backgroundColor: disabled ? "#9CA3AF" : "#6366F1",
+            backgroundColor: disabled ? "#9CA3AF" : primaryColor,
           }}
         >
           {loading ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={{ color: "#fff", fontSize: 16, fontWeight: "600" }}>
+              <Text style={{ color: "#fff", fontSize: 16, fontFamily: Fonts.bold }}>
                 Create Account
               </Text>
               <Ionicons name="arrow-forward" size={18} color="#fff" />
@@ -249,7 +257,9 @@ const SubmitButton = ({
 export default function RegisterScreen() {
   const { register } = (React.useContext(AuthContext) as any) ?? {};
   const insets = useSafeAreaInsets();
-  const isDark = useColorScheme() === "dark";
+  const scheme = useColorScheme() ?? 'light';
+  const isDark = scheme === "dark";
+  const colors = Colors[scheme];
 
   // form
   const [name, setName] = useState("");
@@ -276,7 +286,7 @@ export default function RegisterScreen() {
 
   const pwStrength =
     pw.length === 0 ? null : pw.length < 6 ? "weak" : pw.length < 10 ? "medium" : "strong";
-  const strengthColors = { weak: "#EF4444", medium: "#F59E0B", strong: "#10B981" } as const;
+  const strengthColors = { weak: colors.danger, medium: colors.warning, strong: colors.success };
 
   /* ---------------- Fetch lists ---------------- */
   useEffect(() => {
@@ -438,14 +448,14 @@ export default function RegisterScreen() {
   };
 
   // Modern theme
-  const bgColor = isDark ? "#000000" : "#FFFFFF";
-  const cardBg = isDark ? "#0F0F0F" : "#FAFBFC";
-  const labelColor = isDark ? "#A1A1AA" : "#71717A";
-  const inputBg = isDark ? "#18181B" : "#FFFFFF";
-  const inputBorder = isDark ? "#27272A" : "#F4F4F5";
-  const inputBorderFocus = isDark ? "#6366F1" : "#6366F1";
-  const placeholder = isDark ? "#71717A" : "#A1A1AA";
-  const textColor = isDark ? "#FFFFFF" : "#111827";
+  const bgColor = colors.background;
+  const cardBg = colors.surface;
+  const labelColor = colors.textMuted;
+  const inputBg = isDark ? "#18181B" : colors.muted; // Slight adjust for dark mode input
+  const inputBorder = colors.border;
+  const inputBorderFocus = colors.primary;
+  const placeholder = colors.textMuted;
+  const textColor = colors.text;
   const eduDetected = useMemo(() => email.toLowerCase().includes(".edu"), [email]);
 
   /* ---------------- UI ---------------- */
@@ -474,7 +484,7 @@ export default function RegisterScreen() {
           }}
         >
           <Ionicons name="chevron-back" size={22} color={textColor} />
-          <Text style={{ fontSize: 16, fontWeight: "600", color: textColor, marginLeft: 2 }}>
+          <Text style={{ fontSize: 16, fontFamily: Fonts.bold, color: textColor, marginLeft: 2 }}>
             Back
           </Text>
         </TouchableOpacity>
@@ -488,7 +498,7 @@ export default function RegisterScreen() {
               borderRadius: 18,
               overflow: "hidden",
               marginBottom: 18,
-              backgroundColor: "#6366F1",
+              backgroundColor: colors.primary,
               justifyContent: "center",
               alignItems: "center",
             }}
@@ -496,7 +506,7 @@ export default function RegisterScreen() {
             <Ionicons name="people" size={36} color="#fff" />
           </View>
 
-          <Text style={{ fontSize: 28, fontWeight: "700", color: textColor, letterSpacing: -0.6 }}>
+          <Text style={{ fontSize: 28, fontFamily: Fonts.bold, color: textColor, letterSpacing: -0.6 }}>
             Join CommunityTalk
           </Text>
           <Text
@@ -519,7 +529,7 @@ export default function RegisterScreen() {
             borderRadius: 20,
             padding: 20,
             borderWidth: 1,
-            borderColor: isDark ? "#27272A" : "#F4F4F5",
+            borderColor: colors.border,
           }}
         >
           {/* Name Input */}
@@ -568,8 +578,8 @@ export default function RegisterScreen() {
                   alignItems: "center",
                 }}
               >
-                <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                <Text style={{ marginLeft: 6, color: "#10B981", fontWeight: "600", fontSize: 13 }}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                <Text style={{ marginLeft: 6, color: colors.success, fontFamily: Fonts.bold, fontSize: 13 }}>
                   .edu email verified ✓
                 </Text>
               </View>
@@ -685,6 +695,9 @@ export default function RegisterScreen() {
                     onPress={() => setCollegeId(c._id)}
                     isDark={isDark}
                     textColor={textColor}
+                    primaryColor={colors.primary}
+                    borderColor={colors.border}
+                    bgColor={isDark ? colors.muted : colors.background}
                   />
                 ))}
               </View>
@@ -715,6 +728,9 @@ export default function RegisterScreen() {
                     onPress={() => setReligionId(r._id)}
                     isDark={isDark}
                     textColor={textColor}
+                    primaryColor={colors.primary}
+                    borderColor={colors.border}
+                    bgColor={isDark ? colors.muted : colors.background}
                   />
                 ))}
               </View>
@@ -768,7 +784,12 @@ export default function RegisterScreen() {
           )}
 
           {/* Submit Button */}
-          <SubmitButton onPress={handleRegister} loading={submitting} disabled={submitting} />
+          <SubmitButton
+            onPress={handleRegister}
+            loading={submitting}
+            disabled={submitting}
+            primaryColor={colors.primary}
+          />
 
           {/* Terms */}
           <Text
@@ -781,8 +802,8 @@ export default function RegisterScreen() {
             }}
           >
             By creating an account, you agree to our{" "}
-            <Text style={{ color: "#6366F1", fontWeight: "600" }}>Terms of Service</Text> and{" "}
-            <Text style={{ color: "#6366F1", fontWeight: "600" }}>Privacy Policy</Text>.
+            <Text style={{ color: colors.primary, fontFamily: Fonts.bold }}>Terms of Service</Text> and{" "}
+            <Text style={{ color: colors.primary, fontFamily: Fonts.bold }}>Privacy Policy</Text>.
           </Text>
         </View>
 
@@ -792,7 +813,7 @@ export default function RegisterScreen() {
             style={{
               flex: 1,
               height: 1,
-              backgroundColor: isDark ? "#27272A" : "#F4F4F5",
+              backgroundColor: colors.border,
             }}
           />
           <Text style={{ marginHorizontal: 16, color: labelColor, fontSize: 13 }}>or</Text>
@@ -800,7 +821,7 @@ export default function RegisterScreen() {
             style={{
               flex: 1,
               height: 1,
-              backgroundColor: isDark ? "#27272A" : "#F4F4F5",
+              backgroundColor: colors.border,
             }}
           />
         </View>
@@ -809,8 +830,8 @@ export default function RegisterScreen() {
         <TouchableOpacity
           onPress={() => router.push("/modal")}
           style={{
-            backgroundColor: isDark ? "#18181B" : "#F9FAFB",
-            borderColor: isDark ? "#27272A" : "#E5E7EB",
+            backgroundColor: isDark ? colors.muted : colors.background,
+            borderColor: colors.border,
             borderWidth: 1,
             paddingVertical: 14,
             borderRadius: 12,
@@ -820,7 +841,7 @@ export default function RegisterScreen() {
           }}
         >
           <Ionicons name="log-in-outline" size={18} color={textColor} />
-          <Text style={{ marginLeft: 8, color: textColor, fontWeight: "600", fontSize: 15 }}>
+          <Text style={{ marginLeft: 8, color: textColor, fontFamily: Fonts.bold, fontSize: 15 }}>
             Already have an account? Log in
           </Text>
         </TouchableOpacity>

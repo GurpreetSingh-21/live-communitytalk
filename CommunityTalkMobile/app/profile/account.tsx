@@ -8,7 +8,6 @@ import {
   Alert,
   TextInput,
   ActivityIndicator,
-  useColorScheme as useDeviceColorScheme,
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,11 +16,14 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { AuthContext } from '@/src/context/AuthContext';
 import { api } from '@/src/api/api';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function AccountSettingsScreen() {
   const insets = useSafeAreaInsets();
-  const deviceScheme = useDeviceColorScheme();
-  const isDark = deviceScheme === 'dark';
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
+  const isDark = scheme === 'dark';
   const auth = useContext(AuthContext);
   const user = auth.user;
   const refreshBootstrap = auth.refreshBootstrap;
@@ -34,11 +36,11 @@ export default function AccountSettingsScreen() {
   const [bioValue, setBioValue] = useState(user?.bio || '');
   const [savingBio, setSavingBio] = useState(false);
 
-  const bg = isDark ? '#020617' : '#F1F5F9';
-  const cardBg = isDark ? '#020617' : '#FFFFFF';
-  const border = isDark ? 'rgba(148,163,184,0.4)' : 'rgba(15,23,42,0.06)';
-  const textPrimary = isDark ? '#F9FAFB' : '#020617';
-  const textSecondary = isDark ? '#9CA3AF' : '#6B7280';
+  const bg = colors.background;
+  const cardBg = colors.surface;
+  const border = colors.border;
+  const textPrimary = colors.text;
+  const textSecondary = colors.textMuted;
 
   const handleEditName = () => {
     setNameValue(user?.fullName || '');
@@ -152,7 +154,7 @@ export default function AccountSettingsScreen() {
             style={{
               color: textPrimary,
               fontSize: 18,
-              fontWeight: '700',
+              fontFamily: Fonts.bold,
             }}
           >
             Account Settings
@@ -195,7 +197,7 @@ export default function AccountSettingsScreen() {
               <Text
                 style={{
                   color: isDark ? '#E5E7EB' : '#1F2937',
-                  fontWeight: '800',
+                  fontFamily: Fonts.bold,
                   fontSize: 22,
                 }}
               >
@@ -207,7 +209,7 @@ export default function AccountSettingsScreen() {
                 style={{
                   color: textPrimary,
                   fontSize: 18,
-                  fontWeight: '700',
+                  fontFamily: Fonts.bold,
                 }}
                 numberOfLines={1}
               >
@@ -234,7 +236,7 @@ export default function AccountSettingsScreen() {
             marginBottom: 8,
             color: textSecondary,
             fontSize: 13,
-            fontWeight: '600',
+            fontFamily: Fonts.bold,
             textTransform: 'uppercase',
             letterSpacing: 0.8,
           }}
@@ -278,7 +280,7 @@ export default function AccountSettingsScreen() {
                 </Text>
               </View>
             </View>
-            <Text style={{ color: '#6366F1', fontSize: 13, fontWeight: '600' }}>Edit</Text>
+            <Text style={{ color: colors.primary, fontSize: 13, fontFamily: Fonts.bold }}>Edit</Text>
           </View>
         </Pressable>
 
@@ -318,7 +320,7 @@ export default function AccountSettingsScreen() {
                 </Text>
               </View>
             </View>
-            <Text style={{ color: '#6366F1', fontSize: 13, fontWeight: '600' }}>Edit</Text>
+            <Text style={{ color: colors.primary, fontSize: 13, fontFamily: Fonts.bold }}>Edit</Text>
           </View>
         </Pressable>
 
@@ -370,6 +372,7 @@ export default function AccountSettingsScreen() {
                   color: isDark ? '#BBF7D0' : '#166534',
                   fontSize: 11,
                   fontWeight: '700',
+                  fontFamily: Fonts.bold,
                 }}
               >
                 VERIFIED
@@ -462,7 +465,7 @@ export default function AccountSettingsScreen() {
               style={{
                 color: textPrimary,
                 fontSize: 16,
-                fontWeight: '700',
+                fontFamily: Fonts.bold,
                 marginBottom: 8,
               }}
             >
@@ -525,8 +528,8 @@ export default function AccountSettingsScreen() {
                   paddingVertical: 8,
                   borderRadius: 999,
                   backgroundColor: savingName
-                    ? '#4F46E5aa'
-                    : '#4F46E5',
+                    ? colors.primary + 'AA'
+                    : colors.primary,
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 6,
@@ -576,7 +579,7 @@ export default function AccountSettingsScreen() {
               style={{
                 color: textPrimary,
                 fontSize: 16,
-                fontWeight: '700',
+                fontFamily: Fonts.bold,
                 marginBottom: 8,
               }}
             >
@@ -644,8 +647,8 @@ export default function AccountSettingsScreen() {
                   paddingVertical: 8,
                   borderRadius: 999,
                   backgroundColor: savingBio
-                    ? '#4F46E5aa'
-                    : '#4F46E5',
+                    ? colors.primary + 'AA'
+                    : colors.primary,
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 6,

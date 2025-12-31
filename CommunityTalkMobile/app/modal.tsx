@@ -13,7 +13,8 @@ import {
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useColorScheme } from "react-native";
+import { Colors, Fonts } from "@/constants/theme";
+import { useColorScheme } from "@/hooks/use-color-scheme";
 import { MotiView } from "moti";
 import Animated, {
   useSharedValue,
@@ -125,7 +126,11 @@ const FloatingHeaderIllustration = ({ icon }: { icon: string }) => {
     transform: [{ translateY: translateY.value }],
   }));
 
-  const shadowColor = isDark ? "rgba(25, 18, 18, 0.5)" : "rgba(156, 136, 255, 0.4)";
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
+
+  // ...
+  const shadowColor = colors.primary + "60";
 
   return (
     <Animated.View style={[{ alignItems: "center" }, animatedStyle]}>
@@ -134,7 +139,7 @@ const FloatingHeaderIllustration = ({ icon }: { icon: string }) => {
           height: 96,
           width: 96,
           borderRadius: 24,
-          backgroundColor: "#A78BFA",
+          backgroundColor: colors.primary,
           alignItems: "center",
           justifyContent: "center",
           shadowColor,
@@ -223,9 +228,10 @@ const ActionCard = ({
 
 /* ───────────────────── Auth: Login Gateway ───────────────────── */
 function LoginGateway({ onDone }: { onDone: () => void }) {
-  const isDark = useColorScheme() === "dark";
+  const scheme = useColorScheme() ?? 'light';
   const insets = useSafeAreaInsets();
   const auth = React.useContext(AuthContext) as any;
+  const colors = Colors[scheme];
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -274,10 +280,8 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     safeClose();
   };
 
-  const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
-
   return (
-    <View style={{ flex: 1, backgroundColor: pageBg }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Close Button - Fixed at top */}
       <View
         style={{
@@ -294,7 +298,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
             width: 44,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+            backgroundColor: colors.surface,
             borderRadius: 22,
           }}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -302,7 +306,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
           accessibilityLabel="Close"
           activeOpacity={0.6}
         >
-          <Ionicons name="close" size={28} color={isDark ? "white" : "black"} />
+          <Ionicons name="close" size={28} color={colors.text} />
         </TouchableOpacity>
       </View>
 
@@ -325,16 +329,16 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
           <FloatingHeaderIllustration icon="✨" />
         </MotiView>
 
-        <Text className="text-3xl font-bold mb-2 text-black dark:text-white text-center">
+        <Text style={{ fontSize: 30, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text, textAlign: "center" }}>
           Welcome
         </Text>
-        <Text className="text-base mb-10 text-black/60 dark:text-white/60 text-center">
+        <Text style={{ fontSize: 16, marginBottom: 40, color: colors.textMuted, textAlign: "center" }}>
           Log in to continue.
         </Text>
 
         {/* Email */}
-        <View className="mb-4">
-          <Text className="text-sm font-semibold mb-2 text-black dark:text-white">Email</Text>
+        <View style={{ marginBottom: 16 }}>
+          <Text style={{ fontSize: 14, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text }}>Email</Text>
           <TextInput
             value={email}
             onChangeText={setEmail}
@@ -342,27 +346,43 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
             autoComplete="email"
             keyboardType="email-address"
             placeholder="you@example.com"
-            placeholderTextColor={isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)"}
-            className="bg-slate-200 dark:bg-zinc-800 rounded-xl px-4 py-3 text-black dark:text-white"
+            placeholderTextColor={colors.textMuted}
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              color: colors.text,
+              fontSize: 16,
+              fontFamily: Fonts.sans,
+            }}
           />
         </View>
 
         {/* Password */}
-        <View className="mb-2">
-          <Text className="text-sm font-semibold mb-2 text-black dark:text-white">Password</Text>
+        <View style={{ marginBottom: 8 }}>
+          <Text style={{ fontSize: 14, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text }}>Password</Text>
           <TextInput
             value={password}
             onChangeText={setPassword}
             secureTextEntry
             placeholder="••••••••"
-            placeholderTextColor={isDark ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.4)"}
-            className="bg-slate-200 dark:bg-zinc-800 rounded-xl px-4 py-3 text-black dark:text-white"
+            placeholderTextColor={colors.textMuted}
+            style={{
+              backgroundColor: colors.surface,
+              borderRadius: 12,
+              paddingHorizontal: 16,
+              paddingVertical: 12,
+              color: colors.text,
+              fontSize: 16,
+              fontFamily: Fonts.sans,
+            }}
           />
         </View>
 
         {!!error && (
-          <View className="mb-4 px-3 py-2 rounded-xl bg-red-50 border border-red-200">
-            <Text className="text-red-600 text-sm">{error}</Text>
+          <View style={{ marginBottom: 16, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: colors.danger + "20", borderWidth: 1, borderColor: colors.danger }}>
+            <Text style={{ color: colors.danger, fontSize: 14, fontFamily: Fonts.regular }}>{error}</Text>
           </View>
         )}
 
@@ -374,7 +394,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
           activeOpacity={0.8}
         >
           <LinearGradient
-            colors={["#6D5AE6", "#8B5CF6"] as const}
+            colors={[colors.primary, "#064E3B"] as const} // Forest Green gradient
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={{ paddingVertical: 16, alignItems: "center" }}
@@ -382,14 +402,14 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
             {busy ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text className="text-white font-bold text-base">Log in</Text>
+              <Text style={{ color: "white", fontFamily: Fonts.bold, fontSize: 16 }}>Log in</Text>
             )}
           </LinearGradient>
         </TouchableOpacity>
 
         {/* Divider */}
-        <View className="items-center my-6">
-          <Text className="text-black/50 dark:text-white/50">Don't have an account?</Text>
+        <View style={{ alignItems: "center", marginVertical: 24 }}>
+          <Text style={{ color: colors.textMuted }}>Don't have an account?</Text>
         </View>
 
         {/* Sign up → navigate to register */}
@@ -407,12 +427,12 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
           activeOpacity={0.8}
         >
           <LinearGradient
-            colors={["#14B8A6", "#06B6D4"] as const}
+            colors={[colors.accent, "#F43F5E"] as const} // Warm Coral / Rose gradient
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={{ paddingVertical: 16, alignItems: "center" }}
           >
-            <Text className="text-white font-bold text-base">Sign up</Text>
+            <Text style={{ color: "white", fontFamily: Fonts.bold, fontSize: 16 }}>Sign up</Text>
           </LinearGradient>
         </TouchableOpacity>
       </ScrollView>
@@ -422,7 +442,7 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
 
 /* ───────────────────── Main Modal (Signed-in) ───────────────────── */
 export default function ModalScreen() {
-  const isDark = useColorScheme() === "dark";
+  const scheme = useColorScheme() ?? 'light';
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ context?: string }>();
   const context = (params?.context || "default") as ModalContext;
@@ -430,16 +450,16 @@ export default function ModalScreen() {
   const auth = React.useContext(AuthContext) as any;
   const isAuthed = !!auth?.isAuthed;
   const isLoading = auth?.isLoading ?? true;
+  const colors = Colors[scheme];
 
   console.log("📱 [Modal] Rendering - isAuthed:", isAuthed, "isLoading:", isLoading);
 
   // Show loading state while auth is initializing
   if (isLoading) {
-    const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
     return (
-      <View style={{ flex: 1, backgroundColor: pageBg, justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator size="large" color="#8B5CF6" />
-        <Text style={{ color: isDark ? "white" : "black", marginTop: 16 }}>Loading...</Text>
+      <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ color: colors.text, marginTop: 16 }}>Loading...</Text>
       </View>
     );
   }
@@ -460,7 +480,6 @@ export default function ModalScreen() {
   }
 
   console.log("📱 [Modal] Showing Quick Actions");
-  const pageBg = isDark ? "#0B0B0F" : "#F9FAFB";
 
   const handleClose = () => {
     console.log("🔴 Quick Actions close button pressed");
@@ -468,7 +487,7 @@ export default function ModalScreen() {
   };
 
   return (
-    <View className="flex-1" style={{ backgroundColor: pageBg }}>
+    <View className="flex-1" style={{ backgroundColor: colors.background }}>
       {/* Header */}
       <View
         style={{
@@ -490,7 +509,7 @@ export default function ModalScreen() {
               width: 44,
               alignItems: 'center',
               justifyContent: 'center',
-              backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+              backgroundColor: colors.surface,
               borderRadius: 22,
             }}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -498,7 +517,7 @@ export default function ModalScreen() {
             accessibilityLabel="Close"
             activeOpacity={0.6}
           >
-            <Ionicons name="close" size={28} color={isDark ? "white" : "black"} />
+            <Ionicons name="close" size={28} color={colors.text} />
           </TouchableOpacity>
         </View>
       </View>
@@ -521,10 +540,10 @@ export default function ModalScreen() {
           <FloatingHeaderIllustration icon="✨" />
         </MotiView>
 
-        <Text className="text-3xl font-bold mb-2 text-black dark:text-white text-center">
+        <Text style={{ fontSize: 30, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text, textAlign: "center" }}>
           Quick Actions
         </Text>
-        <Text className="text-base mb-12 text-black/60 dark:text-white/60 text-center">
+        <Text style={{ fontSize: 16, marginBottom: 48, color: colors.textMuted, textAlign: "center" }}>
           What would you like to do?
         </Text>
 
@@ -533,7 +552,7 @@ export default function ModalScreen() {
           title="Global Communities"
           description="Join public groups you're not in yet"
           onPress={() => navigateFromModal("/global/communities")}
-          gradient={["#4F46E5", "#8B5CF6"] as const}
+          gradient={[colors.primary, "#064E3B"] as const}
         />
 
         <ActionCard
@@ -541,10 +560,9 @@ export default function ModalScreen() {
           title="Explore"
           description="Discover communities and connect"
           onPress={() => navigateFromModal("/(tabs)/explore")}
-          gradient={["#14B8A6", "#06B6D4"] as const}
+          gradient={[colors.accent, "#E11D48"] as const}
         />
       </ScrollView>
     </View>
   );
 }
-

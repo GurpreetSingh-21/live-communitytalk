@@ -36,6 +36,8 @@ import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
 import DMHeader from "@/components/dm/DMHeader";
 import { checkMessageToxicity } from '@/constants/safety';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme as useAppColorScheme } from '@/hooks/use-color-scheme';
 
 // 🔐 E2EE imports
 import { encryptMessage, decryptMessage, getPublicKey, ensureKeyPair } from "@/src/utils/e2ee";
@@ -206,7 +208,9 @@ export default function DMThreadScreen() {
 
   const { user } = useContext(AuthContext) as any;
   const myId = String(user?._id || "");
-  const isDark = useColorScheme() === "dark";
+  const colorScheme = useAppColorScheme();
+  const isDark = colorScheme === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
   const insets = useSafeAreaInsets();
   const { socket } = useSocket() as any;
 
@@ -234,15 +238,16 @@ export default function DMThreadScreen() {
   const resolvedClientIdsRef = useRef<Set<string>>(new Set());
   const listRef = useRef<FlatList<DMMessage>>(null);
 
+  // Adapter for existing code to work with new theme
   const colors = {
-    bg: isDark ? "#000" : "#fff",
-    text: isDark ? "#fff" : "#000",
-    textSecondary: isDark ? "#EBEBF599" : "#3C3C4399",
-    surface: isDark ? "#1C1C1E" : "#FFFFFF",
-    border: isDark ? "#38383A" : "#E5E5EA",
-    primaryStart: "#5E5CE6",
-    primaryEnd: "#007AFF",
-    headerBg: isDark ? "#0B0B0C" : "#FFFFFF",
+    bg: theme.background,
+    text: theme.text,
+    textSecondary: theme.textMuted,
+    surface: theme.surface,
+    border: theme.border,
+    primaryStart: theme.primary,
+    primaryEnd: theme.primary,
+    headerBg: theme.surface,
   };
 
   /* ─────── Partner header fetch ─────── */
@@ -784,7 +789,7 @@ export default function DMThreadScreen() {
     const isOnline = meta?.online;
 
     return (
-      <View style={{ backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5', marginBottom: 16 }}>
+      <View style={{ backgroundColor: theme.surface, marginBottom: 16 }}>
         {/* Banner - Make it VERY visible */}
         <View style={{ height: 150, backgroundColor: avatarColor }} />
 
@@ -799,7 +804,7 @@ export default function DMThreadScreen() {
                 borderRadius: 50,
                 backgroundColor: avatarColor,
                 borderWidth: 6,
-                borderColor: isDark ? colors.bg : colors.surface,
+                borderColor: theme.background,
                 alignItems: "center",
                 justifyContent: "center",
               }}
@@ -810,7 +815,7 @@ export default function DMThreadScreen() {
                   style={{ width: 88, height: 88, borderRadius: 44 }}
                 />
               ) : (
-                <Text style={{ color: "#fff", fontSize: 42, fontWeight: "800" }}>
+                <Text style={{ color: "#fff", fontSize: 42, fontFamily: Fonts.bold }}>
                   {initials(headerName)}
                 </Text>
               )}
@@ -826,20 +831,20 @@ export default function DMThreadScreen() {
                   borderRadius: 12,
                   backgroundColor: isOnline ? "#43B581" : "#747F8D",
                   borderWidth: 5,
-                  borderColor: isDark ? colors.bg : colors.surface,
+                  borderColor: theme.background,
                 }}
               />
             </View>
           </View>
 
           {/* User Name */}
-          <Text style={{ color: colors.text, fontSize: 24, fontWeight: "800", marginBottom: 4 }}>
+          <Text style={{ color: theme.text, fontSize: 24, fontFamily: Fonts.bold, marginBottom: 4 }}>
             {headerName}
           </Text>
 
           {/* User Bio/Email */}
           {(meta as any)?.bio && (
-            <Text style={{ color: colors.textSecondary, fontSize: 14, marginBottom: 8 }}>
+            <Text style={{ color: theme.textMuted, fontSize: 14, marginBottom: 8, fontFamily: Fonts.regular }}>
               {(meta as any).bio}
             </Text>
           )}
@@ -850,14 +855,16 @@ export default function DMThreadScreen() {
             <TouchableOpacity
               style={{
                 flex: 1,
-                backgroundColor: isDark ? "#43464D" : "#E3E5E8",
+                backgroundColor: theme.surface,
                 borderRadius: 8,
                 padding: 14,
                 alignItems: "center",
+                borderWidth: 1,
+                borderColor: theme.border
               }}
             >
-              <Ionicons name="chatbubble" size={20} color={colors.text} />
-              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600", marginTop: 4 }}>
+              <Ionicons name="chatbubble" size={20} color={theme.text} />
+              <Text style={{ color: theme.text, fontSize: 12, fontFamily: Fonts.bold, marginTop: 4 }}>
                 Message
               </Text>
             </TouchableOpacity>
@@ -867,14 +874,16 @@ export default function DMThreadScreen() {
               onPress={() => Alert.alert("Voice Call", "Voice calls  coming soon!")}
               style={{
                 flex: 1,
-                backgroundColor: isDark ? "#43464D" : "#E3E5E8",
+                backgroundColor: theme.surface,
                 borderRadius: 8,
                 padding: 14,
                 alignItems: "center",
+                borderWidth: 1,
+                borderColor: theme.border
               }}
             >
-              <Ionicons name="call" size={20} color={colors.text} />
-              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600", marginTop: 4 }}>
+              <Ionicons name="call" size={20} color={theme.text} />
+              <Text style={{ color: theme.text, fontSize: 12, fontFamily: Fonts.bold, marginTop: 4 }}>
                 Voice Call
               </Text>
             </TouchableOpacity>
@@ -884,14 +893,16 @@ export default function DMThreadScreen() {
               onPress={() => Alert.alert("Video Call", "Video calls coming soon!")}
               style={{
                 flex: 1,
-                backgroundColor: isDark ? "#43464D" : "#E3E5E8",
+                backgroundColor: theme.surface,
                 borderRadius: 8,
                 padding: 14,
                 alignItems: "center",
+                borderWidth: 1,
+                borderColor: theme.border
               }}
             >
-              <Ionicons name="videocam" size={20} color={colors.text} />
-              <Text style={{ color: colors.text, fontSize: 12, fontWeight: "600", marginTop: 4 }}>
+              <Ionicons name="videocam" size={20} color={theme.text} />
+              <Text style={{ color: theme.text, fontSize: 12, fontFamily: Fonts.bold, marginTop: 4 }}>
                 Video Call
               </Text>
             </TouchableOpacity>
@@ -902,15 +913,17 @@ export default function DMThreadScreen() {
             <View style={{ marginTop: 20 }}>
               <View
                 style={{
-                  backgroundColor: isDark ? "#2F3136" : "#F2F3F5",
+                  backgroundColor: theme.surface,
                   borderRadius: 12,
                   padding: 16,
+                  borderWidth: 1,
+                  borderColor: theme.border
                 }}
               >
-                <Text style={{ color: colors.text, fontSize: 13, fontWeight: "700", marginBottom: 8 }}>
+                <Text style={{ color: theme.text, fontSize: 13, fontFamily: Fonts.bold, marginBottom: 8 }}>
                   ABOUT ME
                 </Text>
-                <Text style={{ color: colors.text, fontSize: 15, lineHeight: 20 }}>
+                <Text style={{ color: theme.text, fontSize: 15, lineHeight: 20, fontFamily: Fonts.regular }}>
                   {(meta as any).bio}
                 </Text>
               </View>
@@ -1016,27 +1029,29 @@ export default function DMThreadScreen() {
       <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
         {showDate && (
           <View style={{ alignItems: "center", marginVertical: 12 }}>
-            <View style={{ backgroundColor: colors.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 0.5, borderColor: colors.border }}>
-              <Text style={{ color: colors.textSecondary, fontWeight: "600" }}>{dayLabel(curD)}</Text>
+            <View style={{ backgroundColor: theme.surface, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 0.5, borderColor: theme.border }}>
+              <Text style={{ color: theme.textMuted, fontFamily: Fonts.sans }}>{dayLabel(curD)}</Text>
             </View>
           </View>
         )}
         <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: 6 }}>
           <View style={{ maxWidth: "75%" }}>
             <View style={{
-              backgroundColor: mine ? undefined : colors.surface,
+              backgroundColor: mine ? undefined : theme.surface,
               borderRadius: 18,
               overflow: 'hidden',
               borderWidth: mine ? 0 : 0.5,
-              borderColor: colors.border
+              borderColor: theme.border
             }}>
               {mine && currentType === 'text' ? (
-                <LinearGradient colors={[colors.primaryStart, colors.primaryEnd]} style={{ padding: 12 }}>
-                  {contentNode}
+                <LinearGradient colors={[theme.primary, theme.primary]} style={{ padding: 12 }}>
+                  <Text style={{ color: '#fff', fontSize: 16, lineHeight: 22, fontFamily: Fonts.regular }}>{item.content}</Text>
                 </LinearGradient>
               ) : (
                 <View style={{ padding: currentType === 'text' ? 12 : 8 }}>
-                  {contentNode}
+                  {currentType === 'text' ? (
+                    <Text style={{ color: theme.text, fontSize: 16, lineHeight: 22, fontFamily: Fonts.regular }}>{item.content}</Text>
+                  ) : contentNode}
                 </View>
               )}
             </View>
@@ -1145,25 +1160,28 @@ export default function DMThreadScreen() {
                   <View
                     style={{
                       flex: 1,
-                      backgroundColor: isDark ? "#1C1C1E" : "#F2F2F7",
+                      backgroundColor: theme.surface,
                       borderRadius: 24,
                       paddingHorizontal: 12,
                       paddingVertical: 4,
                       minHeight: 40,
                       justifyContent: 'center',
+                      borderWidth: 1,
+                      borderColor: theme.border
                     }}
                   >
                     <TextInput
                       value={input}
                       onChangeText={handleTextChange}
                       placeholder="Message"
-                      placeholderTextColor={colors.textSecondary}
+                      placeholderTextColor={theme.textMuted}
                       style={{
-                        color: colors.text,
+                        color: theme.text,
                         fontSize: 17,
                         maxHeight: 120,
                         paddingTop: 8,
                         paddingBottom: 8,
+                        fontFamily: Fonts.regular
                       }}
                       multiline
                       editable={!sending}
@@ -1177,7 +1195,7 @@ export default function DMThreadScreen() {
                       style={{ marginLeft: 8, width: 40, height: 40, borderRadius: 20, overflow: "hidden", opacity: sending ? 0.4 : 1, marginBottom: 2 }}
                     >
                       <LinearGradient
-                        colors={[colors.primaryStart, colors.primaryEnd]}
+                        colors={[theme.primary, theme.primary]}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                         style={{ flex: 1, alignItems: "center", justifyContent: "center" }}

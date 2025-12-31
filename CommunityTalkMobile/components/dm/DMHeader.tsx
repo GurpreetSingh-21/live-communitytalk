@@ -1,6 +1,6 @@
-// components/dm/DMHeader.tsx
 import React, { useMemo } from "react";
 import { View, Text, Image, TouchableOpacity, Platform } from "react-native";
+import { Fonts } from "@/constants/theme";
 
 type Props = {
   name: string;
@@ -57,7 +57,7 @@ export default function DMHeader({
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             style={{ marginRight: 8 }}
           >
-            <Text style={{ fontSize: 22, lineHeight: 22, color: dark ? "#fff" : "#111827" }}>
+            <Text style={{ fontSize: 22, lineHeight: 22, color: dark ? "#fff" : "#111827", fontFamily: Fonts.regular }}>
               ‹
             </Text>
           </TouchableOpacity>
@@ -88,7 +88,7 @@ export default function DMHeader({
               {avatar && avatar.length <= 4 ? (
                 <Text style={{ fontSize: 20 }}>{avatar}</Text>
               ) : (
-                <Text style={{ fontSize: 13, fontWeight: "700", color: dark ? "#F5F5F5" : "#111827" }}>
+                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: dark ? "#F5F5F5" : "#111827" }}>
                   {initials}
                 </Text>
               )}
@@ -115,14 +115,14 @@ export default function DMHeader({
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text
             numberOfLines={1}
-            style={{ fontSize: 18, fontWeight: "700", color: dark ? "#fff" : "#111827" }}
+            style={{ fontSize: 18, fontFamily: Fonts.bold, color: dark ? "#fff" : "#111827" }}
           >
             {name || "Direct Message"}
           </Text>
           {!!status && (
             <Text
               numberOfLines={1}
-              style={{ fontSize: 12, color: dark ? "#A1A1AA" : "#6B7280", marginTop: 2 }}
+              style={{ fontSize: 12, color: dark ? "#A1A1AA" : "#6B7280", marginTop: 2, fontFamily: Fonts.regular }}
             >
               {status}
             </Text>

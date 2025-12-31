@@ -40,11 +40,14 @@ const SPRING_CONFIG = { damping: 16, stiffness: 200, mass: 0.8 };
 const ACTIVE_SCALE = 1.15;
 const INACTIVE_SCALE = 1.0;
 
+import { Colors } from '@/constants/theme';
+
 /* -------------------------------------------------------------------------- */
 /*                                     FAB                                    */
 /* -------------------------------------------------------------------------- */
 
 const Fab = ({ isDark }: { isDark: boolean }) => {
+  const theme = isDark ? Colors.dark : Colors.light;
   const scale = useSharedValue(1);
   const rotate = useSharedValue(0);
 
@@ -85,19 +88,21 @@ const Fab = ({ isDark }: { isDark: boolean }) => {
             width: 52,
             height: 52,
             borderRadius: 18,
-            backgroundColor: isDark ? '#FFFFFF' : '#000000',
+            // 🎨 FAB uses Accent color (Coral) for "Pop"
+            backgroundColor: theme.accent,
             alignItems: 'center',
             justifyContent: 'center',
-            shadowColor: isDark ? '#000' : '#007AFF',
-            shadowOpacity: isDark ? 0.3 : 0.2,
-            shadowRadius: 8,
+            shadowColor: theme.accent,
+            shadowOpacity: 0.4,
+            shadowRadius: 10,
             shadowOffset: { width: 0, height: 4 },
           },
           animatedStyle,
         ]}
       >
         <Animated.View style={animatedIconStyle}>
-          <IconSymbol name="plus" size={26} color={isDark ? '#000000' : '#FFFFFF'} weight="bold" />
+          {/* Always white icon on colorful FAB */}
+          <IconSymbol name="plus" size={26} color="#FFFFFF" weight="bold" />
         </Animated.View>
       </Animated.View>
     </Pressable>
@@ -134,7 +139,7 @@ const TabButton = ({
           size={26}
           name={(isFocused ? item.activeIcon : item.icon) as any}
           color={color}
-          weight={isFocused ? 'bold' : 'regular'} // San Francisco Symbols support weight
+          weight={isFocused ? 'bold' : 'regular'}
           style={{
             opacity: isFocused ? 1 : 0.6,
             transform: [{ scale: isFocused ? 1.05 : 1 }]
@@ -149,15 +154,15 @@ const TabButton = ({
               minWidth: 16,
               height: 16,
               borderRadius: 8,
-              backgroundColor: '#EF4444',
+              backgroundColor: Colors.light.danger, // Always use danger red for badges
               alignItems: 'center',
               justifyContent: 'center',
               paddingHorizontal: 2,
               borderWidth: 2,
-              borderColor: 'transparent' // could match bg for cutout effect
+              borderColor: 'transparent'
             }}
           >
-            <Text style={{ color: 'white', fontSize: 9, fontWeight: '800' }}>
+            <Text style={{ color: 'white', fontSize: 9, fontWeight: '800', fontFamily: 'PlusJakartaSans_700Bold' }}>
               {badgeCount && badgeCount > 99 ? '99+' : badgeCount}
             </Text>
           </View>
@@ -274,12 +279,15 @@ const CustomTabBar = ({ state, descriptors, navigation, isDark, insets, unreadCo
             const badge = route.name === 'dms' ? unreadCounts.dms :
               route.name === 'communities' ? unreadCounts.communities : 0;
 
+            const theme = isDark ? Colors.dark : Colors.light;
+
             return (
               <TabButton
                 key={route.name}
                 item={route}
                 isFocused={isFocused}
-                color={isFocused ? (isDark ? '#FFF' : '#000') : (isDark ? '#8E8E93' : '#8E8E93')}
+                // 🎨 Active = Primary (Forest Green), Inactive = Muted Gray
+                color={isFocused ? theme.tint : theme.tabIconDefault}
                 badgeCount={badge}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

@@ -9,8 +9,9 @@ import {
   Platform,
   Alert,
   Linking,
-  useColorScheme as useDeviceColorScheme,
 } from "react-native";
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
@@ -42,16 +43,17 @@ type PermissionStatus = "granted" | "denied" | "undetermined";
 
 export default function NotificationSettingsScreen() {
   const insets = useSafeAreaInsets();
-  const deviceScheme = useDeviceColorScheme();
-  const isDark = deviceScheme === "dark";
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
+  const isDark = scheme === 'dark';
 
   // UI Colors
-  const bg = isDark ? "#020617" : "#F1F5F9";
-  const cardBg = isDark ? "#020617" : "#FFFFFF";
-  const border = isDark ? "rgba(148,163,184,0.4)" : "rgba(15,23,42,0.06)";
-  const textPrimary = isDark ? "#F9FAFB" : "#020617";
-  const textSecondary = isDark ? "#9CA3AF" : "#6B7280";
-  const accent = "#6366F1";
+  const bg = colors.background;
+  const cardBg = colors.surface;
+  const border = colors.border;
+  const textPrimary = colors.text;
+  const textSecondary = colors.textMuted;
+  const accent = colors.primary;
 
   const [prefs, setPrefs] = useState<NotificationPrefs>(DEFAULT_PREFS);
   const [permStatus, setPermStatus] = useState<PermissionStatus>("undetermined");
@@ -118,7 +120,7 @@ export default function NotificationSettingsScreen() {
 
     try {
       await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(next));
-    } catch {}
+    } catch { }
 
     try {
       const token = await getAccessToken();
@@ -140,10 +142,10 @@ export default function NotificationSettingsScreen() {
   const humanStatus = loadingPerms
     ? "Checking…"
     : permStatus === "granted"
-    ? "Allowed"
-    : permStatus === "denied"
-    ? "Blocked in system settings"
-    : "Not decided yet";
+      ? "Allowed"
+      : permStatus === "denied"
+        ? "Blocked in system settings"
+        : "Not decided yet";
 
   const openSystemSettings = async () => {
     try {
@@ -254,7 +256,7 @@ export default function NotificationSettingsScreen() {
             <Text style={{ color: textPrimary, fontSize: 16 }}>Back</Text>
           </Pressable>
 
-          <Text style={{ color: textPrimary, fontSize: 18, fontWeight: "700" }}>
+          <Text style={{ color: textPrimary, fontSize: 18, fontFamily: Fonts.bold }}>
             Notifications
           </Text>
 
@@ -301,7 +303,7 @@ export default function NotificationSettingsScreen() {
                 style={{
                   color: textPrimary,
                   fontSize: 16,
-                  fontWeight: "700",
+                  fontFamily: Fonts.bold,
                 }}
               >
                 System notification status
@@ -332,10 +334,10 @@ export default function NotificationSettingsScreen() {
                       ? "#BBF7D0"
                       : "#15803D"
                     : permStatus === "denied"
-                    ? "#EF4444"
-                    : textSecondary,
+                      ? "#EF4444"
+                      : textSecondary,
                 fontSize: 13,
-                fontWeight: "600",
+                fontFamily: Fonts.bold,
               }}
             >
               {humanStatus}
@@ -346,20 +348,19 @@ export default function NotificationSettingsScreen() {
           <Pressable
             onPress={openSystemSettings}
             style={{
-              marginTop: 12,
+              marginTop: 16,
               alignSelf: "flex-start",
-              borderRadius: 999,
-              borderWidth: 1,
-              borderColor: isDark ? "rgba(148,163,184,0.6)" : "rgba(148,163,184,0.7)",
-              paddingHorizontal: 12,
-              paddingVertical: 7,
+              borderRadius: 14,
+              backgroundColor: isDark ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.05)",
+              paddingHorizontal: 16,
+              paddingVertical: 10,
               flexDirection: "row",
               alignItems: "center",
-              gap: 6,
+              gap: 8,
             }}
           >
             <Ionicons name="settings-outline" size={16} color={textPrimary} />
-            <Text style={{ color: textPrimary, fontSize: 13, fontWeight: "600" }}>
+            <Text style={{ color: textPrimary, fontSize: 14, fontFamily: Fonts.bold }}>
               Open system settings
             </Text>
           </Pressable>
@@ -374,7 +375,7 @@ export default function NotificationSettingsScreen() {
             marginBottom: 8,
             color: textSecondary,
             fontSize: 13,
-            fontWeight: "600",
+            fontFamily: Fonts.bold,
             textTransform: "uppercase",
             letterSpacing: 0.8,
           }}
@@ -386,21 +387,25 @@ export default function NotificationSettingsScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
-            marginBottom: 10,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: isDark ? "#020617" : "#E0F2FE",
@@ -408,16 +413,16 @@ export default function NotificationSettingsScreen() {
               >
                 <Ionicons
                   name="notifications-circle-outline"
-                  size={18}
+                  size={22}
                   color={textPrimary}
                 />
               </View>
 
-              <View style={{ maxWidth: "75%" }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: "600" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   Push notifications
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
                   Turn all CommunityTalk notifications on/off from the app.
                 </Text>
               </View>
@@ -427,7 +432,8 @@ export default function NotificationSettingsScreen() {
               value={prefs.pushEnabled}
               onValueChange={(v) => handleToggle("pushEnabled", v)}
               thumbColor={Platform.OS === "android" ? "#FFFFFF" : undefined}
-              trackColor={{ false: "#6B7280", true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>
@@ -436,34 +442,38 @@ export default function NotificationSettingsScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
-            marginBottom: 10,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: isDark ? "#020617" : "#ECFEFF",
                 }}
               >
-                <Ionicons name="chatbubble-ellipses-outline" size={18} color={textPrimary} />
+                <Ionicons name="chatbubble-ellipses-outline" size={22} color={textPrimary} />
               </View>
 
-              <View style={{ maxWidth: "75%" }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: "600" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   DMs & private messages
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
                   Alerts for direct messages.
                 </Text>
               </View>
@@ -473,7 +483,8 @@ export default function NotificationSettingsScreen() {
               value={prefs.dms}
               onValueChange={(v) => handleToggle("dms", v)}
               thumbColor={Platform.OS === "android" ? "#FFFFFF" : undefined}
-              trackColor={{ false: "#6B7280", true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>
@@ -482,34 +493,38 @@ export default function NotificationSettingsScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
-            marginBottom: 10,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: isDark ? "#020617" : "#FEF2F2",
                 }}
               >
-                <Ionicons name="people-outline" size={18} color={textPrimary} />
+                <Ionicons name="people-outline" size={22} color={textPrimary} />
               </View>
 
-              <View style={{ maxWidth: "75%" }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: "600" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   Community updates
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
                   Notifications from communities you’ve joined.
                 </Text>
               </View>
@@ -519,7 +534,8 @@ export default function NotificationSettingsScreen() {
               value={prefs.communities}
               onValueChange={(v) => handleToggle("communities", v)}
               thumbColor={Platform.OS === "android" ? "#FFFFFF" : undefined}
-              trackColor={{ false: "#6B7280", true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>
@@ -528,33 +544,38 @@ export default function NotificationSettingsScreen() {
         <View
           style={{
             backgroundColor: cardBg,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
+            borderRadius: 20,
+            paddingHorizontal: 16,
+            paddingVertical: 18,
             borderWidth: 1,
-            borderColor: border,
+            borderColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.02)',
+            marginBottom: 12,
+            shadowColor: '#000',
+            shadowOpacity: 0.02,
+            shadowRadius: 4,
+            shadowOffset: { width: 0, height: 2 }
           }}
         >
-          <View className="flex-row items-center justify-between">
-            <View className="flex-row items-center gap-3">
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 }}>
               <View
                 style={{
-                  height: 32,
-                  width: 32,
-                  borderRadius: 12,
+                  height: 40,
+                  width: 40,
+                  borderRadius: 20,
                   alignItems: "center",
                   justifyContent: "center",
                   backgroundColor: isDark ? "#020617" : "#EEF2FF",
                 }}
               >
-                <Ionicons name="at-outline" size={18} color={textPrimary} />
+                <Ionicons name="at-outline" size={22} color={textPrimary} />
               </View>
 
-              <View style={{ maxWidth: "75%" }}>
-                <Text style={{ color: textPrimary, fontSize: 15, fontWeight: "600" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: textPrimary, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
                   Mentions & replies
                 </Text>
-                <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
+                <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
                   Alerts when someone tags you.
                 </Text>
               </View>
@@ -564,7 +585,8 @@ export default function NotificationSettingsScreen() {
               value={prefs.mentions}
               onValueChange={(v) => handleToggle("mentions", v)}
               thumbColor={Platform.OS === "android" ? "#FFFFFF" : undefined}
-              trackColor={{ false: "#6B7280", true: accent }}
+              trackColor={{ false: isDark ? '#334155' : '#E2E8F0', true: accent }}
+              style={{ transform: [{ scale: Platform.OS === 'ios' ? 0.8 : 1 }] }}
             />
           </View>
         </View>

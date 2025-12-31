@@ -15,39 +15,41 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
  * However, this fallback ensures no crashes if the route
  * is somehow accessed manually.
  */
+import { Colors, Fonts } from '@/constants/theme';
+
 export default function AddModalPlaceholder() {
-  const scheme = useColorScheme();
-  const isDark = scheme === 'dark';
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
 
   return (
-    <View className="flex-1 items-center justify-center">
+    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
       {/* Subtle frosted background */}
       <LinearGradient
-        colors={isDark ? ['#111827', '#1f2937'] : ['#f3f4f6', '#e5e7eb']}
-        className="absolute inset-0"
+        colors={[colors.background, colors.surface]}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
       <BlurView
         intensity={90}
-        tint={isDark ? 'dark' : 'light'}
-        className="absolute inset-0"
+        tint={scheme === 'dark' ? 'dark' : 'light'}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
       />
 
-      <View className="items-center gap-3">
-        <IconSymbol name="plus.circle" size={48} color={isDark ? '#a78bfa' : '#7c3aed'} />
-        <Text className="text-lg font-semibold text-black dark:text-white">
+      <View style={{ alignItems: 'center', gap: 12 }}>
+        <IconSymbol name="plus.circle" size={48} color={colors.primary} />
+        <Text style={{ fontSize: 18, fontFamily: Fonts.bold, color: colors.text }}>
           Add New Post
         </Text>
-        <Text className="text-sm text-black/60 dark:text-white/60 text-center px-6">
+        <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center', paddingHorizontal: 24 }}>
           This is just a placeholder tab. Use the + button to open the real modal.
         </Text>
 
         <Pressable
           onPress={() => router.push('/modal')}
-          className="mt-6 rounded-full bg-indigo-500 px-6 py-3"
+          style={{ marginTop: 24, borderRadius: 9999, backgroundColor: colors.primary, paddingHorizontal: 24, paddingVertical: 12 }}
           accessibilityRole="button"
           accessibilityLabel="Open Add Modal"
         >
-          <Text className="text-white font-bold">Open Modal</Text>
+          <Text style={{ color: 'white', fontFamily: Fonts.bold }}>Open Modal</Text>
         </Pressable>
       </View>
     </View>

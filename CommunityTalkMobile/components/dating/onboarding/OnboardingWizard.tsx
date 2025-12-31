@@ -17,6 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { api } from '@/src/api/api';
 import { AuthContext } from '@/src/context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 // ── TYPES ────────────────────────────────────────────────────────────────────
 type FormData = {
@@ -57,6 +59,8 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     const [loading, setLoading] = useState(false);
     const { user } = useContext(AuthContext) as any;
     const router = useRouter();
+    const isDark = useColorScheme() === 'dark';
+    const theme = isDark ? Colors.dark : Colors.light;
 
     // Form State
     const [formData, setFormData] = useState<FormData>({
@@ -275,19 +279,19 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
     const renderIntro = () => (
         <View style={styles.stepContainer}>
-            <View style={styles.iconCircle}>
-                <Ionicons name="shield-checkmark" size={60} color="#4C5FD5" />
+            <View style={[styles.iconCircle, { backgroundColor: theme.primary + '20' }]}>
+                <Ionicons name="shield-checkmark" size={60} color={theme.primary} />
             </View>
-            <Text style={styles.title}>Verified & Exclusive</Text>
-            <Text style={styles.text}>
+            <Text style={[styles.title, { color: theme.text }]}>Verified & Exclusive</Text>
+            <Text style={[styles.text, { color: theme.textMuted }]}>
                 CommunityTalk Dating is exclusively for verified CUNY students.
             </Text>
-            <View style={styles.bulletList}>
-                <Text style={styles.bullet}>• Real Names Only</Text>
-                <Text style={styles.bullet}>• Verified .edu Emails</Text>
-                <Text style={styles.bullet}>• No Toxicity Tolerated</Text>
+            <View style={[styles.bulletList, { backgroundColor: theme.surface }]}>
+                <Text style={[styles.bullet, { color: theme.text }]}>• Real Names Only</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• Verified .edu Emails</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• No Toxicity Tolerated</Text>
             </View>
-            <TouchableOpacity style={styles.primaryButton} onPress={nextStep}>
+            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary }]} onPress={nextStep}>
                 <Text style={styles.primaryButtonText}>I Pledge to be Respectful</Text>
             </TouchableOpacity>
         </View>
@@ -295,48 +299,60 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
     const renderBasics = () => (
         <View style={styles.formContainer}>
-            <Text style={styles.label}>First Name</Text>
+            <Text style={[styles.label, { color: theme.text }]}>First Name</Text>
             <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
                 value={formData.firstName}
                 onChangeText={t => setFormData({ ...formData, firstName: t })}
                 placeholder="Your Name"
+                placeholderTextColor={theme.textMuted}
             />
 
-            <Text style={styles.label}>Gender</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Gender</Text>
             <View style={styles.chipRow}>
                 {['Male', 'Female', 'Non-binary'].map(g => (
                     <TouchableOpacity
                         key={g}
-                        style={[styles.chip, formData.gender === g && styles.chipActive]}
+                        style={[
+                            styles.chip,
+                            { backgroundColor: theme.muted, borderColor: 'transparent' },
+                            formData.gender === g && { backgroundColor: theme.primary + '20', borderColor: theme.primary }
+                        ]}
                         onPress={() => setFormData({ ...formData, gender: g })}
                     >
-                        <Text style={[styles.chipText, formData.gender === g && styles.chipTextActive]}>{g}</Text>
+                        <Text style={[
+                            styles.chipText,
+                            { color: theme.textMuted },
+                            formData.gender === g && { color: theme.primary }
+                        ]}>{g}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
 
-            <Text style={styles.label}>Date of Birth</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Date of Birth</Text>
             <View style={styles.dateRow}>
                 <TextInput
-                    style={[styles.input, { flex: 1 }]}
+                    style={[styles.input, { flex: 1, backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
                     placeholder="MM"
+                    placeholderTextColor={theme.textMuted}
                     keyboardType="numeric"
                     maxLength={2}
                     value={formData.birthDate.month}
                     onChangeText={t => setFormData({ ...formData, birthDate: { ...formData.birthDate, month: t } })}
                 />
                 <TextInput
-                    style={[styles.input, { flex: 1 }]}
+                    style={[styles.input, { flex: 1, backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
                     placeholder="DD"
+                    placeholderTextColor={theme.textMuted}
                     keyboardType="numeric"
                     maxLength={2}
                     value={formData.birthDate.day}
                     onChangeText={t => setFormData({ ...formData, birthDate: { ...formData.birthDate, day: t } })}
                 />
                 <TextInput
-                    style={[styles.input, { flex: 2 }]}
+                    style={[styles.input, { flex: 2, backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
                     placeholder="YYYY"
+                    placeholderTextColor={theme.textMuted}
                     keyboardType="numeric"
                     maxLength={4}
                     value={formData.birthDate.year}
@@ -344,23 +360,32 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                 />
             </View>
 
-            <Text style={styles.label}>Major</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Major</Text>
             <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
                 value={formData.major}
                 onChangeText={t => setFormData({ ...formData, major: t })}
                 placeholder="e.g. Computer Science"
+                placeholderTextColor={theme.textMuted}
             />
 
-            <Text style={styles.label}>Year</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Year</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
                 {STUDY_YEARS.map(y => (
                     <TouchableOpacity
                         key={y}
-                        style={[styles.chip, formData.year === y && styles.chipActive]}
+                        style={[
+                            styles.chip,
+                            { backgroundColor: theme.muted, borderColor: 'transparent' },
+                            formData.year === y && { backgroundColor: theme.primary + '20', borderColor: theme.primary }
+                        ]}
                         onPress={() => setFormData({ ...formData, year: y })}
                     >
-                        <Text style={[styles.chipText, formData.year === y && styles.chipTextActive]}>{y}</Text>
+                        <Text style={[
+                            styles.chipText,
+                            { color: theme.textMuted },
+                            formData.year === y && { color: theme.primary }
+                        ]}>{y}</Text>
                     </TouchableOpacity>
                 ))}
             </ScrollView>
@@ -369,34 +394,40 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
     const renderVibe = () => (
         <View style={styles.formContainer}>
-            <Text style={styles.label}>Bio</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Bio</Text>
             <TextInput
-                style={[styles.input, { height: 100, textAlignVertical: 'top' }]}
+                style={[styles.input, { height: 100, textAlignVertical: 'top', backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
                 value={formData.bio}
                 onChangeText={t => setFormData({ ...formData, bio: t })}
                 placeholder="Tell us about yourself..."
+                placeholderTextColor={theme.textMuted}
                 multiline
                 maxLength={500}
             />
-            <Text style={styles.hint}>{formData.bio.length}/500</Text>
+            <Text style={[styles.hint, { color: theme.textMuted }]}>{formData.bio.length}/500</Text>
 
-            <Text style={styles.label}>Height (cm) (Optional)</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Height (cm) (Optional)</Text>
             <TextInput
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
                 value={formData.height}
                 onChangeText={t => setFormData({ ...formData, height: t })}
                 placeholder="e.g. 175"
+                placeholderTextColor={theme.textMuted}
                 keyboardType="numeric"
             />
 
-            <Text style={styles.label}>Hobbies / Interests (Pick up to 5)</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Hobbies / Interests (Pick up to 5)</Text>
             <View style={styles.chipRowWrap}>
                 {PREDEFINED_HOBBIES.map(h => {
                     const selected = formData.hobbies.includes(h);
                     return (
                         <TouchableOpacity
                             key={h}
-                            style={[styles.chip, selected && styles.chipActive]}
+                            style={[
+                                styles.chip,
+                                { backgroundColor: theme.muted, borderColor: 'transparent' },
+                                selected && { backgroundColor: theme.primary + '20', borderColor: theme.primary }
+                            ]}
                             onPress={() => {
                                 const newHobbies = selected
                                     ? formData.hobbies.filter(i => i !== h)
@@ -404,7 +435,11 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                                 setFormData({ ...formData, hobbies: newHobbies });
                             }}
                         >
-                            <Text style={[styles.chipText, selected && styles.chipTextActive]}>{h}</Text>
+                            <Text style={[
+                                styles.chipText,
+                                { color: theme.textMuted },
+                                selected && { color: theme.primary }
+                            ]}>{h}</Text>
                         </TouchableOpacity>
                     );
                 })}
@@ -414,18 +449,18 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
     const renderPhotos = () => (
         <View style={styles.formContainer}>
-            <Text style={styles.label}>Add Photos (Min 2)</Text>
-            <Text style={styles.text}>Drag to reorder (Coming soon). First photo is your main one.</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Add Photos (Min 2)</Text>
+            <Text style={[styles.text, { color: theme.textMuted }]}>Drag to reorder (Coming soon). First photo is your main one.</Text>
 
             <View style={styles.photoGrid}>
                 {formData.photos.map((uri, idx) => (
-                    <View key={idx} style={styles.photoSlot}>
+                    <View key={idx} style={[styles.photoSlot, { backgroundColor: theme.muted }]}>
                         <Image source={{ uri }} style={styles.photoImage} />
                         <TouchableOpacity style={styles.removeButton} onPress={() => removePhoto(idx)}>
                             <Ionicons name="close" size={16} color="#FFF" />
                         </TouchableOpacity>
                         {idx === 0 && (
-                            <View style={styles.mainBadge}>
+                            <View style={[styles.mainBadge, { backgroundColor: theme.primary }]}>
                                 <Text style={styles.mainBadgeText}>MAIN</Text>
                             </View>
                         )}
@@ -433,8 +468,8 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                 ))}
 
                 {formData.photos.length < 6 && (
-                    <TouchableOpacity style={styles.addPhotoSlot} onPress={pickImage}>
-                        <Ionicons name="add" size={40} color="#CCC" />
+                    <TouchableOpacity style={[styles.addPhotoSlot, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickImage}>
+                        <Ionicons name="add" size={40} color={theme.textMuted} />
                     </TouchableOpacity>
                 )}
             </View>
@@ -444,13 +479,13 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     const renderReview = () => (
         <View style={styles.stepContainer}>
             <Image source={{ uri: formData.photos[0] }} style={{ width: 150, height: 200, borderRadius: 12, marginBottom: 20 }} />
-            <Text style={styles.title}>{formData.firstName}, {new Date().getFullYear() - parseInt(formData.birthDate.year)}</Text>
-            <Text style={styles.text}>{formData.major} • {formData.year}</Text>
-            <Text style={[styles.text, { fontStyle: 'italic', marginTop: 10 }]}>"{formData.bio}"</Text>
+            <Text style={[styles.title, { color: theme.text }]}>{formData.firstName}, {new Date().getFullYear() - parseInt(formData.birthDate.year)}</Text>
+            <Text style={[styles.text, { color: theme.textMuted }]}>{formData.major} • {formData.year}</Text>
+            <Text style={[styles.text, { fontStyle: 'italic', marginTop: 10, color: theme.textMuted }]}>"{formData.bio}"</Text>
 
             <View style={{ height: 20 }} />
-            <Text style={styles.label}>Ready to join the pool?</Text>
-            <Text style={styles.hint}>You can edit your profile later.</Text>
+            <Text style={[styles.label, { color: theme.text }]}>Ready to join the pool?</Text>
+            <Text style={[styles.hint, { color: theme.textMuted }]}>You can edit your profile later.</Text>
         </View>
     );
 
@@ -466,20 +501,20 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     };
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: theme.background }]}>
             <View style={styles.header}>
                 {step > 0 && (
                     <TouchableOpacity onPress={prevStep} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color="#000" />
+                        <Ionicons name="arrow-back" size={24} color={theme.text} />
                     </TouchableOpacity>
                 )}
-                <Text style={styles.stepTitle}>{STEPS[step]}</Text>
+                <Text style={[styles.stepTitle, { color: theme.text }]}>{STEPS[step]}</Text>
                 <View style={{ width: 24 }} />
             </View>
 
             <View style={styles.progressBar}>
                 {STEPS.map((_, i) => (
-                    <View key={i} style={[styles.progressDot, i <= step && styles.progressDotActive]} />
+                    <View key={i} style={[styles.progressDot, { backgroundColor: i <= step ? theme.primary : theme.muted }]} />
                 ))}
             </View>
 
@@ -488,13 +523,13 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             </ScrollView>
 
             {step > 0 && (
-                <View style={styles.footer}>
+                <View style={[styles.footer, { borderTopColor: theme.border }]}>
                     {step === STEPS.length - 1 ? (
-                        <TouchableOpacity style={styles.primaryButton} onPress={handleSubmit} disabled={loading}>
+                        <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary }]} onPress={handleSubmit} disabled={loading}>
                             {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>Create Profile</Text>}
                         </TouchableOpacity>
                     ) : (
-                        <TouchableOpacity style={styles.primaryButton} onPress={nextStep}>
+                        <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary }]} onPress={nextStep}>
                             <Text style={styles.primaryButtonText}>Next</Text>
                         </TouchableOpacity>
                     )}
@@ -507,7 +542,7 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#FFF',
+        backgroundColor: Colors.light.background,
     },
     header: {
         flexDirection: 'row',
@@ -522,7 +557,8 @@ const styles = StyleSheet.create({
     },
     stepTitle: {
         fontSize: 18,
-        fontWeight: '700',
+        fontFamily: Fonts.bold,
+        color: Colors.light.text,
     },
     progressBar: {
         flexDirection: 'row',
@@ -534,10 +570,10 @@ const styles = StyleSheet.create({
         width: 8,
         height: 8,
         borderRadius: 4,
-        backgroundColor: '#E0E0E0'
+        backgroundColor: Colors.light.muted
     },
     progressDotActive: {
-        backgroundColor: '#4C5FD5'
+        backgroundColor: Colors.light.primary
     },
     content: {
         padding: 24,
@@ -547,7 +583,7 @@ const styles = StyleSheet.create({
         padding: 24,
         paddingBottom: 100, // Extra padding for TabBar/FAB
         borderTopWidth: 1,
-        borderTopColor: '#EEE'
+        borderTopColor: Colors.light.border
     },
     stepContainer: {
         alignItems: 'center',
@@ -560,54 +596,59 @@ const styles = StyleSheet.create({
         width: 120,
         height: 120,
         borderRadius: 60,
-        backgroundColor: 'rgba(76,95,213,0.1)',
+        backgroundColor: Colors.light.primary + '20',
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 10
     },
     title: {
         fontSize: 24,
-        fontWeight: '800',
-        textAlign: 'center'
+        fontFamily: Fonts.bold,
+        textAlign: 'center',
+        color: Colors.light.text,
     },
     text: {
         fontSize: 16,
         textAlign: 'center',
-        color: '#666',
-        lineHeight: 24
+        color: Colors.light.textMuted,
+        lineHeight: 24,
+        fontFamily: Fonts.regular
     },
     bulletList: {
         alignSelf: 'stretch',
-        backgroundColor: '#F8F9FC',
+        backgroundColor: Colors.light.surface,
         padding: 20,
         borderRadius: 16,
         marginTop: 10
     },
     bullet: {
         fontSize: 16,
-        fontWeight: '600',
+        fontFamily: Fonts.bold,
         marginBottom: 8,
-        color: '#333'
+        color: Colors.light.text
     },
     label: {
         fontSize: 16,
-        fontWeight: '700',
-        color: '#333',
+        fontFamily: Fonts.bold,
+        color: Colors.light.text,
         marginBottom: 4
     },
     hint: {
         fontSize: 12,
-        color: '#999',
+        color: Colors.light.textMuted,
         marginTop: -10,
-        textAlign: 'right'
+        textAlign: 'right',
+        fontFamily: Fonts.regular
     },
     input: {
-        backgroundColor: '#F5F5F5',
+        backgroundColor: Colors.light.surface,
         padding: 16,
         borderRadius: 12,
         fontSize: 16,
         borderWidth: 1,
-        borderColor: '#EEE'
+        borderColor: Colors.light.border,
+        color: Colors.light.text,
+        fontFamily: Fonts.regular
     },
     chipRow: {
         flexDirection: 'row',
@@ -622,20 +663,20 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderRadius: 20,
-        backgroundColor: '#F0F0F0',
+        backgroundColor: Colors.light.muted,
         borderWidth: 1,
         borderColor: 'transparent'
     },
     chipActive: {
-        backgroundColor: '#EEF2FF',
-        borderColor: '#4C5FD5'
+        backgroundColor: Colors.light.primary + '20',
+        borderColor: Colors.light.primary
     },
     chipText: {
-        fontWeight: '600',
-        color: '#666'
+        fontFamily: Fonts.bold,
+        color: Colors.light.textMuted
     },
     chipTextActive: {
-        color: '#4C5FD5'
+        color: Colors.light.primary
     },
     dateRow: {
         flexDirection: 'row',
@@ -651,15 +692,15 @@ const styles = StyleSheet.create({
         aspectRatio: 3 / 4,
         borderRadius: 10,
         overflow: 'hidden',
-        backgroundColor: '#F0F0F0'
+        backgroundColor: Colors.light.muted
     },
     addPhotoSlot: {
         width: '30%',
         aspectRatio: 3 / 4,
         borderRadius: 10,
-        backgroundColor: '#F8F8F8',
+        backgroundColor: Colors.light.surface,
         borderWidth: 2,
-        borderColor: '#EEE',
+        borderColor: Colors.light.border,
         borderStyle: 'dashed',
         alignItems: 'center',
         justifyContent: 'center'
@@ -681,17 +722,17 @@ const styles = StyleSheet.create({
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: 'rgba(76,95,213,0.8)',
+        backgroundColor: Colors.light.primary,
         paddingVertical: 4,
         alignItems: 'center'
     },
     mainBadgeText: {
         color: '#FFF',
         fontSize: 10,
-        fontWeight: '800'
+        fontFamily: Fonts.bold
     },
     primaryButton: {
-        backgroundColor: '#4C5FD5',
+        backgroundColor: Colors.light.primary,
         paddingVertical: 16,
         borderRadius: 14,
         alignItems: 'center',
@@ -699,7 +740,7 @@ const styles = StyleSheet.create({
     },
     primaryButtonText: {
         color: '#FFF',
-        fontWeight: '700',
+        fontFamily: Fonts.bold,
         fontSize: 16
     }
 });

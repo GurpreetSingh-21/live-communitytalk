@@ -9,6 +9,8 @@ import OnboardingWizard from '@/components/dating/onboarding/OnboardingWizard';
 import SwipingDeck from '@/components/dating/SwipingDeck';
 import MatchesList from '@/components/dating/MatchesList';
 import SettingsModal from '@/components/dating/SettingsModal';
+import { Colors, Fonts } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function DatingScreen() {
     const router = useRouter();
@@ -17,11 +19,14 @@ export default function DatingScreen() {
     const [view, setView] = useState<'stack' | 'matches'>('stack');
     const [settingsVisible, setSettingsVisible] = useState(false);
 
+    const isDark = useColorScheme() === 'dark';
+    const theme = isDark ? Colors.dark : Colors.light;
+
     // Handle Loading
     if (isLoading) {
         return (
             <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#FF6B6B" />
+                <ActivityIndicator size="large" color={theme.accent} />
             </View>
         );
     }
@@ -56,8 +61,10 @@ export default function DatingScreen() {
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={['#FF6B6B', '#FF8E53']} // Dating Brand Colors
+                colors={[theme.accent, theme.primary]} // Warm Coral -> Forest Green
                 style={styles.gradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
             >
                 <SafeAreaView style={styles.safeArea}>
                     {/* Custom Header with Toggle */}
@@ -77,7 +84,7 @@ export default function DatingScreen() {
                             onPress={() => setView('stack')}
                             activeOpacity={0.8}
                         >
-                            <Text style={styles.headerTitle}>CommunityTalk</Text>
+                            <Text style={styles.headerTitle}>Dating</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -116,11 +123,11 @@ export default function DatingScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: Colors.light.background, // Default background
     },
     loadingContainer: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: Colors.light.background,
         alignItems: 'center',
         justifyContent: 'center'
     },
@@ -140,7 +147,7 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         fontSize: 20,
-        fontWeight: '800',
+        fontFamily: Fonts.bold,
         color: '#FFF',
         opacity: 0.9
     },
@@ -154,14 +161,11 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        // Remove centering for matches list which needs scrolling
-        // alignItems: 'center',
-        // justifyContent: 'center',
-        // padding: 24, // MatchesList has its own padding
     },
     matchesContainer: {
         flex: 1,
-        backgroundColor: '#F8F9FC',
+        backgroundColor: Colors.light.background, // Or theme.background if we access it? StyleSheet is static.
+        // We will override this inline in component using theme.background
         borderTopLeftRadius: 30,
         borderTopRightRadius: 30,
         marginTop: 10,
@@ -169,19 +173,20 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 28,
-        fontWeight: 'bold',
-        color: '#000',
+        fontFamily: Fonts.bold,
+        color: Colors.light.text,
         marginBottom: 12,
         textAlign: 'center',
     },
     subtitle: {
         fontSize: 16,
-        color: 'rgba(255,255,255,0.9)',
+        color: Colors.light.textMuted,
         textAlign: 'center',
         marginBottom: 40,
+        fontFamily: Fonts.regular
     },
     button: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: Colors.light.primary,
         paddingHorizontal: 32,
         paddingVertical: 16,
         borderRadius: 30,
@@ -192,8 +197,8 @@ const styles = StyleSheet.create({
         elevation: 5,
     },
     buttonText: {
-        color: '#FF6B6B',
-        fontWeight: 'bold',
+        color: '#FFF',
+        fontFamily: Fonts.bold,
         fontSize: 18,
     },
 });

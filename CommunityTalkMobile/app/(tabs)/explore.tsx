@@ -10,6 +10,7 @@ import { useSocket } from '@/src/context/SocketContext';
 import { AuthContext } from '@/src/context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '@/src/api/api';
+import { Colors, Fonts } from '@/constants/theme';
 
 type EventItem = {
   _id: string;
@@ -33,12 +34,13 @@ const fetchedScopes: Record<string, boolean> = {};
 export default function ExploreScreen() {
   const { top } = useSafeAreaInsets();
   const isDark = useColorScheme() === 'dark';
+  const theme = isDark ? Colors.dark : Colors.light;
   const { socket } = (useSocket() ?? {}) as { socket?: any };
   const { isAuthed, user } = React.useContext(AuthContext) as any;
 
   // scope from backend
   const collegeKey = user?.collegeSlug ?? null;
-  const faithKey   = user?.religionKey ?? null;
+  const faithKey = user?.religionKey ?? null;
   const scopeKey = `${Boolean(isAuthed)}:${collegeKey ?? ''}:${faithKey ?? ''}`;
 
   const [loading, setLoading] = useState(true);
@@ -47,8 +49,8 @@ export default function ExploreScreen() {
   const [itemsState, _setItems] = useState<EventItem[]>([]);
 
   // refs (single source of truth in callbacks)
-  const itemsRef   = useRef<EventItem[]>([]);
-  const cursorRef  = useRef<string | null>(null);
+  const itemsRef = useRef<EventItem[]>([]);
+  const cursorRef = useRef<string | null>(null);
   const hasMoreRef = useRef(false);
   const fetchingRef = useRef(false);
   const pagingReadyRef = useRef(false);
@@ -116,7 +118,7 @@ export default function ExploreScreen() {
   }, [isAuthed, collegeKey, faithKey]);
 
   const fetchReset = useCallback(() => doFetch({ reset: true }), [doFetch]);
-  const fetchNext  = useCallback(() => doFetch({ reset: false }), [doFetch]);
+  const fetchNext = useCallback(() => doFetch({ reset: false }), [doFetch]);
 
   // fetch exactly once per scope while focused
   useFocusEffect(
@@ -129,7 +131,7 @@ export default function ExploreScreen() {
       } else {
         setLoading(false);
       }
-      return () => {};
+      return () => { };
     }, [scopeKey, isAuthed, collegeKey, faithKey, fetchReset])
   );
 
@@ -178,46 +180,58 @@ export default function ExploreScreen() {
 
     return (
       <Pressable
-        className="mx-4 mb-5 overflow-hidden rounded-3xl border border-slate-200/60 bg-white/90 dark:border-zinc-800 dark:bg-zinc-900/90"
-        style={{ shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 }}
+        style={{
+          marginHorizontal: 16,
+          marginBottom: 20,
+          overflow: 'hidden',
+          borderRadius: 24,
+          borderWidth: 1,
+          borderColor: theme.border,
+          backgroundColor: theme.surface,
+          shadowColor: '#000',
+          shadowOpacity: 0.05,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 4 },
+          elevation: 2
+        }}
       >
-        <View className="relative w-full" style={{ height: 160 }}>
+        <View style={{ height: 160, width: '100%' }}>
           {e.cover ? (
             <Image source={{ uri: e.cover }} style={{ height: '100%', width: '100%' }} />
           ) : (
             <LinearGradient
-              colors={isDark ? ['#0B0B0E', '#16181D'] : ['#EEF2FF', '#E0E7FF']}
+              colors={[theme.muted, theme.border]}
               style={{ height: '100%', width: '100%' }}
             />
           )}
-          <View className="absolute left-3 top-3 rounded-full bg-black/50 px-3 py-1.5 dark:bg-white/15">
-            <Text className="text-xs font-semibold text-white dark:text-zinc-100" numberOfLines={1}>
+          <View style={{ position: 'absolute', left: 12, top: 12, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 6 }}>
+            <Text style={{ fontSize: 12, fontFamily: Fonts.bold, color: '#FFF' }} numberOfLines={1}>
               {e.location?.kind === 'online' ? 'Online' : e.location?.address ? e.location.address : 'In person'}
             </Text>
           </View>
         </View>
 
-        <View className="p-4">
-          <Text className="mb-1 text-xl font-extrabold tracking-tight text-black dark:text-white" numberOfLines={2}>
+        <View style={{ padding: 16 }}>
+          <Text style={{ marginBottom: 4, fontSize: 20, fontFamily: Fonts.bold, letterSpacing: -0.5, color: theme.text }} numberOfLines={2}>
             {e.title}
           </Text>
-          <Text className="text-[13px] text-slate-600 dark:text-slate-400" numberOfLines={2}>
+          <Text style={{ fontSize: 13, color: theme.textMuted, fontFamily: Fonts.regular }} numberOfLines={2}>
             {dateStr}
           </Text>
 
           {!!e.tags?.length && (
-            <View className="mt-3 flex-row flex-wrap gap-2">
+            <View style={{ marginTop: 12, flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
               {e.tags.slice(0, 3).map((t) => (
-                <View key={t} className="rounded-full bg-slate-100 px-2.5 py-1 dark:bg-zinc-800/80">
-                  <Text className="text-[11px] font-semibold text-slate-700 dark:text-slate-300">{t}</Text>
+                <View key={t} style={{ borderRadius: 999, backgroundColor: theme.muted, paddingHorizontal: 10, paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 11, fontFamily: Fonts.bold, color: theme.textMuted }}>{t}</Text>
                 </View>
               ))}
             </View>
           )}
 
-          <View className="mt-4 flex-row items-center">
-            <Ionicons name="school" size={16} color={isDark ? '#a1a1aa' : '#64748b'} />
-            <Text className="ml-1 text-[13px] text-slate-600 dark:text-slate-400" numberOfLines={1}>
+          <View style={{ marginTop: 16, flexDirection: 'row', alignItems: 'center' }}>
+            <Ionicons name="school" size={16} color={theme.icon} />
+            <Text style={{ marginLeft: 6, fontSize: 13, color: theme.textMuted, fontFamily: Fonts.regular }} numberOfLines={1}>
               {e.collegeId}
             </Text>
           </View>
@@ -229,14 +243,14 @@ export default function ExploreScreen() {
   const Header = (
     <View className="mb-2">
       <LinearGradient
-        colors={isDark ? ['#0f1115', '#090a0f'] : ['#f8fafc', '#eef2ff']}
+        colors={[theme.background, theme.background]} // Or gradient if needed, keeping simple matching background for now to look seamless
         style={{ paddingTop: top + 18, paddingBottom: 18 }}
       >
-        <View className="px-4">
-          <Text className="text-4xl font-extrabold leading-tight text-black dark:text-white">
+        <View style={{ paddingHorizontal: 16 }}>
+          <Text style={{ fontSize: 36, fontFamily: Fonts.bold, lineHeight: 40, color: theme.text }}>
             What’s happening
           </Text>
-          <Text className="mt-2 text-[13px] text-slate-500 dark:text-slate-400">
+          <Text style={{ marginTop: 8, fontSize: 14, color: theme.textMuted, fontFamily: Fonts.regular }}>
             For your campus & faith community
           </Text>
         </View>
@@ -245,21 +259,21 @@ export default function ExploreScreen() {
   );
 
   const Empty = !loading ? (
-    <View className="items-center py-24">
+    <View style={{ alignItems: 'center', paddingVertical: 96 }}>
       <LinearGradient
-        colors={isDark ? ['#0f1115', '#0b0d12'] : ['#f1f5f9', '#e2e8f0']}
+        colors={[theme.muted, theme.border]}
         style={{ height: 96, width: 96, borderRadius: 24, marginBottom: 16 }}
       />
-      <Text className="text-lg font-bold text-black dark:text-white">Nothing scheduled yet</Text>
-      <Text className="mt-1 text-slate-500 dark:text-slate-400">Check back soon.</Text>
+      <Text style={{ fontSize: 18, fontFamily: Fonts.bold, color: theme.text }}>Nothing scheduled yet</Text>
+      <Text style={{ marginTop: 4, color: theme.textMuted, fontFamily: Fonts.regular }}>Check back soon.</Text>
     </View>
   ) : null;
 
   return (
-    <View style={{ paddingTop: top, flex: 1 }} className="bg-slate-100 dark:bg-zinc-950">
+    <View style={{ paddingTop: top, flex: 1, backgroundColor: theme.background }}>
       {loading && !itemsState.length ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={theme.primary} />
         </View>
       ) : (
         <Animated.FlatList
@@ -268,7 +282,7 @@ export default function ExploreScreen() {
           onScroll={onScroll}
           scrollEventThrottle={16}
           renderItem={({ item }) => <EventCard e={item} />}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.text} />}
           onEndReachedThreshold={0.25}
           onEndReached={() => {
             if (!pagingReadyRef.current) return;
@@ -280,15 +294,15 @@ export default function ExploreScreen() {
           }}
           ListEmptyComponent={Empty}
           ListHeaderComponent={Header}
-          ItemSeparatorComponent={() => <View className="h-3" />}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
           contentContainerStyle={{ paddingBottom: 28 }}
           initialNumToRender={6}
           removeClippedSubviews
         />
       )}
       {!!error && (
-        <View className="absolute bottom-6 left-4 right-4 rounded-xl border border-red-300 bg-red-50 p-3 dark:border-red-900/20">
-          <Text className="text-sm font-semibold text-red-700 dark:text-red-300">{error}</Text>
+        <View style={{ position: 'absolute', bottom: 24, left: 16, right: 16, borderRadius: 12, borderWidth: 1, borderColor: theme.danger + '40', backgroundColor: theme.surface, padding: 12 }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: theme.danger }}>{error}</Text>
         </View>
       )}
     </View>
