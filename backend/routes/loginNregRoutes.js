@@ -543,6 +543,21 @@ router.post("/verify-code", async (req, res) => {
 /* --------------------------- BOOTSTRAP (GET) --------------------------- */
 router.get("/bootstrap", authenticate, async (req, res) => {
   try {
+    const cacheKey = `bootstrap:${req.user.id}`;
+    
+    // 🚀 Check Redis cache first
+    if (req.redisClient) {
+      try {
+        const cached = await req.redisClient.get(cacheKey);
+        if (cached) {
+          console.log(`✅ [Bootstrap] Cache HIT for user ${req.user.id}`);
+          return res.status(200).json(JSON.parse(cached));
+        }
+      } catch (cacheErr) {
+        console.warn('[Bootstrap] Redis cache read failed:', cacheErr);
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id: req.user.id }
     });
@@ -582,7 +597,7 @@ router.get("/bootstrap", authenticate, async (req, res) => {
     const hasProfile = !!existingProfile;
     const datingProfileId = existingProfile?.id || null;
 
-    return res.status(200).json({
+    const responseData = {
       message: "Bootstrap successful",
       user: {
         ...user,
@@ -591,7 +606,19 @@ router.get("/bootstrap", authenticate, async (req, res) => {
         datingProfileId: datingProfileId
       },
       communities,
-    });
+    };
+
+    // 🚀 Cache in Redis for 5 minutes
+    if (req.redisClient) {
+      try {
+        await req.redisClient.setex(cacheKey, 300, JSON.stringify(responseData));
+        console.log(`💾 [Bootstrap] Cached for user ${req.user.id} (5 min TTL)`);
+      } catch (cacheErr) {
+        console.warn('[Bootstrap] Redis cache write failed:', cacheErr);
+      }
+    }
+
+    return res.status(200).json(responseData);
   } catch (err) {
     console.error("GET /bootstrap error:", err);
     return res.status(500).json({ error: "Internal server error" });

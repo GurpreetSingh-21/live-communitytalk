@@ -10,16 +10,19 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.anonymous.CommunityTalkMobile",
+      "bundleIdentifier": "com.communitytalk.mobile",
+      "buildNumber": "1",
       "googleServicesFile": "./GoogleService-Info.plist",
-      "language": "objc",
-      "minimumOsVersion": "15.1",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": true,
+        "NSCameraUsageDescription": "This app uses the camera for verifying your profile and taking photos for messages.",
+        "NSMicrophoneUsageDescription": "This app uses the microphone to record voice messages in chats.",
+        "NSPhotoLibraryUsageDescription": "This app accesses your photos to let you share images in chats and update your profile.",
+        "NSPhotoLibraryAddUsageDescription": "This app saves photos to your library."
       }
     },
     "android": {
-      "package": "com.anonymous.CommunityTalkMobile",
+      "package": "com.communitytalk.mobile",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
@@ -50,7 +53,8 @@
       ],
       "expo-font",
       "expo-notifications",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -58,7 +62,7 @@
     },
     "extra": {
       "API_URL_DEV": "",
-      "API_URL_PROD": "",
+      "API_URL_PROD": "http://localhost:3000",
       "router": {},
       "eas": {
         "projectId": "fc828742-1044-46ce-a60e-65d1acd26002"

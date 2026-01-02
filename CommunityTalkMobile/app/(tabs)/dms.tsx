@@ -514,47 +514,58 @@ export default function DMsScreen(): React.JSX.Element {
         };
       });
 
-      // 🔐 E2EE: Second pass - decrypt encrypted previews (async)
-      const decrypted = await Promise.all(
-        normalizedRaw.map(async (thread: any) => {
-          if (!thread._needsDecryption) {
-            const { _needsDecryption, ...clean } = thread;
-            return clean;
-          }
+      // 🚀 PERFORMANCE OPTIMIZATION: Show threads IMMEDIATELY with placeholders
+      // Then decrypt in background (non-blocking UI)
+      const threadsWithPlaceholders = normalizedRaw.map((thread: any) => {
+        if (thread._needsDecryption) {
+          return {
+            ...thread,
+            lastMsg: { ...thread.lastMsg, content: '🔒 Decrypting...' },
+            _needsDecryption: undefined,
+          };
+        }
+        const { _needsDecryption, ...clean } = thread;
+        return clean;
+      });
+
+      // 🔐 E2EE: Decrypt in background (don't block initial render!)
+      Promise.all(
+        normalizedRaw.map(async (thread: any, index: number) => {
+          if (!thread._needsDecryption) return null;
 
           try {
             // Fetch partner's public key for decryption
             const partnerPubKey = await fetchPublicKey(thread.id);
             if (!partnerPubKey) {
-              // No key - show encrypted placeholder
-              return {
-                ...thread,
-                lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
-                _needsDecryption: undefined,
-              };
+              return { index, content: '🔒 Encrypted' };
             }
 
             // Decrypt the message content
             const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey);
             console.log(`🔐 [E2EE] Preview decrypted for ${thread.name}`);
-
-            return {
-              ...thread,
-              lastMsg: { ...thread.lastMsg, content: decryptedContent },
-              _needsDecryption: undefined,
-            };
+            return { index, content: decryptedContent };
           } catch (err) {
             console.warn(`🔐 [E2EE] Preview decrypt failed for ${thread.name}:`, err);
-            return {
-              ...thread,
-              lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
-              _needsDecryption: undefined,
-            };
+            return { index, content: '🔒 Encrypted' };
           }
         })
-      );
+      ).then((results) => {
+        // Update only the decrypted threads (batched state update)
+        setThreads((prev) => {
+          const updated = [...prev];
+          results.forEach((result) => {
+            if (result !== null && updated[result.index]) {
+              updated[result.index] = {
+                ...updated[result.index],
+                lastMsg: { ...updated[result.index].lastMsg, content: result.content },
+              };
+            }
+          });
+          return updated;
+        });
+      });
 
-      return decrypted as DMThread[];
+      return threadsWithPlaceholders as DMThread[];
     } catch (error) {
       return [] as DMThread[];
     }
@@ -854,6 +865,10 @@ export default function DMsScreen(): React.JSX.Element {
         )}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={21}
+        initialNumToRender={10}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={theme.text} />}
         contentContainerStyle={{ paddingTop: 200, paddingBottom: insets.bottom + 100 }}
         ListEmptyComponent={

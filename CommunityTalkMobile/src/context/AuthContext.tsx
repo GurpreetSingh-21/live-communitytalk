@@ -49,6 +49,7 @@ type AuthState = {
   setToken?: (token: string) => Promise<void>;
   bootstrap?: () => Promise<void>;
   updateAvatar?: (newUrl: string) => void;
+  updateUser?: (updatedUser: any) => void;
 };
 
 export const AuthContext = createContext<AuthState>({
@@ -63,6 +64,7 @@ export const AuthContext = createContext<AuthState>({
   setToken: async () => { },
   bootstrap: async () => { },
   updateAvatar: () => { },
+  updateUser: () => { },
 });
 
 SplashScreen.preventAutoHideAsync().catch(() => { });
@@ -364,6 +366,14 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     });
   }, []);
 
+  /* --------------------- User updates --------------------- */
+  const updateUser = useCallback((updatedUser: any) => {
+    setUser((prev: any | null) => {
+      if (!prev) return null;
+      return { ...prev, ...updatedUser };
+    });
+  }, []);
+
   /* --------------------- Memo Context Value --------------------- */
   const value = useMemo<AuthState>(
     () => ({
@@ -378,6 +388,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       setToken: setTokenCompat,
       bootstrap: bootstrapCompat,
       updateAvatar,
+      updateUser,
     }),
     [
       isLoading,
@@ -390,6 +401,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       setTokenCompat,
       bootstrapCompat,
       updateAvatar,
+      updateUser,
     ]
   );
 

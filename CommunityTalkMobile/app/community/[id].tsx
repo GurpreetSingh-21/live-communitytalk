@@ -2409,6 +2409,10 @@ export default function CommunityScreen() {
                         data={messages}
                         keyExtractor={(m) => String(m._id)}
                         renderItem={renderMessage}
+                        removeClippedSubviews={true}
+                        maxToRenderPerBatch={15}
+                        windowSize={21}
+                        initialNumToRender={20}
                         onContentSizeChange={handleChatContentSizeChange}
                         onScroll={handleChatScroll}
                         scrollEventThrottle={16}

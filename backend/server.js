@@ -144,6 +144,7 @@ let io;
 app.use((req, _res, next) => {
   req.io = io;
   req.presence = presence; // Redis-backed presence
+  req.redisClient = redisClient; // Attach Redis client for caching
   next();
 });
 

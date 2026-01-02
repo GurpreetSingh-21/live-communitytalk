@@ -168,7 +168,7 @@ async function sendPushNotificationsAsync(communityId, sender, message) {
       where: {
         id: { in: recipientIds },
       },
-      select: { id: true, pushTokens: true, firstName: true, lastName: true }
+      select: { id: true, pushTokens: true, fullName: true }
     });
 
     const validRecipients = recipients.filter(r => r.pushTokens && r.pushTokens.length > 0);
@@ -185,7 +185,7 @@ async function sendPushNotificationsAsync(communityId, sender, message) {
 
     const result = await sendPushNotifications(validRecipients, {
       title: `${senderName} in ${communityName}`,
-      body: truncatedMessage,
+      body: `${sender.fullName || "Someone"}: ${truncatedMessage}`,
       data: {
         type: "new_message",
         communityId: String(communityId),

@@ -126,7 +126,7 @@ export default function EditProfileScreen() {
 
         setSaving(true);
         try {
-            const res = await api.put('/api/user/profile', {
+            const res = await api.patch('/api/profile', {
                 fullName: name.trim(),
                 bio: bio.trim(),
             });

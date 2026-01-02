@@ -662,6 +662,10 @@ export default function CommunitiesScreen(): React.JSX.Element {
         )}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
+        removeClippedSubviews={true}
+        maxToRenderPerBatch={10}
+        windowSize={21}
+        initialNumToRender={10}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={theme.text} />}
         contentContainerStyle={{ paddingTop: 200, paddingBottom: insets.bottom + 40 }}
         ListEmptyComponent={

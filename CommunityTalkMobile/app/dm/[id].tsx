@@ -373,7 +373,7 @@ export default function DMThreadScreen() {
       }
 
       socket?.emit?.("room:join", { room: `dm:${partnerId}` });
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 0);
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 300);
     } catch (e: any) {
       Alert.alert("Error", e?.response?.data?.error || "Failed to open chat");
     } finally {
@@ -1106,6 +1106,7 @@ export default function DMThreadScreen() {
               ListHeaderComponent={undefined}
               onEndReachedThreshold={0.2}
               onEndReached={loadOlder}
+              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
               contentContainerStyle={{ paddingBottom: Math.max(92, insets.bottom + 60) }}
               showsVerticalScrollIndicator={false}
             />

@@ -7,7 +7,7 @@ const config = getDefaultConfig(__dirname);
 
 config.resolver.alias = {
   ...(config.resolver.alias || {}), 
-  'tslib': path.resolve(__dirname, 'node_modules/tslib/tslib.es6.js'),
+  'tslib': path.resolve(__dirname, 'node_modules/tslib/tslib.js'),
 };
 
 // 3. Pass the modified config to withNativeWind
