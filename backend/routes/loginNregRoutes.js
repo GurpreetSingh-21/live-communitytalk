@@ -558,19 +558,26 @@ router.get("/bootstrap", authenticate, async (req, res) => {
       }
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id }
-    });
+    // 🚀 PERFORMANCE: Run independent queries in parallel
+    const [user, existingProfile, memberships] = await Promise.all([
+      prisma.user.findUnique({ where: { id: req.user.id } }),
+      prisma.datingProfile.findUnique({
+        where: { userId: req.user.id },
+        select: { id: true }
+      }),
+      prisma.member.findMany({
+        where: { userId: req.user.id, memberStatus: { in: ["active", "owner"] } },
+        select: { communityId: true },
+      })
+    ]);
 
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    // Fetch communities via Memberships
-    const memberships = await prisma.member.findMany({
-      where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
-      select: { communityId: true },
-    });
-    const communityIds = memberships.map(m => m.communityId);
+    const hasProfile = !!existingProfile;
+    const datingProfileId = existingProfile?.id || null;
 
+    // Fetch communities (depends on memberships from above)
+    const communityIds = memberships.map(m => m.communityId);
     let communities = [];
     if (communityIds.length > 0) {
       communities = await prisma.community.findMany({
@@ -578,24 +585,6 @@ router.get("/bootstrap", authenticate, async (req, res) => {
         select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true },
       });
     }
-
-    // Try to get last message for each community (optional optimization, keeping it simple for now)
-
-    // Self-healing: Check if DatingProfile exists
-    // The User table does NOT have hasDatingProfile/datingProfileId columns (schema mismatch).
-    // So we MUST check the DatingProfile table directly.
-
-    // Default assumption from user object (likely undefined/null)
-    // let hasProfile = user.hasDatingProfile; 
-
-    // Explicit Check
-    const existingProfile = await prisma.datingProfile.findUnique({
-      where: { userId: user.id },
-      select: { id: true }
-    });
-
-    const hasProfile = !!existingProfile;
-    const datingProfileId = existingProfile?.id || null;
 
     const responseData = {
       message: "Bootstrap successful",

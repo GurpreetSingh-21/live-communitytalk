@@ -54,7 +54,7 @@ router.get("/", async (req, res) => {
 
     const context = (req.query.context || "community").trim(); // 'dating' or 'community'
 
-    // Fetch last 1000 messages involving me with specific context
+    // 🚀 PERFORMANCE: Fetch last 100 messages (was 1000!) with only needed fields
     const recentMessages = await prisma.directMessage.findMany({
       where: {
         AND: [
@@ -63,16 +63,17 @@ router.get("/", async (req, res) => {
         ]
       },
       orderBy: { createdAt: 'desc' },
-      take: 1000,
+      take: 100,  // ✅ Reduced from 1000
       select: {
         id: true,
         content: true,
         type: true,
-        attachments: true,
         createdAt: true,
         status: true,
         fromId: true,
-        toId: true
+        toId: true,
+        isEncrypted: true,
+        // Don't fetch attachments array unless needed for preview
       }
     });
 

@@ -14,14 +14,17 @@ const ROOM = (id) => `community:${id}`;
 
 /* ───────────────────────── helpers ───────────────────────── */
 async function assertCommunityAndMembership(communityId, userId) {
-  const comm = await prisma.community.findUnique({ where: { id: communityId } });
-  if (!comm) return { ok: false, code: 404, msg: "Community not found" };
+  // 🚀 PERFORMANCE: Run both queries in parallel
+  const [comm, membership] = await Promise.all([
+    prisma.community.findUnique({ where: { id: communityId } }),
+    prisma.member.findUnique({
+      where: {
+        userId_communityId: { userId: userId, communityId: communityId }
+      }
+    })
+  ]);
 
-  const membership = await prisma.member.findUnique({
-    where: {
-      userId_communityId: { userId: userId, communityId: communityId }
-    }
-  });
+  if (!comm) return { ok: false, code: 404, msg: "Community not found" };
 
   if (!membership || !['active', 'owner'].includes(membership.memberStatus)) {
     return { ok: false, code: 403, msg: "You are not a member of this community" };
@@ -229,30 +232,21 @@ router.get("/:communityId", async (req, res) => {
         createdAt: { lt: before }
       },
       take: limit,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: {
+        sender: {
+          select: { avatar: true, fullName: true }
+        }
+      }
     });
 
     // Map to frontend shape
     const results = docs.map((msg) => ({
       _id: msg.id,
       id: msg.id,
-      sender: msg.senderName, // Schema: senderName
+      sender: msg.sender?.fullName || msg.senderName,
       senderId: msg.senderId,
-      avatar: "/default-avatar.png", // We don't store avatar on message anymore usually, unless snapshotted?
-      // Mongoose stored avatar. Prisma has senderName.
-      // We might want to join User to get latest avatar?
-      // Or if we didn't snapshot it, user gets default.
-      // Let's check schema. Message has `senderName` but no `senderAvatar`.
-      // Mongoose had `avatar`.
-      // I should probably `include: { user: true }` to get avatar?
-      // Or just return default for now to be fast.
-      // Wait, Mongoose code snapshot it! "avatar: req.user.avatar".
-      // My Prisma create logic forgot to save avatar snapshot?
-      // Schema check: `model Message`.
-      // It has `senderId`, `senderName`, `content`, `attachments`, `reactions`...
-      // Does it have avatar snapshot? No.
-      // So I must fetch user to get avatar, or accept regression (no avatar).
-      // Ideally join user.
+      avatar: msg.sender?.avatar || "/default-avatar.png",  // ✅ Real avatar from join!
       content: msg.content,
       timestamp: msg.createdAt,
       communityId: msg.communityId,
