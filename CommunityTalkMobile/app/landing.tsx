@@ -1,314 +1,170 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect } from "react";
 import {
   View,
   ScrollView,
   Pressable,
-  Platform,
-  Animated,
+  Dimensions,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { MotiView } from 'moti';
 
 import { ThemedText } from "@/components/themed-text";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { AuthContext } from "@/src/context/AuthContext";
 import { Colors, Fonts } from "@/constants/theme";
 
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+// --- Configuration ---
+const NODE_SIZE = 52;
+const VERTICAL_SPACING = 140;
+
 type Feature = {
-  emoji: string;
+  id: string;
+  icon: keyof typeof Ionicons.glyphMap;
   title: string;
   desc: string;
-  gradient: readonly [string, string];
+  gradientStart: string;
+  gradientEnd: string;
 };
 
-interface AnimatedCardProps {
-  children: React.ReactNode;
-  delay?: number;
-  style?: any;
-}
-
-const AnimatedCard: React.FC<AnimatedCardProps> = ({ children, delay = 0, style }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        delay,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        delay,
-        tension: 50,
-        friction: 7,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [delay, fadeAnim, slideAnim]);
-
-  return (
-    <Animated.View
-      style={[
-        style,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
-        },
-      ]}
-    >
-      {children}
-    </Animated.View>
-  );
-};
-
-interface InteractiveCardProps {
-  children: React.ReactNode;
-  onPress?: () => void;
-}
-
-const InteractiveCard: React.FC<InteractiveCardProps> = ({ children, onPress }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const shadowAnim = useRef(new Animated.Value(4)).current;
-
-  const handlePressIn = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 0.98,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shadowAnim, {
-        toValue: 2,
-        duration: 150,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 4,
-        tension: 80,
-        useNativeDriver: true,
-      }),
-      Animated.timing(shadowAnim, {
-        toValue: 4,
-        duration: 150,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  };
-
-  if (onPress) {
-    return (
-      <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
-        <Animated.View
-          style={{
-            transform: [{ scale: scaleAnim }],
-          }}
-        >
-          {children}
-        </Animated.View>
-      </Pressable>
-    );
-  }
-
-  return <>{children}</>;
-};
-
-interface AnimatedEmojiProps {
-  emoji: string;
-  delay?: number;
-}
-
-const AnimatedEmoji: React.FC<AnimatedEmojiProps> = ({ emoji, delay = 0 }) => {
-  const bounceAnim = useRef(new Animated.Value(0)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.sequence([
-      Animated.delay(delay),
-      Animated.parallel([
-        Animated.spring(bounceAnim, {
-          toValue: 1,
-          friction: 3,
-          tension: 40,
-          useNativeDriver: true,
-        }),
-        Animated.sequence([
-          Animated.timing(rotateAnim, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotateAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
-          }),
-        ]),
-      ]),
-    ]).start();
-  }, [delay, bounceAnim, rotateAnim]);
-
-  const rotate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '10deg'],
-  });
-
-  return (
-    <Animated.View
+// --- Glowing Node Component ---
+const GlowingNode: React.FC<{
+  icon: keyof typeof Ionicons.glyphMap;
+  gradientStart: string;
+  gradientEnd: string;
+  index: number;
+}> = ({ icon, gradientStart, gradientEnd, index }) => (
+  <MotiView
+    from={{ scale: 0, opacity: 0 }}
+    animate={{ scale: 1, opacity: 1 }}
+    transition={{ delay: 300 + index * 120, type: 'spring', damping: 12 }}
+  >
+    {/* Outer Glow */}
+    <View
       style={{
-        transform: [{ scale: bounceAnim }, { rotate }],
+        width: NODE_SIZE + 16,
+        height: NODE_SIZE + 16,
+        borderRadius: (NODE_SIZE + 16) / 2,
+        backgroundColor: gradientStart,
+        opacity: 0.2,
+        position: 'absolute',
+        top: -8,
+        left: -8,
+      }}
+    />
+    {/* Main Node */}
+    <LinearGradient
+      colors={[gradientStart, gradientEnd]}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={{
+        width: NODE_SIZE,
+        height: NODE_SIZE,
+        borderRadius: NODE_SIZE / 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: gradientStart,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 6,
       }}
     >
-      <ThemedText style={{ fontSize: 22 }}>{emoji}</ThemedText>
-    </Animated.View>
-  );
-};
+      <Ionicons name={icon} size={24} color="#FFFFFF" />
+    </LinearGradient>
+  </MotiView>
+);
 
-interface PulseButtonProps {
-  children: React.ReactNode;
-  onPress: () => void;
-  style?: any;
-}
+// --- Connecting Line (Vertical with Gradient) ---
+const VerticalConnector: React.FC<{ isDark: boolean; index: number }> = ({ isDark, index }) => (
+  <MotiView
+    from={{ scaleY: 0 }}
+    animate={{ scaleY: 1 }}
+    transition={{ delay: 400 + index * 120, type: 'timing', duration: 600 }}
+    style={{
+      width: 2,
+      height: VERTICAL_SPACING - NODE_SIZE - 24,
+      backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+      alignSelf: 'center',
+      marginVertical: 12,
+      borderRadius: 1,
+      transformOrigin: 'top',
+    }}
+  />
+);
 
-const PulseButton: React.FC<PulseButtonProps> = ({ children, onPress, style }) => {
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  const glowAnim = useRef(new Animated.Value(1)).current;
+// --- Feature Row Component ---
+const FeatureRow: React.FC<{
+  item: Feature;
+  index: number;
+  isRight: boolean;
+  isDark: boolean;
+  colors: any;
+}> = ({ item, index, isRight, isDark, colors }) => (
+  <MotiView
+    from={{ opacity: 0, translateX: isRight ? 30 : -30 }}
+    animate={{ opacity: 1, translateX: 0 }}
+    transition={{ delay: 350 + index * 120, type: 'spring', damping: 14 }}
+    style={{
+      flexDirection: isRight ? 'row-reverse' : 'row',
+      alignItems: 'center',
+      paddingHorizontal: 20,
+      gap: 16,
+    }}
+  >
+    {/* Node */}
+    <GlowingNode
+      icon={item.icon}
+      gradientStart={item.gradientStart}
+      gradientEnd={item.gradientEnd}
+      index={index}
+    />
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(glowAnim, {
-          toValue: 1.02,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(glowAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, [glowAnim]);
-
-  const handlePressIn = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 0.96,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    Animated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 4,
-      tension: 100,
-      useNativeDriver: true,
-    }).start();
-  };
-
-  return (
-    <Pressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      hitSlop={12}
+    {/* Content Card */}
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
+        borderRadius: 20,
+        paddingVertical: 16,
+        paddingHorizontal: 18,
+        borderWidth: 1,
+        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+      }}
     >
-      <Animated.View
-        style={[
-          style,
-          {
-            transform: [{ scale: scaleAnim }],
-          },
-        ]}
+      <ThemedText
+        numberOfLines={1}
+        style={{
+          fontSize: 17,
+          fontFamily: Fonts.bold,
+          color: colors.text,
+          marginBottom: 4,
+          textAlign: isRight ? 'right' : 'left',
+        }}
       >
-        {children}
-      </Animated.View>
-    </Pressable>
-  );
-};
-
-const PulsingLogo: React.FC = () => {
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1500,
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, [pulseAnim]);
-
-  return (
-    <Animated.View
-      style={{
-        transform: [{ scale: pulseAnim }],
-      }}
-    >
-      <ThemedText style={{ fontSize: 18, fontFamily: Fonts.bold, color: "#FFFFFF" }}>
-        CT
+        {item.title}
       </ThemedText>
-    </Animated.View>
-  );
-};
-
-interface StaggeredTextProps {
-  text: string;
-  delay?: number;
-  style?: any;
-}
-
-const StaggeredText: React.FC<StaggeredTextProps> = ({ text, delay = 0, style }) => {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 500,
-        delay,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        delay,
-        tension: 60,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [delay, fadeAnim, slideAnim]);
-
-  return (
-    <Animated.View
-      style={{
-        opacity: fadeAnim,
-        transform: [{ translateY: slideAnim }],
-      }}
-    >
-      <ThemedText style={style}>{text}</ThemedText>
-    </Animated.View>
-  );
-};
+      <ThemedText
+        numberOfLines={2}
+        style={{
+          fontSize: 13,
+          fontFamily: Fonts.regular,
+          color: isDark ? '#999' : '#666',
+          lineHeight: 18,
+          textAlign: isRight ? 'right' : 'left',
+        }}
+      >
+        {item.desc}
+      </ThemedText>
+    </View>
+  </MotiView>
+);
 
 export default function Landing() {
   const scheme = useColorScheme() ?? 'light';
@@ -327,315 +183,277 @@ export default function Landing() {
     }, [auth?.isAuthed])
   );
 
-  const FEATURES: Feature[] = useMemo(
-    () => [
-      {
-        emoji: "🎓",
-        title: "Verified Students Only",
-        desc: "Join your official campus network with .edu verification.",
-        gradient: [Colors.light.primary, "#2E8B57"] as const,
-      },
-      {
-        emoji: "💘",
-        title: "Student Dating",
-        desc: "Find your match within your campus or nearby colleges.",
-        gradient: ["#FF6B6B", "#EE5253"] as const,
-      },
-      {
-        emoji: "🛕",
-        title: "Faith & Culture",
-        desc: "Connect with Sikh, Hindu, Muslim, Christian & Jewish groups.",
-        gradient: ["#FFA502", "#FF7F50"] as const,
-      },
-      {
-        emoji: "💬",
-        title: "Real-time Chat",
-        desc: "Instant messaging that actually works on campus wifi.",
-        gradient: [Colors.light.primary, "#00CEC9"] as const,
-      },
-      {
-        emoji: "📅",
-        title: "Campus Events",
-        desc: "Never miss out on what's happening around you.",
-        gradient: ["#A855F7", "#EC4899"] as const,
-      },
-      {
-        emoji: "🔒",
-        title: "Private & Secure",
-        desc: "End-to-end encrypted. No ads. No tracking.",
-        gradient: ["#10B981", "#059669"] as const,
-      },
-    ],
-    []
-  );
+  const FEATURES: Feature[] = [
+    {
+      id: '1',
+      icon: "school",
+      title: "Verified Students",
+      desc: ".edu email required. No imposters.",
+      gradientStart: "#10B981",
+      gradientEnd: "#059669",
+    },
+    {
+      id: '2',
+      icon: "heart",
+      title: "Campus Dating",
+      desc: "Find your match nearby.",
+      gradientStart: "#F43F5E",
+      gradientEnd: "#E11D48",
+    },
+    {
+      id: '3',
+      icon: "people",
+      title: "Communities",
+      desc: "Clubs, Greek life, faith groups.",
+      gradientStart: "#8B5CF6",
+      gradientEnd: "#7C3AED",
+    },
+    {
+      id: '4',
+      icon: "chatbubbles",
+      title: "Real-time Chat",
+      desc: "Instant messaging that works.",
+      gradientStart: "#06B6D4",
+      gradientEnd: "#0891B2",
+    },
+    {
+      id: '5',
+      icon: "shield-checkmark",
+      title: "Private & Encrypted",
+      desc: "No ads. No tracking. Ever.",
+      gradientStart: "#3B82F6",
+      gradientEnd: "#2563EB",
+    },
+  ];
+
+  const bgColor = isDark ? '#050505' : '#FFFFFF';
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top", "left", "right"]}>
-      <StatusBar style={isDark ? "light" : "dark"} translucent={false} />
+    <View style={{ flex: 1, backgroundColor: bgColor }}>
+      <StatusBar style={isDark ? "light" : "dark"} />
 
       <ScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Clean Minimal Header */}
-        <AnimatedCard>
-          <View className="px-6 pt-2 pb-6 flex-row items-center justify-between">
-            <View className="flex-row items-center gap-2.5">
-              <View
-                className="items-center justify-center"
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 10,
-                  backgroundColor: colors.primary,
-                }}
-              >
-                <PulsingLogo />
-              </View>
-              <ThemedText
-                style={{
-                  color: colors.text,
-                  fontSize: 18,
-                  fontFamily: Fonts.bold,
-                  letterSpacing: -0.3,
-                }}
-              >
-                CommunityTalk
-              </ThemedText>
-            </View>
+        {/* ===== HERO ===== */}
+        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 24 }}>
 
-            <PulseButton onPress={() => router.push("/modal")}>
-              <View
-                className="px-4 py-1.5 rounded-lg"
-                style={{
-                  backgroundColor: colors.surface,
-                  borderWidth: 1,
-                  borderColor: isDark ? colors.border : "transparent",
-                }}
-              >
-                <ThemedText style={{ color: colors.text, fontFamily: Fonts.sans, fontSize: 14 }}>
-                  Sign in
-                </ThemedText>
-              </View>
-            </PulseButton>
-          </View>
-        </AnimatedCard>
-
-        {/* Clean Minimal Hero Section */}
-        <View className="px-6 pb-20">
-          <View style={{ marginBottom: 14 }}>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
-              <StaggeredText
-                text="Your "
-                delay={150}
-                style={{
-                  color: colors.text,
-                  fontSize: 46,
-                  fontFamily: Fonts.bold,
-                  lineHeight: 52,
-                  letterSpacing: -1.4,
-                }}
-              />
-              <StaggeredText
-                text="Campus."
-                delay={250}
-                style={{
-                  color: colors.primary,
-                  fontSize: 46,
-                  fontFamily: Fonts.bold,
-                  lineHeight: 52,
-                  letterSpacing: -1.4,
-                }}
-              />
-            </View>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
-              <StaggeredText
-                text="Your "
-                delay={350}
-                style={{
-                  color: colors.text,
-                  fontSize: 46,
-                  fontFamily: Fonts.bold,
-                  lineHeight: 52,
-                  letterSpacing: -1.4,
-                }}
-              />
-              <StaggeredText
-                text="People."
-                delay={450}
-                style={{
-                  color: colors.primary,
-                  fontSize: 46,
-                  fontFamily: Fonts.bold,
-                  lineHeight: 52,
-                  letterSpacing: -1.4,
-                }}
-              />
-            </View>
-          </View>
-
-          <AnimatedCard delay={450}>
-            <ThemedText
-              style={{
-                color: colors.textMuted,
-                fontSize: 16,
-                lineHeight: 24,
-                marginBottom: 32,
-                fontFamily: Fonts.regular,
-              }}
-            >
-              The exclusive network for verified students. Connect, date, and vibe with your campus community.
-            </ThemedText>
-          </AnimatedCard>
-
-          <AnimatedCard delay={550}>
-            <PulseButton onPress={() => router.push("/register")}>
-              <View
-                className="rounded-xl py-3.5 items-center"
-                style={{
-                  backgroundColor: colors.primary,
-                  shadowColor: "#000000",
-                  shadowOpacity: isDark ? 0.3 : 0.08,
-                  shadowRadius: 8,
-                  shadowOffset: { width: 0, height: 2 },
-                  elevation: 2,
-                }}
-              >
-                <ThemedText style={{ color: "#FFFFFF", fontFamily: Fonts.bold, fontSize: 16 }}>
-                  Get Started →
-                </ThemedText>
-              </View>
-            </PulseButton>
-          </AnimatedCard>
-        </View>
-
-        {/* Clean Features Section */}
-        <View className="px-6" style={{ marginTop: 12 }}>
-          <AnimatedCard delay={650}>
-            <ThemedText
-              style={{
-                color: colors.text,
-                fontSize: 26,
-                fontFamily: Fonts.bold,
-                letterSpacing: -0.6,
-                marginBottom: 20,
-              }}
-            >
-              Everything you need
-            </ThemedText>
-          </AnimatedCard>
-
-          <View style={{ gap: 10 }}>
-            {FEATURES.map((f, i) => (
-              <AnimatedCard key={i} delay={750 + i * 40}>
-                <InteractiveCard>
-                  <View
-                    className="rounded-xl p-4"
-                    style={{
-                      backgroundColor: colors.surface,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                    }}
-                  >
-                    <View className="flex-row items-start gap-3">
-                      <View
-                        className="items-center justify-center"
-                        style={{
-                          width: 44,
-                          height: 44,
-                          borderRadius: 10,
-                          backgroundColor: isDark ? "#1C1C1C" : "#F5F5F5",
-                        }}
-                      >
-                        <AnimatedEmoji emoji={f.emoji} delay={750 + i * 40 + 200} />
-                      </View>
-
-                      <View className="flex-1" style={{ paddingTop: 1 }}>
-                        <ThemedText
-                          style={{
-                            color: colors.text,
-                            fontSize: 16,
-                            fontFamily: Fonts.bold,
-                            marginBottom: 3,
-                            letterSpacing: -0.1,
-                          }}
-                        >
-                          {f.title}
-                        </ThemedText>
-                        <ThemedText
-                          style={{
-                            color: colors.textMuted,
-                            fontSize: 14,
-                            lineHeight: 19,
-                            fontFamily: Fonts.regular,
-                          }}
-                        >
-                          {f.desc}
-                        </ThemedText>
-                      </View>
-                    </View>
-                  </View>
-                </InteractiveCard>
-              </AnimatedCard>
-            ))}
-          </View>
-        </View>
-
-        {/* Clean Footer CTA */}
-        <AnimatedCard delay={1100}>
-          <View className="px-6 mt-12">
-            <View
-              className="rounded-xl p-5"
-              style={{
-                backgroundColor: colors.surface,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            >
-              <ThemedText
-                style={{
-                  color: colors.text,
-                  fontSize: 22,
-                  fontFamily: Fonts.bold,
-                  marginBottom: 8,
-                  letterSpacing: -0.4,
-                }}
-              >
-                Ready to join?
-              </ThemedText>
-              <ThemedText
-                style={{
-                  color: colors.textMuted,
-                  lineHeight: 22,
-                  marginBottom: 20,
-                  fontSize: 14,
-                  fontFamily: Fonts.regular,
-                }}
-              >
-                Join authentic student communities across NYC—no noise, no ads, just real connections.
-              </ThemedText>
-
-              <PulseButton onPress={() => router.push("/register")}>
-                <View
-                  className="rounded-xl py-3.5 items-center"
+          {/* Minimal Header - Single Sign In */}
+          <MotiView
+            from={{ opacity: 0, translateY: -10 }}
+            animate={{ opacity: 1, translateY: 0 }}
+          >
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <LinearGradient
+                  colors={[colors.primary, '#1A6B3F']}
                   style={{
-                    backgroundColor: colors.primary,
-                    shadowColor: "#000000",
-                    shadowOpacity: isDark ? 0.3 : 0.08,
-                    shadowRadius: 8,
-                    shadowOffset: { width: 0, height: 2 },
-                    elevation: 2,
+                    width: 36, height: 36, borderRadius: 10,
+                    alignItems: 'center', justifyContent: 'center'
                   }}
                 >
-                  <ThemedText style={{ color: "#FFFFFF", fontFamily: Fonts.bold, fontSize: 16 }}>
-                    Create Account
-                  </ThemedText>
+                  <ThemedText style={{ color: '#fff', fontFamily: Fonts.bold, fontSize: 14 }}>CT</ThemedText>
+                </LinearGradient>
+                <ThemedText style={{ fontSize: 16, fontFamily: Fonts.bold, color: colors.text, letterSpacing: -0.3 }}>
+                  CommunityTalk
+                </ThemedText>
+              </View>
+
+              <Pressable onPress={() => router.push("/modal")}>
+                <View style={{
+                  paddingHorizontal: 16, paddingVertical: 8,
+                  borderRadius: 20,
+                  borderWidth: 1.5,
+                  borderColor: isDark ? '#333' : '#E0E0E0',
+                }}>
+                  <ThemedText style={{ fontSize: 13, fontFamily: Fonts.bold, color: colors.text }}>Log in</ThemedText>
                 </View>
-              </PulseButton>
+              </Pressable>
             </View>
+          </MotiView>
+
+          {/* Hero Text - Clean & Bold */}
+          <View style={{ marginBottom: 20 }}>
+            <MotiView
+              from={{ opacity: 0, translateY: 15 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ delay: 100 }}
+            >
+              <ThemedText style={{
+                fontSize: 44,
+                fontFamily: Fonts.bold,
+                color: colors.text,
+                lineHeight: 48,
+                letterSpacing: -1.5,
+              }}>
+                Your Campus.
+              </ThemedText>
+            </MotiView>
+
+            <MotiView
+              from={{ opacity: 0, translateY: 15 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ delay: 180 }}
+            >
+              <ThemedText style={{
+                fontSize: 44,
+                fontFamily: Fonts.bold,
+                color: colors.primary,
+                lineHeight: 48,
+                letterSpacing: -1.5,
+              }}>
+                Your People.
+              </ThemedText>
+            </MotiView>
           </View>
-        </AnimatedCard>
+
+          {/* Subtitle */}
+          <MotiView
+            from={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 260 }}
+          >
+            <ThemedText style={{
+              fontSize: 15,
+              fontFamily: Fonts.regular,
+              color: isDark ? '#888' : '#555',
+              lineHeight: 22,
+              marginBottom: 28,
+            }}>
+              The exclusive network for verified .edu students.
+            </ThemedText>
+          </MotiView>
+
+          {/* Single Primary CTA */}
+          <MotiView
+            from={{ opacity: 0, scale: 0.96 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 340, type: 'spring' }}
+          >
+            <Pressable
+              onPress={() => router.push("/register")}
+              style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.98 : 1 }] })}
+            >
+              <LinearGradient
+                colors={[colors.primary, '#1A6B3F']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{
+                  paddingVertical: 16,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.35,
+                  shadowRadius: 12,
+                  elevation: 6,
+                }}
+              >
+                <ThemedText style={{ color: '#fff', fontSize: 16, fontFamily: Fonts.bold }}>
+                  Get Started →
+                </ThemedText>
+              </LinearGradient>
+            </Pressable>
+          </MotiView>
+        </View>
+
+        {/* ===== ZIGZAG JOURNEY ===== */}
+        <View style={{ marginTop: 56, alignItems: 'center' }}>
+
+          {/* Start Dot */}
+          <MotiView
+            from={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 450, type: 'spring' }}
+            style={{
+              width: 10, height: 10, borderRadius: 5,
+              backgroundColor: colors.text,
+              marginBottom: 16,
+            }}
+          />
+
+          {/* Features with Connectors */}
+          {FEATURES.map((item, index) => {
+            const isRight = index % 2 !== 0;
+            const isLast = index === FEATURES.length - 1;
+
+            return (
+              <React.Fragment key={item.id}>
+                <FeatureRow
+                  item={item}
+                  index={index}
+                  isRight={isRight}
+                  isDark={isDark}
+                  colors={colors}
+                />
+                {!isLast && (
+                  <VerticalConnector isDark={isDark} index={index} />
+                )}
+              </React.Fragment>
+            );
+          })}
+
+          {/* End Dot */}
+          <MotiView
+            from={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 1000, type: 'spring' }}
+            style={{
+              width: 10, height: 10, borderRadius: 5,
+              backgroundColor: colors.primary,
+              marginTop: 24,
+            }}
+          />
+        </View>
+
+        {/* ===== FINAL CTA ===== */}
+        <MotiView
+          from={{ opacity: 0, translateY: 20 }}
+          animate={{ opacity: 1, translateY: 0 }}
+          transition={{ delay: 1100 }}
+          style={{ paddingHorizontal: 24, marginTop: 48 }}
+        >
+          <Pressable
+            onPress={() => router.push("/register")}
+            style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.98 : 1 }] })}
+          >
+            <View
+              style={{
+                backgroundColor: isDark ? '#111' : '#F8F8F8',
+                borderRadius: 24,
+                paddingVertical: 32,
+                paddingHorizontal: 24,
+                alignItems: 'center',
+                borderWidth: 1,
+                borderColor: isDark ? '#222' : '#EEE',
+              }}
+            >
+              <ThemedText style={{
+                fontSize: 22,
+                fontFamily: Fonts.bold,
+                color: colors.text,
+                marginBottom: 16,
+              }}>
+                Ready to connect?
+              </ThemedText>
+
+              <View
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingVertical: 14,
+                  paddingHorizontal: 32,
+                  borderRadius: 12,
+                }}
+              >
+                <ThemedText style={{ color: '#fff', fontSize: 15, fontFamily: Fonts.bold }}>
+                  Join Free →
+                </ThemedText>
+              </View>
+            </View>
+          </Pressable>
+        </MotiView>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
