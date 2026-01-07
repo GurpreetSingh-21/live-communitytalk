@@ -870,7 +870,7 @@ export default function DMsScreen(): React.JSX.Element {
         windowSize={21}
         initialNumToRender={10}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={theme.text} />}
-        contentContainerStyle={{ paddingTop: 200, paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingTop: 220, paddingBottom: insets.bottom + 100 }}
         ListEmptyComponent={
           <View style={{ alignItems: 'center', marginTop: 80, opacity: 0.6 }}>
             <Ionicons name="chatbubbles-outline" size={48} color={theme.text} />

@@ -1,18 +1,17 @@
+// CommunityTalkMobile/components/dm/DMHeader.tsx
 import React, { useMemo } from "react";
-import { View, Text, Image, TouchableOpacity, Platform } from "react-native";
-import { Fonts } from "@/constants/theme";
+import { View, Text, Image, TouchableOpacity, Platform, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Colors, Fonts } from "@/constants/theme";
 
 type Props = {
   name: string;
   avatar?: string;
-  status?: string;              // "online" | "last seen 5:23 PM"
+  status?: string;
   onPressBack?: () => void;
   onPressProfile?: () => void;
   onPressMore?: () => void;
-
-  // theme hints so the sticky header blends with screen bg/border in dark/light
-  themeBg?: string;
-  themeBorder?: string;
   dark?: boolean;
 };
 
@@ -24,6 +23,15 @@ function initialsFrom(name?: string) {
   return (a + b).toUpperCase();
 }
 
+// Generate consistent color from name
+function colorFromName(name: string): string {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) % 360;
+  }
+  return `hsl(${hash}, 60%, 50%)`;
+}
+
 export default function DMHeader({
   name,
   avatar,
@@ -31,113 +39,183 @@ export default function DMHeader({
   onPressBack,
   onPressProfile,
   onPressMore,
-  themeBg = "#fff",
-  themeBorder = "#E5E7EB",
   dark = false,
 }: Props) {
+  const insets = useSafeAreaInsets();
   const initials = useMemo(() => initialsFrom(name), [name]);
+  const avatarColor = useMemo(() => colorFromName(name || "User"), [name]);
   const isOnline = status?.toLowerCase?.() === "online";
+  const theme = dark ? Colors.dark : Colors.light;
+
+  // Check if avatar is a valid URL
+  const isAvatarUrl = avatar && (avatar.startsWith("http") || avatar.startsWith("file"));
+
+  // WhatsApp-style header background - distinct from chat background
+  const headerBg = dark ? '#1A1A1A' : '#FAFAFA';
+  const borderColor = dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
   return (
     <View
       style={{
-        paddingTop: Platform.select({ ios: 0, android: 0 }),
-        paddingHorizontal: 16,
-        paddingBottom: 12,
-        backgroundColor: themeBg,
-        borderBottomWidth: 0.5,
-        borderBottomColor: themeBorder,
+        backgroundColor: headerBg,
+        // Edge-to-edge: extends behind Dynamic Island
+        paddingTop: insets.top,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        borderBottomColor: borderColor,
       }}
     >
-      {/* Top row — back + avatar + name + actions */}
-      <View style={{ flexDirection: "row", alignItems: "center" }}>
-        {onPressBack ? (
+      {/* Main Content Row */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          paddingHorizontal: 8,
+          paddingVertical: 10,
+          height: 56,
+        }}
+      >
+        {/* Back Button - WhatsApp Style */}
+        {onPressBack && (
           <TouchableOpacity
             onPress={onPressBack}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={{ marginRight: 8 }}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              paddingHorizontal: 4,
+            }}
           >
-            <Text style={{ fontSize: 22, lineHeight: 22, color: dark ? "#fff" : "#111827", fontFamily: Fonts.regular }}>
-              ‹
-            </Text>
+            <Ionicons
+              name="chevron-back"
+              size={28}
+              color={theme.primary}
+            />
           </TouchableOpacity>
-        ) : null}
+        )}
 
+        {/* Avatar - Larger, Rounded Square like WhatsApp */}
         <TouchableOpacity
           activeOpacity={0.8}
           onPress={onPressProfile}
-          style={{ marginRight: 12 }}
+          style={{
+            marginLeft: 4,
+            marginRight: 12,
+          }}
         >
-          {avatar && avatar.startsWith("http") ? (
-            <Image
-              source={{ uri: avatar }}
-              style={{ width: 40, height: 40, borderRadius: 20 }}
-            />
-          ) : (
-            <View
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: dark ? "#27272A" : "#E5E7EB",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {/* If it's an emoji-like avatar, render as text, otherwise initials */}
-              {avatar && avatar.length <= 4 ? (
-                <Text style={{ fontSize: 20 }}>{avatar}</Text>
-              ) : (
-                <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: dark ? "#F5F5F5" : "#111827" }}>
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 10, // Rounded square like WhatsApp
+              overflow: "hidden",
+              backgroundColor: theme.muted,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {isAvatarUrl ? (
+              <Image
+                source={{ uri: avatar }}
+                style={{ width: "100%", height: "100%" }}
+                resizeMode="cover"
+              />
+            ) : avatar && avatar.length <= 4 ? (
+              <Text style={{ fontSize: 20 }}>{avatar}</Text>
+            ) : (
+              <View
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: avatarColor,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 15,
+                    fontFamily: Fonts.bold,
+                    color: "#FFFFFF",
+                  }}
+                >
                   {initials}
                 </Text>
-              )}
-            </View>
-          )}
+              </View>
+            )}
+          </View>
 
+          {/* Online Indicator */}
           {isOnline && (
             <View
               style={{
                 position: "absolute",
                 right: -2,
                 bottom: -2,
-                width: 12,
-                height: 12,
-                borderRadius: 6,
-                backgroundColor: "#10B981",
-                borderWidth: 2,
-                borderColor: themeBg,
+                width: 14,
+                height: 14,
+                borderRadius: 7,
+                backgroundColor: "#22C55E",
+                borderWidth: 2.5,
+                borderColor: headerBg,
               }}
             />
           )}
         </TouchableOpacity>
 
-        <View style={{ flex: 1, minWidth: 0 }}>
+        {/* Name & Status */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={onPressProfile}
+          style={{ flex: 1 }}
+        >
           <Text
             numberOfLines={1}
-            style={{ fontSize: 18, fontFamily: Fonts.bold, color: dark ? "#fff" : "#111827" }}
+            style={{
+              fontSize: 17,
+              fontFamily: Fonts.bold,
+              color: theme.text,
+              letterSpacing: -0.3,
+            }}
           >
             {name || "Direct Message"}
           </Text>
-          {!!status && (
+
+          {status ? (
             <Text
               numberOfLines={1}
-              style={{ fontSize: 12, color: dark ? "#A1A1AA" : "#6B7280", marginTop: 2, fontFamily: Fonts.regular }}
+              style={{
+                fontSize: 12,
+                fontFamily: Fonts.regular,
+                color: isOnline ? "#22C55E" : theme.textMuted,
+                marginTop: 1,
+              }}
             >
               {status}
             </Text>
+          ) : null}
+        </TouchableOpacity>
+
+        {/* Right Actions */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+          {onPressMore && (
+            <TouchableOpacity
+              onPress={onPressMore}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              style={{
+                width: 40,
+                height: 40,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={22}
+                color={theme.textMuted}
+              />
+            </TouchableOpacity>
           )}
         </View>
-
-        {onPressMore ? (
-          <TouchableOpacity
-            onPress={onPressMore}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            style={{ paddingHorizontal: 4, paddingVertical: 6 }}
-          >
-            <Text style={{ fontSize: 20, color: dark ? "#A1A1AA" : "#6B7280" }}>⋯</Text>
-          </TouchableOpacity>
-        ) : null}
       </View>
     </View>
   );

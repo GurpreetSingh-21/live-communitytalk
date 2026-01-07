@@ -1069,11 +1069,11 @@ export default function DMThreadScreen() {
   const status = meta?.online ? "online" : "";
 
   return (
-    <SafeAreaView edges={["top"]} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* ✅ FIXED: Header is OUTSIDE KeyboardAvoidingView so it never moves */}
-      <View style={{ backgroundColor: colors.headerBg, zIndex: 10 }}>
+      {/* ✅ WhatsApp-style: Full-bleed header that extends behind Dynamic Island */}
+      <View style={{ zIndex: 10 }}>
         <DMHeader
           name={headerName}
           avatar={headerAvatar}
@@ -1081,8 +1081,6 @@ export default function DMThreadScreen() {
           onPressBack={() => router.back()}
           onPressProfile={() => router.push({ pathname: "/profile/[id]", params: { id: partnerId } } as never)}
           onPressMore={() => { }}
-          themeBg={colors.headerBg}
-          themeBorder={colors.border}
           dark={isDark}
         />
       </View>
@@ -1124,8 +1122,8 @@ export default function DMThreadScreen() {
             <View
               style={{
                 paddingHorizontal: 16,
-                paddingVertical: 12,
-                paddingBottom: Platform.OS === "ios" ? Math.max(16, insets.bottom) + 8 : 12,
+                paddingTop: 10,
+                paddingBottom: 10,
                 borderTopWidth: 0.5,
                 borderTopColor: colors.border,
                 backgroundColor: colors.bg,

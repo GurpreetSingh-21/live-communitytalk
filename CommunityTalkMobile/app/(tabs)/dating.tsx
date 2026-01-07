@@ -1,8 +1,9 @@
 
 import React, { useContext, useState } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { AuthContext } from '@/src/context/AuthContext';
 import OnboardingWizard from '@/components/dating/onboarding/OnboardingWizard';
@@ -14,6 +15,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function DatingScreen() {
     const router = useRouter();
+    const insets = useSafeAreaInsets();
     const auth = useContext(AuthContext) as any;
     const { user, refreshBootstrap, isLoading } = auth;
     const [view, setView] = useState<'stack' | 'matches'>('stack');
@@ -35,15 +37,13 @@ export default function DatingScreen() {
     if (!user) {
         return (
             <View style={styles.container}>
-                <SafeAreaView style={styles.safeArea}>
-                    <View style={[styles.content, { justifyContent: 'center' }]}>
-                        <Text style={[styles.title, { color: '#FFF' }]}>Please Sign In</Text>
-                        <Text style={styles.subtitle}>You must be logged in to use Dating.</Text>
-                        <TouchableOpacity style={styles.button} onPress={() => router.push('/profile')}>
-                            <Text style={styles.buttonText}>Go to Profile</Text>
-                        </TouchableOpacity>
-                    </View>
-                </SafeAreaView>
+                <View style={[styles.content, { justifyContent: 'center', paddingTop: insets.top }]}>
+                    <Text style={[styles.title, { color: '#FFF' }]}>Please Sign In</Text>
+                    <Text style={styles.subtitle}>You must be logged in to use Dating.</Text>
+                    <TouchableOpacity style={styles.button} onPress={() => router.push('/profile')}>
+                        <Text style={styles.buttonText}>Go to Profile</Text>
+                    </TouchableOpacity>
+                </View>
             </View>
         );
     }
@@ -51,9 +51,9 @@ export default function DatingScreen() {
     // 2. If NO Dating Profile -> Show Onboarding Wizard
     if (!user.hasDatingProfile) {
         return (
-            <SafeAreaView style={{ flex: 1, backgroundColor: '#FFF' }}>
+            <View style={{ flex: 1, backgroundColor: '#FFF', paddingTop: insets.top }}>
                 <OnboardingWizard onComplete={() => refreshBootstrap()} />
-            </SafeAreaView>
+            </View>
         );
     }
 
@@ -66,7 +66,7 @@ export default function DatingScreen() {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
             >
-                <SafeAreaView style={styles.safeArea}>
+                <View style={[styles.safeArea, { paddingTop: insets.top, paddingBottom: view === 'matches' ? 0 : insets.bottom }]}>
                     {/* Custom Header with Toggle */}
                     <View style={styles.header}>
                         <TouchableOpacity
@@ -103,12 +103,12 @@ export default function DatingScreen() {
                         {view === 'stack' ? (
                             <SwipingDeck />
                         ) : (
-                            <View style={styles.matchesContainer}>
+                            <View style={[styles.matchesContainer, { backgroundColor: theme.background, paddingBottom: insets.bottom }]}>
                                 <MatchesList />
                             </View>
                         )}
                     </View>
-                </SafeAreaView>
+                </View>
             </LinearGradient>
 
             {/* SETTINGS MODAL */}
@@ -141,9 +141,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingHorizontal: 30,
-        paddingVertical: 10,
-        height: 60
+        paddingHorizontal: 20,
+        paddingBottom: 10,
+        minHeight: 50
     },
     headerTitle: {
         fontSize: 20,
