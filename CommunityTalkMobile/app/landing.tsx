@@ -9,7 +9,7 @@ import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import { useFocusEffect } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { MotiView } from 'moti';
 
@@ -26,7 +26,7 @@ const VERTICAL_SPACING = 140;
 
 type Feature = {
   id: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
   title: string;
   desc: string;
   gradientStart: string;
@@ -35,7 +35,7 @@ type Feature = {
 
 // --- Glowing Node Component ---
 const GlowingNode: React.FC<{
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: keyof typeof MaterialCommunityIcons.glyphMap;
   gradientStart: string;
   gradientEnd: string;
   index: number;
@@ -76,7 +76,7 @@ const GlowingNode: React.FC<{
         elevation: 6,
       }}
     >
-      <Ionicons name={icon} size={24} color="#FFFFFF" />
+      <MaterialCommunityIcons name={icon} size={24} color="#FFFFFF" />
     </LinearGradient>
   </MotiView>
 );
@@ -202,7 +202,7 @@ export default function Landing() {
     },
     {
       id: '3',
-      icon: "people",
+      icon: "account-group",
       title: "Communities",
       desc: "Clubs, Greek life, faith groups.",
       gradientStart: "#8B5CF6",
@@ -210,7 +210,7 @@ export default function Landing() {
     },
     {
       id: '4',
-      icon: "chatbubbles",
+      icon: "message-text",
       title: "Real-time Chat",
       desc: "Instant messaging that works.",
       gradientStart: "#06B6D4",
@@ -218,7 +218,7 @@ export default function Landing() {
     },
     {
       id: '5',
-      icon: "shield-checkmark",
+      icon: "shield-check",
       title: "Private & Encrypted",
       desc: "No ads. No tracking. Ever.",
       gradientStart: "#3B82F6",

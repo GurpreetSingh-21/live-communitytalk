@@ -23,8 +23,96 @@ const MAPPING = {
   "person": "person-outline",
   "person.fill": "person",
 
-  // --- Other Icons (from communities.tsx) ---
+  // --- Dating Tab ---
+  "heart": "heart-outline",
+  "heart.fill": "heart",
+
+  // --- Settings & Profile ---
+  "gearshape": "settings-outline",
+  "gearshape.fill": "settings",
+  "chevron.right": "chevron-forward",
+  "chevron.left": "chevron-back",
+  "chevron.back": "chevron-back",
+  "chevron.forward": "chevron-forward",
+  "xmark": "close",
+  "xmark.circle": "close-circle",
+  "xmark.circle.fill": "close-circle",
+
+  // --- Messages & Chat ---
+  "bubble.left.and.bubble.right": "chatbubbles-outline",
+  "bubble.left.and.bubble.right.fill": "chatbubbles",
+  "message": "chatbubble-outline",
+  "message.fill": "chatbubble",
+  "ellipsis.horizontal": "ellipsis-horizontal",
+  "ellipsis": "ellipsis-horizontal",
+
+  // --- Common Actions ---
   "magnifyingglass": "search-outline",
+  "camera": "camera-outline",
+  "camera.fill": "camera",
+  "photo": "image-outline",
+  "photo.fill": "image",
+  "trash": "trash-outline",
+  "trash.fill": "trash",
+  "pencil": "pencil-outline",
+  "square.and.pencil": "create-outline",
+  "arrow.up": "arrow-up",
+  "arrow.down": "arrow-down",
+  "arrow.left": "arrow-back",
+  "arrow.right": "arrow-forward",
+  "arrow.up.circle.fill": "arrow-up-circle",
+
+  // --- Safety & Security ---
+  "shield": "shield-outline",
+  "shield.fill": "shield",
+  "shield.checkmark": "shield-checkmark-outline",
+  "shield.checkmark.fill": "shield-checkmark",
+  "lock": "lock-closed-outline",
+  "lock.fill": "lock-closed",
+  "exclamationmark.triangle": "warning-outline",
+  "exclamationmark.triangle.fill": "warning",
+
+  // --- Status & Info ---
+  "checkmark": "checkmark",
+  "checkmark.circle": "checkmark-circle-outline",
+  "checkmark.circle.fill": "checkmark-circle",
+  "info.circle": "information-circle-outline",
+  "info.circle.fill": "information-circle",
+  "questionmark.circle": "help-circle-outline",
+  "bell": "notifications-outline",
+  "bell.fill": "notifications",
+
+  // --- Media ---
+  "play.fill": "play",
+  "pause.fill": "pause",
+  "mic": "mic-outline",
+  "mic.fill": "mic",
+  "speaker.wave.2": "volume-medium-outline",
+  "speaker.wave.2.fill": "volume-medium",
+
+  // --- Social ---
+  "person.2": "people-outline",
+  "person.2.fill": "people",
+  "star": "star-outline",
+  "star.fill": "star",
+  "hand.thumbsup": "thumbs-up-outline",
+  "hand.thumbsup.fill": "thumbs-up",
+
+  // --- Location & Events ---
+  "location": "location-outline",
+  "location.fill": "location",
+  "calendar": "calendar-outline",
+  "calendar.fill": "calendar",
+  "clock": "time-outline",
+  "clock.fill": "time",
+
+  // --- Misc ---
+  "doc": "document-outline",
+  "doc.fill": "document",
+  "link": "link-outline",
+  "globe": "globe-outline",
+  "flag": "flag-outline",
+  "flag.fill": "flag",
 } as Record<string, IoniconName>;
 
 /**
