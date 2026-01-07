@@ -43,6 +43,28 @@ import { useColorScheme as useAppColorScheme } from '@/hooks/use-color-scheme';
 import { encryptMessage, decryptMessage, getPublicKey, ensureKeyPair } from "@/src/utils/e2ee";
 import { fetchPublicKey, uploadPublicKey } from "@/src/api/e2eeApi";
 
+// 🚀 PERFORMANCE: In-memory cache for public keys (saves ~100ms per DM open)
+const PUBLIC_KEY_CACHE = new Map<string, string>();
+
+const getCachedPublicKey = async (userId: string): Promise<string | null> => {
+  if (PUBLIC_KEY_CACHE.has(userId)) {
+    console.log('🔐 [Cache] Public key HIT for user:', userId.substring(0, 8));
+    return PUBLIC_KEY_CACHE.get(userId)!;
+  }
+  
+  try {
+    const key = await fetchPublicKey(userId);
+    if (key) {
+      PUBLIC_KEY_CACHE.set(userId, key);
+      console.log('🔐 [Cache] Public key MISS, fetched and cached for:', userId.substring(0, 8));
+    }
+    return key;
+  } catch (err) {
+    console.error('🔐 [Cache] Failed to fetch public key:', err);
+    return null;
+  }
+};
+
 /* ───────────────── Types & helpers ───────────────── */
 type DMMessage = {
   _id?: string;
@@ -312,10 +334,12 @@ export default function DMThreadScreen() {
         console.warn('🔐 [E2EE] Key setup failed (non-fatal):', keyErr);
       }
 
-      // Fetch metadata and recipient's public key in parallel
-      const [metaData, partnerPubKey] = await Promise.all([
+      // 🚀 OPTIMIZATION: Fetch metadata, public key, AND messages in parallel!
+      const CACHE_KEY = `@dm_messages_${partnerId}`;
+      const [metaData, partnerPubKey, messagesResponse] = await Promise.all([
         fetchPartnerMeta(),
-        fetchPublicKey(partnerId).catch(() => null),
+        getCachedPublicKey(partnerId), // ← Using cache!
+        api.get(`/api/direct-messages/${partnerId}?limit=50&context=${context}`).catch(() => ({ data: [] }))
       ]);
 
       // 🔐 Store recipient's public key for encryption
@@ -331,30 +355,36 @@ export default function DMThreadScreen() {
       };
       setMeta(finalMeta);
 
+      // Extract messages from parallel fetch
       let msgs: any[] = [];
       try {
-        const { data } = await api.get(
-          `/api/direct-messages/${partnerId}?limit=50&context=${context}`
-        );
+        const data = messagesResponse?.data;
         msgs = Array.isArray(data) ? data : data?.items ?? [];
+        
+        // Save to cache for next time
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(msgs));
+          console.log(`[DM ${partnerId}] 💾 Saved ${msgs.length} messages to cache`);
+        } catch (cacheError) {
+          console.warn('[DM] Cache save failed:', cacheError);
+        }
       } catch (e: any) {
         if (e?.response?.status !== 404) throw e;
       }
 
-      // 🔐 Decrypt encrypted messages
-      // NOTE: In NaCl box, the shared key is ALWAYS computed as:
-      //   box.before(partner_public_key, my_secret_key)
-      // This is symmetric - works for both sent and received messages.
+
+      // 🔐 Decrypt encrypted messages (BLOCKING - but works reliably)
       const decryptedMsgs = await Promise.all(
         msgs.map(async (m: any) => {
           if (m.isEncrypted && m.content && partnerPubKey) {
             try {
-              // ALWAYS use partner's public key - shared key is symmetric!
               const decrypted = await decryptMessage(m.content, partnerPubKey);
+              console.log('🔐 [E2EE] Decrypted message:', m._id?.substring(0, 8));
               return { ...m, content: decrypted, _decrypted: true };
             } catch (err) {
-              console.warn('🔐 [E2EE] Decryption failed for message:', m._id, err);
-              return { ...m, content: '[Encrypted]' };
+              console.error('🔐 [E2EE] Decryption failed for message:', m._id, err);
+              return { ...m, content: '[Decryption Failed]' };
             }
           }
           return m;
@@ -365,6 +395,7 @@ export default function DMThreadScreen() {
         finalizeUnique(upsertMessages(prev, decryptedMsgs, { prefer: "server" }))
       );
       setHasMore((msgs?.length ?? 0) >= 50);
+      setLoading(false);
 
       try {
         await api.patch(`/api/direct-messages/${partnerId}/read`);
@@ -1069,7 +1100,7 @@ export default function DMThreadScreen() {
   const status = meta?.online ? "online" : "";
 
   return (
-    <SafeAreaView edges={["bottom"]} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* ✅ WhatsApp-style: Full-bleed header that extends behind Dynamic Island */}
@@ -1078,7 +1109,10 @@ export default function DMThreadScreen() {
           name={headerName}
           avatar={headerAvatar}
           status={status}
-          onPressBack={() => router.back()}
+          onPressBack={() => {
+            // FIXED: Use replace to clear stack and go directly to DMs (single tap!)
+            router.replace('/(tabs)/dms');
+          }}
           onPressProfile={() => router.push({ pathname: "/profile/[id]", params: { id: partnerId } } as never)}
           onPressMore={() => { }}
           dark={isDark}
@@ -1087,8 +1121,8 @@ export default function DMThreadScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.bg }}
-        behavior={Platform.select({ ios: "padding", android: undefined })}
-        keyboardVerticalOffset={0}
+        behavior={Platform.select({ ios: "padding", android: "height" })}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
       >
         {loading ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>

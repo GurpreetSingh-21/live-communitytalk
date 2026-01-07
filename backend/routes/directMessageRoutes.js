@@ -52,7 +52,25 @@ router.get("/", async (req, res) => {
     // Iterate and pick first occurrence of each partner.
     // Stop after `limit` partners found (with some buffer).
 
-    const context = (req.query.context || "community").trim(); // 'dating' or 'community'
+    const currentUserId = req.user?._id || req.user?.id;
+    if (!currentUserId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // 🚀 PERFORMANCE: Check Redis cache first
+    const cacheKey = `dm_inbox:${currentUserId}`;
+    try {
+      const cached = await req.redisClient.get(cacheKey);
+      if (cached) {
+        console.log(`[DM Inbox] 💾 Cache HIT for user ${currentUserId.substring(0, 8)}`);
+        return res.json(JSON.parse(cached));
+      }
+      console.log(`[DM Inbox] 💾 Cache MISS for user ${currentUserId.substring(0, 8)}`);
+    } catch (cacheErr) {
+      console.warn('[DM Inbox] Cache read failed:', cacheErr);
+    }
+
+    const context = (req.query.context || "community").trim();
 
     // 🚀 PERFORMANCE: Fetch last 100 messages (was 1000!) with only needed fields
     const recentMessages = await prisma.directMessage.findMany({
@@ -166,8 +184,13 @@ router.get("/", async (req, res) => {
       unread: unreadMap.get(h.partnerId) || 0
     }));
 
-    // Pagination/Limit again? We broke loop at 'limit'.
-    // If Q filtered some out, we might have fewer than limit.
+    // 🚀 PERFORMANCE: Save to Redis cache (30 second TTL)
+    try {
+      await req.redisClient.setex(cacheKey, 30, JSON.stringify(normalized));
+      console.log(`[DM Inbox] 💾 Cached ${normalized.length} conversations for 30s`);
+    } catch (cacheErr) {
+      console.warn('[DM Inbox] Cache save failed:', cacheErr);
+    }
 
     return res.json(normalized);
   } catch (err) {

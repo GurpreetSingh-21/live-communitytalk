@@ -50,8 +50,8 @@ function isValidHttp(url?: string): boolean {
    RESOLVE BASE URL
    ──────────────────────────────────────────────────────────── */
 function resolveBaseUrl(): string {
-  const fromEnv    = pickFirstUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
-  const fromExtra  = pickFirstUrl(extra.EXPO_PUBLIC_API_BASE_URL);
+  const fromEnv = pickFirstUrl(process.env.EXPO_PUBLIC_API_BASE_URL);
+  const fromExtra = pickFirstUrl(extra.EXPO_PUBLIC_API_BASE_URL);
   const fromLegacy = __DEV__
     ? pickFirstUrl(extra.API_URL_DEV)
     : pickFirstUrl(extra.API_URL_PROD);
@@ -64,14 +64,14 @@ function resolveBaseUrl(): string {
     normalizeBase(fromLegacy) ??
     (__DEV__
       ? "http://localhost:3000"
-      : "https://stephane-mastoparietal-saniyah.ngrok-free.dev");
+      : "https://communitytalkv1.onrender.com");
 
   // Final validation fallback
   if (!isValidHttp(chosen)) {
     console.warn(
       `[config] ❌ Invalid API base URL resolved ('${chosen}'). Falling back to production fallback.`
     );
-    chosen = "https://stephane-mastoparietal-saniyah.ngrok-free.dev";
+    chosen = "https://communitytalkv1.onrender.com";
   }
 
   if (__DEV__) {

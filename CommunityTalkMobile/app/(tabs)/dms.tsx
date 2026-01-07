@@ -43,9 +43,29 @@ import { AuthContext } from '@/src/context/AuthContext';
 import { api } from '@/src/api/api';
 import { useSocket } from '@/src/context/SocketContext';
 
-// 🔐 E2EE for decrypting message previews
+// 🔐 E2EE for decrypting message previews// 🔐 E2EE
 import { decryptMessage } from '@/src/utils/e2ee';
 import { fetchPublicKey } from '@/src/api/e2eeApi';
+
+// 🚀 PERFORMANCE: In-memory cache for public keys
+const PUBLIC_KEY_CACHE = new Map<string, string>();
+
+const getCachedPublicKey = async (userId: string): Promise<string | null> => {
+  if (PUBLIC_KEY_CACHE.has(userId)) {
+    return PUBLIC_KEY_CACHE.get(userId)!;
+  }
+  
+  try {
+    const key = await fetchPublicKey(userId);
+    if (key) {
+      PUBLIC_KEY_CACHE.set(userId, key);
+    }
+    return key;
+  } catch (err) {
+    console.error('🔐 [DM Inbox] Failed to fetch public key for:', userId.substring(0, 8), err);
+    return null;
+  }
+};
 import { Colors, Fonts } from '@/constants/theme';
 
 /* ───────────────── Types ───────────────── */
@@ -514,58 +534,53 @@ export default function DMsScreen(): React.JSX.Element {
         };
       });
 
-      // 🚀 PERFORMANCE OPTIMIZATION: Show threads IMMEDIATELY with placeholders
-      // Then decrypt in background (non-blocking UI)
-      const threadsWithPlaceholders = normalizedRaw.map((thread: any) => {
-        if (thread._needsDecryption) {
-          return {
-            ...thread,
-            lastMsg: { ...thread.lastMsg, content: '🔒 Decrypting...' },
-            _needsDecryption: undefined,
-          };
-        }
-        const { _needsDecryption, ...clean } = thread;
-        return clean;
-      });
-
-      // 🔐 E2EE: Decrypt in background (don't block initial render!)
-      Promise.all(
-        normalizedRaw.map(async (thread: any, index: number) => {
-          if (!thread._needsDecryption) return null;
+      // 🔐 E2EE: Decrypt message previews BEFORE showing (WhatsApp style - blocking but correct)
+      console.log(`🔐 [DM Inbox] Starting decryption for ${normalizedRaw.filter((t: any) => t._needsDecryption).length} encrypted previews`);
+      
+      const decryptedThreads = await Promise.all(
+        normalizedRaw.map(async (thread: any) => {
+          if (!thread._needsDecryption) {
+            const { _needsDecryption, ...clean } = thread;
+            return clean;
+          }
 
           try {
-            // Fetch partner's public key for decryption
-            const partnerPubKey = await fetchPublicKey(thread.id);
+            // Fetch partner's public key
+            console.log(`🔐 [DM Inbox] Fetching public key for ${thread.name} (${thread.id.substring(0, 8)})`);
+            const partnerPubKey = await getCachedPublicKey(thread.id);
+            
             if (!partnerPubKey) {
-              return { index, content: '🔒 Encrypted' };
-            }
-
-            // Decrypt the message content
-            const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey);
-            console.log(`🔐 [E2EE] Preview decrypted for ${thread.name}`);
-            return { index, content: decryptedContent };
-          } catch (err) {
-            console.warn(`🔐 [E2EE] Preview decrypt failed for ${thread.name}:`, err);
-            return { index, content: '🔒 Encrypted' };
-          }
-        })
-      ).then((results) => {
-        // Update only the decrypted threads (batched state update)
-        setThreads((prev) => {
-          const updated = [...prev];
-          results.forEach((result) => {
-            if (result !== null && updated[result.index]) {
-              updated[result.index] = {
-                ...updated[result.index],
-                lastMsg: { ...updated[result.index].lastMsg, content: result.content },
+              console.warn(`🔐 [DM Inbox] ❌ No public key found for ${thread.name}`);
+              return {
+                ...thread,
+                lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
+                _needsDecryption: undefined
               };
             }
-          });
-          return updated;
-        });
-      });
 
-      return threadsWithPlaceholders as DMThread[];
+            // Decrypt the message
+            console.log(`🔐 [DM Inbox] Decrypting preview for ${thread.name}...`);
+            const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey);
+            console.log(`🔐 [DM Inbox] ✅ Decrypted preview for ${thread.name}: "${decryptedContent.substring(0, 30)}..."`);
+            
+            return {
+              ...thread,
+              lastMsg: { ...thread.lastMsg, content: decryptedContent },
+              _needsDecryption: undefined
+            };
+          } catch (err) {
+            console.error(`🔐 [DM Inbox] ❌ Decryption failed for ${thread.name}:`, err);
+            return {
+              ...thread,
+              lastMsg: { ...thread.lastMsg, content: '[Decryption Failed]' },
+              _needsDecryption: undefined
+            };
+          }
+        })
+      );
+
+      console.log(`🔐 [DM Inbox] ✅ All previews decrypted, returning ${decryptedThreads.length} threads`);
+      return decryptedThreads as DMThread[];
     } catch (error) {
       return [] as DMThread[];
     }
@@ -802,12 +817,13 @@ export default function DMsScreen(): React.JSX.Element {
 
     setThreads(cur => cur.map(t => (t.id === partnerId ? { ...t, unread: 0 } : t)));
 
+    // FIXED: Use href with proper params to avoid navigation stack buildup
     router.push({
-      pathname: "/dm/[id]",
+      pathname: "/dm/[id]" as any,
       params: {
         id: partnerId,
         name: thread?.name || "Chat",
-        avatar: thread?.avatar
+        avatar: thread?.avatar || "",
       }
     });
   };
