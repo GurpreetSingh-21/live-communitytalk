@@ -1,24 +1,20 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const jakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  weight: ["300", "400", "500", "700", "800"],
+  variable: "--font-jakarta",
 });
 
 export const metadata: Metadata = {
-  title: "CommunityTalk Admin Dashboard",
+  title: "Campustry - Connect, Learn, Thrive",
   description:
-    "Internal moderation tools for managing profiles, communities, and safety on CommunityTalk.",
+    "The verified student platform connecting campus communities. Join 10,000+ students across 50+ universities.",
   icons: {
-    icon: "/favicon.ico",
+    icon: "/logo.png",
   },
 };
 
@@ -30,9 +26,8 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-950 text-slate-50`}
+        className={`${jakartaSans.variable} font-sans antialiased bg-[#FAF9F7] text-[#1A1A1A]`}
       >
-        {/* Global toaster for notifications */}
         <Toaster position="top-center" richColors />
         {children}
       </body>
