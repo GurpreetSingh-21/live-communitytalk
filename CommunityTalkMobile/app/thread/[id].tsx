@@ -6,35 +6,29 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   TextInput,
-  FlatList,
   RefreshControl,
   Alert,
   ScrollView,
-  Dimensions,
   KeyboardAvoidingView,
-  Platform,
-  ActionSheetIOS,
-  LayoutAnimation,
-  UIManager,
   NativeSyntheticEvent,
   NativeScrollEvent,
+  Dimensions,
+  Platform,
+  ActionSheetIOS,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Stack, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useColorScheme } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
-
-/* Enable LayoutAnimation on Android */
-if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
-
 import { Colors, Fonts } from "@/constants/theme";
 import { useColorScheme as useAppColorScheme } from "@/hooks/use-color-scheme";
+import { ChatComposer } from "@/components/ChatComposer";
+import { ChatMessageItem } from "@/components/ChatMessageItem";
+
 
 /* ───────── Theme Adapter ───────── */
 // Replaced local useTheme with global constants
@@ -265,7 +259,6 @@ export default function CommunityScreen() {
   /* Chat */
   const [chatLoading, setChatLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [input, setInput] = useState("");
   const [inputHeight, setInputHeight] = useState(44);
   const [chatError, setChatError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -273,7 +266,7 @@ export default function CommunityScreen() {
   const fetchingMoreChatRef = useRef(false);
 
   // --- Chat list refs & helpers for auto-scroll and stable pagination ---
-  const chatListRef = useRef<FlatList<ChatMessage>>(null);
+  const chatListRef = useRef<any>(null);
   const contentHeightRef = useRef(0);
   const prevContentHeightRef = useRef(0);
   const loadingOlderRef = useRef(false);
@@ -386,9 +379,8 @@ export default function CommunityScreen() {
     }
   }, [communityId, chatHasMore, messages]);
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || sending || !communityId) return;
+  const sendMessage = useCallback(async (text: string) => {
+    if (sending || !text.trim()) return;
     setSending(true);
     setChatError(null);
     const clientMessageId = `cm_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -404,10 +396,7 @@ export default function CommunityScreen() {
       status: "sent",
     };
 
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setMessages((prev) => [...prev, optimistic]);
-    setInput("");
-    setInputHeight(44);
     // ensure we scroll on send
     requestAnimationFrame(() => scrollToBottom(true));
 
@@ -438,7 +427,7 @@ export default function CommunityScreen() {
     } finally {
       setSending(false);
     }
-  }, [input, sending, communityId, user?._id, user?.fullName, scrollToBottom]);
+  }, [communityId, user?._id, user?.fullName, scrollToBottom]);
 
   /* Socket room join/leave + realtime handlers */
   useEffect(() => {
@@ -449,7 +438,6 @@ export default function CommunityScreen() {
 
     const onNew = (payload: any) => {
       if (String(payload?.communityId) !== communityId) return;
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       if (payload?.clientMessageId) {
         setMessages((prev) => {
           const i = prev.findIndex(
@@ -953,103 +941,10 @@ export default function CommunityScreen() {
     </View>
   );
 
-  /* Chat bubbles */
-  const renderMessage = ({ item, index }: { item: ChatMessage; index: number }) => {
-    const myIds = [String(user?._id || ""), "me"];
-    const mine = myIds.includes(String(item.senderId || ""));
-    const prev = messages[index - 1];
-    const next = messages[index + 1];
-
-    const curDate = asDate(item.timestamp);
-    const prevDate = prev ? asDate(prev.timestamp) : undefined;
-    const showDateDivider = !prev || !prevDate || !isSameDay(curDate, prevDate);
-
-    const isFirstOfGroup = !prev || prev.senderId !== item.senderId || showGap15min(prev, item);
-    const isLastOfGroup = !next || next.senderId !== item.senderId || showGap15min(item, next);
-
-    const deleted = item.isDeleted || item.status === "deleted";
-
-    return (
-      <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
-        {showDateDivider && (
-          <View style={{ alignItems: "center", marginVertical: 16 }}>
-            <View
-              style={{
-                backgroundColor: colors.surface,
-                paddingHorizontal: 14,
-                paddingVertical: 6,
-                borderRadius: 12,
-                shadowColor: colors.shadow,
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.1,
-                shadowRadius: 2,
-              }}
-            >
-              <Text style={{ color: colors.textSecondary, fontSize: 13, fontFamily: Fonts.sans }}>{dayLabel(curDate)}</Text>
-            </View>
-          </View>
-        )}
-        <View style={{ alignItems: mine ? "flex-end" : "flex-start", marginBottom: isLastOfGroup ? 12 : 2 }}>
-          {!mine && isFirstOfGroup && (
-            <Text style={{ color: colors.textSecondary, fontSize: 12, marginBottom: 4, marginLeft: 12, fontFamily: Fonts.sans }}>
-              {item.sender}
-            </Text>
-          )}
-          <View style={{ maxWidth: "75%" }}>
-            {mine ? (
-              <LinearGradient
-                colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={{
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  borderTopRightRadius: isFirstOfGroup ? 20 : 6,
-                  borderBottomRightRadius: isLastOfGroup ? 20 : 6,
-                  shadowColor: colors.primary,
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.25,
-                  shadowRadius: 6,
-                }}
-              >
-                {deleted ? (
-                  <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, fontStyle: "italic" }}>
-                    Message deleted
-                  </Text>
-                ) : (
-                  <Text style={{ color: "#FFFFFF", fontSize: 16, lineHeight: 22, fontFamily: Fonts.regular }}>{item.content}</Text>
-                )}
-              </LinearGradient>
-            ) : (
-              <View
-                style={{
-                  backgroundColor: colors.surfaceElevated,
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  borderTopLeftRadius: isFirstOfGroup ? 20 : 6,
-                  borderBottomLeftRadius: isLastOfGroup ? 20 : 6,
-                  shadowColor: colors.shadow,
-                  shadowOffset: { width: 0, height: 1 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 3,
-                }}
-              >
-                {deleted ? (
-                  <Text style={{ color: colors.textTertiary, fontSize: 14, fontStyle: "italic" }}>
-                    Message deleted
-                  </Text>
-                ) : (
-                  <Text style={{ color: colors.text, fontSize: 16, lineHeight: 22, fontFamily: Fonts.regular }}>{item.content}</Text>
-                )}
-              </View>
-            )}
-          </View>
-        </View>
-      </View>
-    );
-  };
+  /* Chat message renderer - now uses memoized component */
+  const renderMessage = useCallback(({ item, index}: { item: ChatMessage; index: number }) => {
+ return <ChatMessageItem item={item} index={index} messages={messages} user={user} colors={colors} />;
+  }, [messages, user]);
 
   /* ───────── Render ───────── */
   return (
@@ -1129,11 +1024,12 @@ export default function CommunityScreen() {
                       <ActivityIndicator size="large" color={colors.primary} />
                     </View>
                   ) : (
-                    <FlatList
-                      ref={chatListRef}
+                    <FlashList
+                      ref={chatListRef as any}
                       data={messages}
                       keyExtractor={(m) => String(m._id)}
                       renderItem={renderMessage}
+                      estimatedItemSize={100}
                       onContentSizeChange={handleChatContentSizeChange}
                       onScroll={handleChatScroll}
                       scrollEventThrottle={16}
@@ -1208,109 +1104,28 @@ export default function CommunityScreen() {
                   </View>
                 ) : null}
 
-                {/* Modern Composer */}
-                <View
-                  style={{
-                    paddingHorizontal: 16,
-                    paddingVertical: 12,
-                    paddingBottom: Platform.OS === "ios" ? 32 : 12,
-                    borderTopWidth: 0.5,
-                    borderTopColor: colors.border,
-                    backgroundColor: colors.bg,
+                {/* ChatComposer - isolated to prevent list re-renders */}
+                <ChatComposer
+                  colors={colors}
+                  onSend={async (text) => {
+                    await sendMessage(text);
                   }}
-                >
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "flex-end",
-                      backgroundColor: colors.inputBg,
-                      borderRadius: 24,
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      shadowColor: colors.shadow,
-                      shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.08,
-                      shadowRadius: 8,
-                    }}
-                  >
-                    <TextInput
-                      value={input}
-                      onChangeText={(t) => {
-                        setInput(t);
-
-                        if (socket && communityId) {
-                          const now = Date.now();
-
-                          // Throttle "typing: true" to at most once every 2s
-                          if (now - (typingPingRef.current.lastSent || 0) > 2000) {
-                            typingPingRef.current.lastSent = now;
-                            socket.emit?.("typing", { communityId, typing: true });
-                          }
-
-                          // Send "typing: false" after 5s of no changes
-                          clearTimeout(typingPingRef.current.timer);
-                          typingPingRef.current.timer = setTimeout(() => {
-                            socket.emit?.("typing", { communityId, typing: false });
-                          }, 5000);
-                        }
-                      }}
-                      placeholder="Message"
-                      placeholderTextColor={colors.textSecondary}
-                      style={{
-                        color: colors.text,
-                        fontSize: 17,
-                        fontFamily: Fonts.regular,
-                        flex: 1,
-                        minHeight: 36,
-                        maxHeight: 100,
-                        height: Math.max(36, inputHeight),
-                        paddingVertical: 8,
-                        textAlignVertical: "top",
-                      }}
-                      onContentSizeChange={(e) => {
-                        const h = e.nativeEvent.contentSize.height;
-                        setInputHeight(Math.min(100, Math.max(36, h)));
-                      }}
-                      editable={!sending}
-                      multiline
-                    />
-
-                    <TouchableOpacity
-                      onPress={sendMessage}
-                      disabled={sending || input.trim().length === 0}
-                      style={{
-                        marginLeft: 8,
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        overflow: "hidden",
-                        opacity: sending || input.trim().length === 0 ? 0.4 : 1,
-                      }}
-                    >
-                      <LinearGradient
-                        colors={[colors.primaryGradientStart, colors.primaryGradientEnd]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-                      >
-                        {sending ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <Ionicons name="arrow-up" size={20} color="#fff" />
-                        )}
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                  onTyping={(isTyping) => {
+                    if (socket && communityId) {
+                      socket.emit?.("typing", { communityId, typing: isTyping });
+                    }
+                  }}
+                />
               </View>
 
               {/* MEMBERS */}
               <View style={{ width: SCREEN_W }}>
                 <MemberFilters />
-                <FlatList
+                <FlashList
                   data={members}
                   keyExtractor={(m) => String(m._id)}
                   renderItem={({ item }) => <MemberRowCard item={item} />}
+                  estimatedItemSize={84}
                   onEndReachedThreshold={0.3}
                   onEndReached={loadMoreMembers}
                   refreshControl={
