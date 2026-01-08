@@ -79,6 +79,16 @@ router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
+    // 🚀 Try Redis cache first
+    const cacheKey = `user:profile:${id}`;
+    if (req.redisClient) {
+      const cached = await req.redisClient.get(cacheKey);
+      if (cached) {
+        console.log(`✅ [Cache HIT] User profile ${id}`);
+        return res.json(JSON.parse(cached));
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -96,14 +106,16 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // Rename id -> _id if frontend expects it (legacy compatibility)
-    // Actually, let's keep it consistant with other routes which return _id for now
-    // But moving forward we should prefer id. 
-    // Mongoose usually returned _id.
     const responseUser = {
-      _id: user.id, // Legacy compat
+      _id: user.id,
       ...user
     };
+
+    // 💾 Cache for 30 minutes (aggressive)
+    if (req.redisClient) {
+      await req.redisClient.setex(cacheKey, 1800, JSON.stringify(responseUser));
+      console.log(`💾 [Cache MISS] Cached user profile ${id}`);
+    }
 
     return res.json(responseUser);
   } catch (err) {
@@ -153,6 +165,16 @@ router.get("/:id/publicKey", async (req, res) => {
   try {
     const { id } = req.params;
 
+    // 🚀 Try Redis cache first
+    const cacheKey = `user:publicKey:${id}`;
+    if (req.redisClient) {
+      const cached = await req.redisClient.get(cacheKey);
+      if (cached) {
+        console.log(`✅ [Cache HIT] PublicKey ${id}`);
+        return res.json(JSON.parse(cached));
+      }
+    }
+
     const user = await prisma.user.findUnique({
       where: { id },
       select: { id: true, publicKey: true }
@@ -166,7 +188,14 @@ router.get("/:id/publicKey", async (req, res) => {
       return res.status(404).json({ error: "User has no public key" });
     }
 
-    return res.json({ publicKey: user.publicKey });
+    const response = { publicKey: user.publicKey };
+
+    // 💾 Cache for 1 hour (public keys rarely change)
+    if (req.redisClient) {
+      await req.redisClient.setex(cacheKey, 3600, JSON.stringify(response));
+      console.log(`💾 [Cache MISS] Cached publicKey ${id}`);
+    }
+    return res.json(response);
   } catch (err) {
     console.error("[User Routes] GET publicKey error:", err);
     return res.status(500).json({ error: "Failed to fetch public key" });

@@ -213,6 +213,16 @@ router.get("/:memberId", async (req, res) => {
 
     const context = (req.query.context || "community").trim();
 
+    // 🚀 Try Redis cache first (2 min TTL)
+    const cacheKey = `dm:messages:${me}:${them}:${context}:${limit}`;
+    if (req.redisClient) {
+      const cached = await req.redisClient.get(cacheKey);
+      if (cached) {
+        console.log(`✅ [Cache HIT] DM messages ${me.slice(0,8)}-${them.slice(0,8)}`);
+        return res.json(JSON.parse(cached));
+      }
+    }
+
     const docs = await prisma.directMessage.findMany({
       where: {
         AND: [
@@ -248,7 +258,15 @@ router.get("/:memberId", async (req, res) => {
       timestamp: m.createdAt,
     }));
 
-    return res.json({ items: normalized });
+    const response = { items: normalized };
+
+    // 💾 Cache for 2 minutes
+    if (req.redisClient) {
+      await req.redisClient.setex(cacheKey, 120, JSON.stringify(response));
+      console.log(`💾 [Cache MISS] Cached DM messages ${me.slice(0,8)}-${them.slice(0,8)}`);
+    }
+
+    return res.json(response);
   } catch (err) {
     console.error("[DM Routes] GET error:", err);
     return res.status(500).json({ error: "Failed to fetch messages" });
