@@ -1,5 +1,4 @@
-// CommunityTalkMobile/app/register.tsx
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -10,12 +9,14 @@ import {
   ScrollView,
   ActivityIndicator,
   Pressable,
+  Alert,
+  Dimensions,
+  Image,
 } from "react-native";
 import { Colors, Fonts } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { api } from "@/src/api/api";
-import React from "react";
 import { AuthContext } from "@/src/context/AuthContext";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -24,9 +25,17 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   withTiming,
+  FadeInRight,
+  FadeOutLeft,
+  SlideInRight,
+  SlideOutLeft,
 } from "react-native-reanimated";
+import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Types
+const { width } = Dimensions.get("window");
+
+/* ---------------- Types ---------------- */
 type CollegeType = {
   _id: string;
   name: string;
@@ -43,378 +52,269 @@ type CommunityLite = {
 };
 
 /* ---------------- Components ---------------- */
+
+const StepIndicator = ({ currentStep, totalSteps, color }: { currentStep: number, totalSteps: number, color: string }) => {
+  return (
+    <View style={{ flexDirection: 'row', justifyContent: 'center', marginBottom: 30, gap: 8 }}>
+      {Array.from({ length: totalSteps }).map((_, i) => {
+        const isActive = i + 1 === currentStep;
+        const isCompleted = i + 1 < currentStep;
+        return (
+          <Animated.View
+            key={i}
+            style={{
+              height: 4,
+              width: isActive ? 32 : 12,
+              borderRadius: 2,
+              backgroundColor: isActive || isCompleted ? color : 'rgba(150,150,150,0.3)',
+            }}
+          />
+        );
+      })}
+    </View>
+  )
+}
+
 const InputField = ({
   label,
-  placeholder: placeholderText,
+  placeholder,
   value,
   onChangeText,
   icon,
   error,
   rightIcon,
   onRightIconPress,
-  inputRef,
-  labelColor,
-  inputBg,
-  inputBorder,
-  placeholderColor,
-  textColor,
+  isDark,
+  colors,
   ...props
-}: {
-  label: string;
-  placeholder: string;
-  value: string;
-  onChangeText: (text: string) => void;
-  icon: string;
-  error?: string | null;
-  rightIcon?: string;
-  onRightIconPress?: () => void;
-  inputRef?: any;
-  labelColor: string;
-  inputBg: string;
-  inputBorder: string;
-  placeholderColor: string;
-  textColor: string;
-  [key: string]: any;
-}) => {
+}: any) => {
   const [focused, setFocused] = useState(false);
+  const inputBg = isDark ? "#18181B" : "#F3F4F6";
+  const borderColor = error ? colors.danger : focused ? colors.primary : colors.border;
 
   return (
     <View style={{ marginBottom: 20 }}>
-      <Text style={{ fontSize: 13, fontWeight: "600", color: labelColor, marginBottom: 8 }}>
-        {label}
-      </Text>
+      {label && <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: colors.textMuted, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
           backgroundColor: inputBg,
-          borderRadius: 12,
-          height: 50,
-          paddingHorizontal: 14,
-          borderWidth: focused && !error ? 2 : 1,
-          borderColor: error ? "#EF4444" : focused ? "#6366F1" : inputBorder,
+          borderRadius: 16,
+          height: 56,
+          paddingHorizontal: 16,
+          borderWidth: 1.5,
+          borderColor,
         }}
       >
-        <Ionicons name={icon as any} size={20} color={focused ? "#6366F1" : placeholderColor} />
+        <Ionicons name={icon} size={20} color={focused ? colors.primary : colors.textMuted} />
         <TextInput
-          ref={inputRef}
-          placeholder={placeholderText}
-          placeholderTextColor={placeholderColor}
+          placeholder={placeholder}
+          placeholderTextColor={colors.textMuted}
           value={value}
           onChangeText={onChangeText}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           style={{
             flex: 1,
-            marginLeft: 10,
-            fontSize: 15,
-            color: textColor,
+            marginLeft: 12,
+            fontSize: 16,
+            color: colors.text,
             fontFamily: Fonts.sans,
           }}
           {...props}
         />
         {rightIcon && (
           <TouchableOpacity onPress={onRightIconPress}>
-            <Ionicons name={rightIcon as any} size={20} color={placeholderColor} />
+            <Ionicons name={rightIcon} size={20} color={colors.textMuted} />
           </TouchableOpacity>
         )}
       </View>
-      {!!error && (
-        <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6, marginLeft: 4 }}>
+      {error && (
+        <Animated.Text entering={FadeInRight} style={{ color: colors.danger, fontSize: 12, marginTop: 6, marginLeft: 4, fontFamily: Fonts.bold }}>
           {error}
-        </Text>
+        </Animated.Text>
       )}
     </View>
   );
 };
 
-const Pill = ({
-  active,
-  label,
-  onPress,
-  isDark,
-  textColor,
-  primaryColor,
-  borderColor,
-  bgColor,
-}: {
-  active: boolean;
-  label: string;
-  onPress: () => void;
-  isDark: boolean;
-  textColor: string;
-  primaryColor: string;
-  borderColor: string;
-  bgColor: string;
-}) => {
-  const scale = useSharedValue(1);
-  const anim = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
+const WizardButton = ({ onPress, loading, disabled, label, primaryColor, icon = "arrow-forward" }: any) => {
   return (
-    <Pressable
-      onPressIn={() => (scale.value = withSpring(0.96))}
-      onPressOut={() => {
-        scale.value = withSpring(1);
-        onPress();
+    <TouchableOpacity
+      activeOpacity={0.8}
+      onPress={onPress}
+      disabled={disabled || loading}
+      style={{
+        backgroundColor: disabled ? "#9CA3AF" : primaryColor,
+        height: 56,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        flexDirection: 'row',
+        shadowColor: primaryColor,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: disabled ? 0 : 0.3,
+        shadowRadius: 10,
+        elevation: disabled ? 0 : 6,
+        marginTop: 20
       }}
-      style={{ marginRight: 8, marginBottom: 10 }}
     >
-      <Animated.View
-        style={[
-          anim,
-          {
-            paddingHorizontal: 14,
-            paddingVertical: 9,
-            borderRadius: 12,
-            backgroundColor: active ? primaryColor : bgColor,
-            borderWidth: 1,
-            borderColor: active ? primaryColor : borderColor,
-            flexDirection: "row",
-            alignItems: "center",
-          },
-        ]}
-      >
-        {active && (
-          <Ionicons
-            name="checkmark-circle"
-            size={14}
-            color="#fff"
-            style={{ marginRight: 5 }}
-          />
-        )}
-        <Text
-          style={{
-            fontSize: 14,
-            fontFamily: active ? Fonts.bold : Fonts.sans,
-            color: active ? "#fff" : textColor,
-          }}
-        >
-          {label}
-        </Text>
-      </Animated.View>
-    </Pressable>
+      {loading ? (
+        <ActivityIndicator color="white" />
+      ) : (
+        <>
+          <Text style={{ color: '#fff', fontSize: 16, fontFamily: Fonts.bold, marginRight: 8 }}>{label}</Text>
+          <Ionicons name={icon as any} size={20} color="#fff" />
+        </>
+      )}
+    </TouchableOpacity>
   );
 };
 
-const SubmitButton = ({
-  loading,
-  disabled,
-  onPress,
-  primaryColor,
-}: {
-  loading: boolean;
-  disabled: boolean;
-  onPress: () => void;
-  primaryColor: string;
-}) => {
-  const scale = useSharedValue(1);
-
-  const anim = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Pressable
-      disabled={disabled}
-      onPressIn={() => {
-        if (!disabled) scale.value = withSpring(0.96);
-      }}
-      onPressOut={() => {
-        if (!disabled) {
-          scale.value = withSpring(1);
-          onPress();
-        }
-      }}
-    >
-      <Animated.View style={anim}>
-        <View
-          style={{
-            height: 52,
-            borderRadius: 12,
-            justifyContent: "center",
-            alignItems: "center",
-            backgroundColor: disabled ? "#9CA3AF" : primaryColor,
-          }}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={{ color: "#fff", fontSize: 16, fontFamily: Fonts.bold }}>
-                Create Account
-              </Text>
-              <Ionicons name="arrow-forward" size={18} color="#fff" />
-            </View>
-          )}
-        </View>
-      </Animated.View>
-    </Pressable>
-  );
-};
-
-export default function RegisterScreen() {
+/* ---------------- MAIN SCREEN ---------------- */
+export default function RegisterWizard() {
   const { register } = (React.useContext(AuthContext) as any) ?? {};
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme() ?? 'light';
   const isDark = scheme === "dark";
   const colors = Colors[scheme];
 
-  // form
+  // Wizard State
+  const [step, setStep] = useState(1);
+  const totalSteps = 3;
+
+  // Form Data
+  const [avatarUri, setAvatarUri] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [showPw, setShowPw] = useState(false);
-
-  // lists
-  const [colleges, setColleges] = useState<CollegeType[]>([]);
-  const [religions, setReligions] = useState<CommunityLite[]>([]);
   const [collegeId, setCollegeId] = useState("");
   const [religionId, setReligionId] = useState("");
 
+  // Lists Data
+  const [colleges, setColleges] = useState<CollegeType[]>([]);
+  const [religions, setReligions] = useState<CommunityLite[]>([]);
   const [loadingLists, setLoadingLists] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
 
-  // errors
-  const [errName, setErrName] = useState<string | null>(null);
-  const [errEmail, setErrEmail] = useState<string | null>(null);
-  const [errPw, setErrPw] = useState<string | null>(null);
-  const [errCollege, setErrCollege] = useState<string | null>(null);
-  const [errReligion, setErrReligion] = useState<string | null>(null);
+  // Status
+  const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const pwStrength =
-    pw.length === 0 ? null : pw.length < 6 ? "weak" : pw.length < 10 ? "medium" : "strong";
-  const strengthColors = { weak: colors.danger, medium: colors.warning, strong: colors.success };
+  // Errors
+  const [errors, setErrors] = useState<{ [key: string]: string | null }>({});
 
-  /* ---------------- Fetch lists ---------------- */
+  /* ---------------- Fetch Data ---------------- */
   useEffect(() => {
     let mounted = true;
-
     (async () => {
       try {
-        setLoadingLists(true);
-
         const [colRes, relRes] = await Promise.all([
           api.get(`/api/public/colleges`),
           api.get(`/api/public/communities?type=religion&type=custom&paginated=false`),
         ]);
-
-        const colItems = Array.isArray(colRes.data) ? colRes.data : [];
-        const relItems = Array.isArray(relRes.data)
-          ? relRes.data
-          : Array.isArray(relRes.data?.items)
-            ? relRes.data.items
-            : [];
-
-        if (!mounted) return;
-
-        setColleges(colItems);
-        setReligions(relItems);
+        if (mounted) {
+          setColleges(Array.isArray(colRes.data) ? colRes.data : []);
+          setReligions(Array.isArray(relRes.data) ? relRes.data : relRes.data?.items || []);
+          setLoadingLists(false);
+        }
       } catch (e) {
         console.log("Failed to load lists", e);
-      } finally {
-        if (mounted) setLoadingLists(false);
       }
     })();
-
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, []);
 
-  /* ---------------- Auto-detect college ---------------- */
+  /* ---------------- Auto Detect ---------------- */
   useEffect(() => {
-    const lower = email.trim().toLowerCase();
-    const domain = lower.split("@")[1];
-
+    const domain = email.trim().toLowerCase().split("@")[1];
     if (domain && colleges.length > 0) {
-      const match = colleges.find(
-        (c) => Array.isArray(c.emailDomains) && c.emailDomains.includes(domain)
-      );
-
+      const match = colleges.find(c => c.emailDomains?.includes(domain));
       if (match) {
         setCollegeId(match._id);
-        setErrCollege(null);
+        setErrors(prev => ({ ...prev, college: null }));
       }
     }
   }, [email, colleges]);
 
-  const autoDetectedCollege = useMemo(() => {
-    if (!collegeId) return null;
-    const c = colleges.find((x) => x._id === collegeId);
-    const domain = email.split("@")[1]?.toLowerCase();
-    if (c && domain && c.emailDomains?.includes(domain)) return c;
-    return null;
-  }, [collegeId, colleges, email]);
-
-  /* ---------------- STRICT Filtered Communities (Option A) ---------------- */
+  /* ---------------- Computed Data (HOISTED) ---------------- */
   const filteredCommunities = useMemo(() => {
     if (!collegeId) return [];
-
-    const col = colleges.find((c) => c._id === collegeId);
+    const col = colleges.find(c => c._id === collegeId);
     if (!col) return [];
-
     const collegeKey = col.key.toLowerCase();
     const collegeName = col.name.toLowerCase();
-
-    return religions.filter((r) => {
-      const tags = (r.tags || []).map((t) => t.toLowerCase());
-      if (tags.includes(collegeKey)) return true;
-      if (r.name.toLowerCase().includes(collegeName)) return true;
-      return false;
+    return religions.filter(r => {
+      const tags = (r.tags || []).map(t => t.toLowerCase());
+      return tags.includes(collegeKey) || r.name.toLowerCase().includes(collegeName);
     });
   }, [collegeId, colleges, religions]);
 
-  /* ---------------- Validation ---------------- */
-  const validate = () => {
-    let ok = true;
-    setErrName(null);
-    setErrEmail(null);
-    setErrPw(null);
-    setErrCollege(null);
-    setErrReligion(null);
-    setServerError(null);
-
-    if (!name.trim()) {
-      setErrName("Full name is required");
-      ok = false;
+  /* ---------------- Step Logic ---------------- */
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow photo access to set your avatar.');
+      return;
     }
-    const em = email.trim().toLowerCase();
-    if (!em) {
-      setErrEmail("Email is required");
-      ok = false;
-    } else if (!/^\S+@\S+\.\S+$/.test(em)) {
-      setErrEmail("Email is invalid");
-      ok = false;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'], // FIXED: Use string literal array to avoid type errors
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.5,
+    });
+    if (!result.canceled && result.assets[0].uri) {
+      setAvatarUri(result.assets[0].uri);
     }
-    if (!pw) {
-      setErrPw("Password is required");
-      ok = false;
-    } else if (pw.length < 8) {
-      setErrPw("Password must be at least 8 characters");
-      ok = false;
-    }
-    if (!collegeId) {
-      setErrCollege("Select your college");
-      ok = false;
-    }
-    if (!religionId) {
-      setErrReligion("Select your community");
-      ok = false;
-    }
-    return ok;
   };
+
+  const validateStep1 = () => {
+    let errs: any = {};
+    if (!name.trim()) errs.name = "What should we call you?";
+    // Avatar is optional but recommended. We won't block.
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const validateStep2 = () => {
+    let errs: any = {};
+    const em = email.trim().toLowerCase();
+    if (!em) errs.email = "Email is required";
+    else if (!/^\S+@\S+\.\S+$/.test(em)) errs.email = "Please enter a valid email";
+
+    if (!pw) errs.pw = "Password is required";
+    else if (pw.length < 8) errs.pw = "Must be at least 8 characters";
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
+  const validateStep3 = () => {
+    let errs: any = {};
+    if (!collegeId) errs.college = "Please select your campus";
+    if (!religionId) errs.community = "Please join a community";
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  }
+
+  const nextStep = () => {
+    if (step === 1 && validateStep1()) setStep(2);
+    if (step === 2 && validateStep2()) setStep(3);
+  }
+
+  const prevStep = () => {
+    if (step > 1) setStep(step - 1);
+    else router.back();
+  }
 
   /* ---------------- Submit ---------------- */
   const handleRegister = async () => {
-    if (submitting) return;
-    if (!validate()) return;
+    if (!validateStep3()) return;
+    setSubmitting(true);
+    setServerError(null);
 
     try {
-      setSubmitting(true);
-
       const body = {
         fullName: name.trim(),
         email: email.trim().toLowerCase(),
@@ -425,427 +325,231 @@ export default function RegisterScreen() {
 
       const data = await register(body);
 
+      // Save avatar to AsyncStorage for post-login upload
+      if (avatarUri) {
+        await AsyncStorage.setItem(`pending_avatar_${body.email}`, avatarUri);
+      }
+
       router.replace({
         pathname: "/verify-email",
         params: { email: body.email, message: data.message },
       });
+
     } catch (err: any) {
-      const e = err?.response?.data?.error ?? err?.response?.data ?? err?.message;
-      if (typeof e === "string") setServerError(e);
-      else if (e && typeof e === "object") {
-        if (e.fullName) setErrName(String(e.fullName));
-        if (e.email) setErrEmail(String(e.email));
-        if (e.password) setErrPw(String(e.password));
-        if (e.collegeId) setErrCollege(String(e.collegeId));
-        if (e.religionId) setErrReligion(String(e.religionId));
-        if (e.message) setServerError(String(e.message));
+      const e = err?.response?.data?.error;
+      if (typeof e === 'object') {
+        const firstVal = Object.values(e)[0];
+        setServerError(String(firstVal));
       } else {
-        setServerError("Registration failed. Please try again.");
+        setServerError(e || "Registration failed. Please try again.");
       }
     } finally {
       setSubmitting(false);
     }
-  };
+  }
 
-  // Modern theme
-  const bgColor = colors.background;
-  const cardBg = colors.surface;
-  const labelColor = colors.textMuted;
-  const inputBg = isDark ? "#18181B" : colors.muted; // Slight adjust for dark mode input
-  const inputBorder = colors.border;
-  const inputBorderFocus = colors.primary;
-  const placeholder = colors.textMuted;
-  const textColor = colors.text;
-  const eduDetected = useMemo(() => email.toLowerCase().includes(".edu"), [email]);
+  /* ---------------- Render Steps ---------------- */
 
-  /* ---------------- UI ---------------- */
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.select({ ios: "padding", android: undefined })}
-      style={{ flex: 1, backgroundColor: bgColor }}
-    >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingTop: insets.top + 8,
-          paddingBottom: insets.bottom + 32,
-          paddingHorizontal: 20,
-        }}
-      >
-        {/* Back Button */}
-        <TouchableOpacity
-          onPress={() => router.back()}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            marginBottom: 24,
-            alignSelf: "flex-start",
-          }}
-        >
-          <Ionicons name="chevron-back" size={22} color={textColor} />
-          <Text style={{ fontSize: 16, fontFamily: Fonts.bold, color: textColor, marginLeft: 2 }}>
-            Back
-          </Text>
-        </TouchableOpacity>
-
-        {/* Modern Hero */}
-        <View style={{ alignItems: "center", marginBottom: 40 }}>
-          <View
-            style={{
-              width: 72,
-              height: 72,
-              borderRadius: 18,
-              overflow: "hidden",
-              marginBottom: 18,
-              backgroundColor: colors.primary,
-              justifyContent: "center",
-              alignItems: "center",
-            }}
-          >
-            <Ionicons name="people" size={36} color="#fff" />
+  // Step 1: Identity
+  const renderIdentity = () => (
+    <Animated.View entering={SlideInRight} exiting={SlideOutLeft} style={{ flex: 1 }}>
+      <View style={{ alignItems: 'center', marginBottom: 40 }}>
+        <TouchableOpacity onPress={pickImage} style={{ marginBottom: 12 }}>
+          <View style={{
+            width: 120, height: 120, borderRadius: 60,
+            backgroundColor: isDark ? '#27272A' : '#F3F4F6',
+            borderWidth: 2, borderColor: avatarUri ? colors.primary : colors.border,
+            justifyContent: 'center', alignItems: 'center', overflow: 'hidden'
+          }}>
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={{ width: '100%', height: '100%' }} />
+            ) : (
+              <Ionicons name="camera" size={40} color={colors.textMuted} />
+            )}
           </View>
+          <View style={{
+            position: 'absolute', bottom: 0, right: 0,
+            backgroundColor: colors.primary, width: 36, height: 36,
+            borderRadius: 18, justifyContent: 'center', alignItems: 'center',
+            borderWidth: 3, borderColor: colors.background
+          }}>
+            <Ionicons name="add" size={20} color="#fff" />
+          </View>
+        </TouchableOpacity>
+        <Text style={{ fontFamily: Fonts.bold, fontSize: 24, color: colors.text }}>Who are you?</Text>
+        <Text style={{ color: colors.textMuted, marginTop: 4 }}>Let's put a face to the name.</Text>
+      </View>
 
-          <Text style={{ fontSize: 28, fontFamily: Fonts.bold, color: textColor, letterSpacing: -0.6 }}>
-            Join CommunityTalk
-          </Text>
-          <Text
-            style={{
-              marginTop: 8,
-              fontSize: 14,
-              color: labelColor,
-              textAlign: "center",
-              lineHeight: 20,
-            }}
-          >
-            Connect with campus & faith communities{"\n"}across NYC 🚀
-          </Text>
+      <InputField
+        label="Full Name"
+        placeholder="Jane Doe"
+        value={name}
+        onChangeText={setName}
+        icon="person-outline"
+        error={errors.name}
+        isDark={isDark}
+        colors={colors}
+      />
+      <WizardButton label="Next Step" onPress={nextStep} primaryColor={colors.primary} />
+    </Animated.View>
+  );
+
+  // Step 2: Credentials
+  const renderCredentials = () => (
+    <Animated.View entering={SlideInRight} exiting={SlideOutLeft} style={{ flex: 1 }}>
+      <View style={{ marginBottom: 30 }}>
+        <Text style={{ fontFamily: Fonts.bold, fontSize: 24, color: colors.text, marginBottom: 8 }}>Secure your account</Text>
+        <Text style={{ color: colors.textMuted }}>Use your .edu email if you have one.</Text>
+      </View>
+
+      <InputField
+        label="Email Address"
+        placeholder="student@college.edu"
+        value={email}
+        onChangeText={setEmail}
+        icon="mail-outline"
+        error={errors.email}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        isDark={isDark}
+        colors={colors}
+      />
+
+      <InputField
+        label="Password"
+        placeholder="Min 8 characters"
+        value={pw}
+        onChangeText={setPw}
+        icon="lock-closed-outline"
+        secureTextEntry={!showPw}
+        rightIcon={showPw ? "eye-off-outline" : "eye-outline"}
+        onRightIconPress={() => setShowPw(!showPw)}
+        error={errors.pw}
+        isDark={isDark}
+        colors={colors}
+      />
+
+      <WizardButton label="Next Step" onPress={nextStep} primaryColor={colors.primary} />
+    </Animated.View>
+  );
+
+  // Step 3: Community
+  const renderCommunity = () => {
+    return (
+      <Animated.View entering={SlideInRight} exiting={SlideOutLeft} style={{ flex: 1 }}>
+        <View style={{ marginBottom: 30 }}>
+          <Text style={{ fontFamily: Fonts.bold, fontSize: 24, color: colors.text, marginBottom: 8 }}>Find your tribe</Text>
+          <Text style={{ color: colors.textMuted }}>Connect with your campus community.</Text>
         </View>
 
-        {/* Modern Card */}
-        <View
-          style={{
-            backgroundColor: cardBg,
-            borderRadius: 20,
-            padding: 20,
-            borderWidth: 1,
-            borderColor: colors.border,
-          }}
-        >
-          {/* Name Input */}
-          <InputField
-            label="Full Name"
-            placeholder="Your full name"
-            value={name}
-            onChangeText={setName}
-            icon="person-outline"
-            error={errName}
-            autoCapitalize="words"
-            labelColor={labelColor}
-            inputBg={inputBg}
-            inputBorder={inputBorder}
-            placeholderColor={placeholder}
-            textColor={textColor}
-          />
+        {/* College Picker */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: colors.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>
+            {collegeId ? 'Your Campus' : 'Select Campus'}
+          </Text>
 
-          {/* Email Input */}
-          <View>
-            <InputField
-              label="Email Address"
-              placeholder="you@college.edu"
-              value={email}
-              onChangeText={setEmail}
-              icon="mail-outline"
-              error={errEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              labelColor={labelColor}
-              inputBg={inputBg}
-              inputBorder={inputBorder}
-              placeholderColor={placeholder}
-              textColor={textColor}
-            />
-
-            {eduDetected && (
-              <View
-                style={{
-                  marginTop: -12,
-                  marginBottom: 20,
-                  backgroundColor: isDark ? "#064E3B" : "#ECFDF5",
-                  padding: 10,
-                  borderRadius: 10,
-                  flexDirection: "row",
-                  alignItems: "center",
-                }}
-              >
-                <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                <Text style={{ marginLeft: 6, color: colors.success, fontFamily: Fonts.bold, fontSize: 13 }}>
-                  .edu email verified ✓
+          {collegeId ? (
+            <Animated.View entering={FadeInRight} style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <View style={{
+                flex: 1, paddingVertical: 12, paddingHorizontal: 16,
+                backgroundColor: colors.primary, borderRadius: 12,
+                flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'
+              }}>
+                <Text style={{ color: '#fff', fontFamily: Fonts.bold, fontSize: 16 }}>
+                  {colleges.find(c => c._id === collegeId)?.name}
                 </Text>
+                <Ionicons name="checkmark-circle" size={24} color="#fff" />
               </View>
-            )}
-          </View>
-
-          {/* Password Input */}
-          <View>
-            <InputField
-              label="Password"
-              placeholder="Create a strong password"
-              value={pw}
-              onChangeText={setPw}
-              icon="lock-closed-outline"
-              error={errPw}
-              secureTextEntry={!showPw}
-              rightIcon={showPw ? "eye-outline" : "eye-off-outline"}
-              onRightIconPress={() => setShowPw((v) => !v)}
-              labelColor={labelColor}
-              inputBg={inputBg}
-              inputBorder={inputBorder}
-              placeholderColor={placeholder}
-              textColor={textColor}
-            />
-
-            {pwStrength && (
-              <View style={{ marginTop: -12, marginBottom: 20 }}>
-                <View style={{ flexDirection: "row", gap: 4, marginBottom: 6 }}>
-                  {["weak", "medium", "strong"].map((level, i) => (
-                    <View
-                      key={level}
-                      style={{
-                        flex: 1,
-                        height: 3,
-                        borderRadius: 2,
-                        backgroundColor:
-                          pwStrength === "weak" && i === 0
-                            ? "#EF4444"
-                            : pwStrength === "medium" && i <= 1
-                              ? "#F59E0B"
-                              : pwStrength === "strong"
-                                ? "#10B981"
-                                : isDark
-                                  ? "#27272A"
-                                  : "#E5E7EB",
-                      }}
-                    />
-                  ))}
-                </View>
-                <Text
+              <TouchableOpacity
+                onPress={() => { setCollegeId(""); setReligionId(""); }}
+                style={{ marginLeft: 12, padding: 8 }}
+              >
+                <Text style={{ color: colors.textMuted, fontFamily: Fonts.sans, fontSize: 14 }}>Change</Text>
+              </TouchableOpacity>
+            </Animated.View>
+          ) : (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {loadingLists ? <ActivityIndicator /> : colleges.map(c => (
+                <TouchableOpacity
+                  key={c._id}
+                  onPress={() => { setCollegeId(c._id); setReligionId(""); }}
                   style={{
-                    color: strengthColors[pwStrength],
-                    fontWeight: "600",
-                    fontSize: 12,
+                    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
+                    backgroundColor: isDark ? '#27272A' : '#F3F4F6',
+                    borderWidth: 1,
+                    borderColor: colors.border
                   }}
                 >
-                  {pwStrength.charAt(0).toUpperCase() + pwStrength.slice(1)} password
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* College Selection */}
-          <View style={{ marginBottom: 24 }}>
-            <Text style={{ fontSize: 13, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
-              Select College
-            </Text>
-
-            {autoDetectedCollege ? (
-              <View
-                style={{
-                  backgroundColor: isDark ? "#064E3B" : "#ECFDF5",
-                  borderColor: isDark ? "#059669" : "#10B981",
-                  borderWidth: 1,
-                  borderRadius: 12,
-                  padding: 14,
-                  flexDirection: "row",
-                  alignItems: "center",
-                }}
-              >
-                <View
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    backgroundColor: isDark ? "#059669" : "#D1FAE5",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginRight: 12,
-                  }}
-                >
-                  <Ionicons name="school" size={18} color="#10B981" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: "600", color: textColor, fontSize: 15 }}>
-                    {autoDetectedCollege.name}
-                  </Text>
-                  <Text style={{ color: "#10B981", fontWeight: "500", fontSize: 12, marginTop: 2 }}>
-                    Auto-detected via email
-                  </Text>
-                </View>
-                <Ionicons name="checkmark-circle" size={22} color="#10B981" />
-              </View>
-            ) : loadingLists ? (
-              <ActivityIndicator size="small" color="#6366F1" style={{ marginTop: 12 }} />
-            ) : (
-              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                {colleges.map((c) => (
-                  <Pill
-                    key={c._id}
-                    label={c.name}
-                    active={collegeId === c._id}
-                    onPress={() => setCollegeId(c._id)}
-                    isDark={isDark}
-                    textColor={textColor}
-                    primaryColor={colors.primary}
-                    borderColor={colors.border}
-                    bgColor={isDark ? colors.muted : colors.background}
-                  />
-                ))}
-              </View>
-            )}
-
-            {!!errCollege && !autoDetectedCollege && (
-              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6, marginLeft: 4 }}>
-                {errCollege}
-              </Text>
-            )}
-          </View>
-
-          {/* Community Selection */}
-          <View style={{ marginBottom: 24 }}>
-            <Text style={{ fontSize: 13, fontWeight: "600", color: labelColor, marginBottom: 12 }}>
-              Select Your Community
-            </Text>
-
-            {loadingLists ? (
-              <ActivityIndicator size="small" color="#6366F1" style={{ marginTop: 12 }} />
-            ) : filteredCommunities.length > 0 ? (
-              <View style={{ flexDirection: "row", flexWrap: "wrap" }}>
-                {filteredCommunities.map((r) => (
-                  <Pill
-                    key={r._id}
-                    label={r.name}
-                    active={religionId === r._id}
-                    onPress={() => setReligionId(r._id)}
-                    isDark={isDark}
-                    textColor={textColor}
-                    primaryColor={colors.primary}
-                    borderColor={colors.border}
-                    bgColor={isDark ? colors.muted : colors.background}
-                  />
-                ))}
-              </View>
-            ) : (
-              <View
-                style={{
-                  padding: 14,
-                  backgroundColor: isDark ? "#18181B" : "#F9FAFB",
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: isDark ? "#27272A" : "#F4F4F5",
-                }}
-              >
-                <Text
-                  style={{
-                    textAlign: "center",
-                    color: labelColor,
-                    fontSize: 13,
-                  }}
-                >
-                  {collegeId
-                    ? "No communities found for this college yet. More coming soon!"
-                    : "Select a college above to see available communities."}
-                </Text>
-              </View>
-            )}
-
-            {!!errReligion && (
-              <Text style={{ color: "#EF4444", fontSize: 12, marginTop: 6, marginLeft: 4 }}>
-                {errReligion}
-              </Text>
-            )}
-          </View>
-
-          {/* Server Error */}
-          {!!serverError && (
-            <View
-              style={{
-                backgroundColor: isDark ? "#7F1D1D" : "#FEE2E2",
-                borderColor: "#EF4444",
-                borderWidth: 1,
-                padding: 12,
-                borderRadius: 10,
-                marginBottom: 20,
-              }}
-            >
-              <Text style={{ color: "#EF4444", fontSize: 13, fontWeight: "500" }}>
-                {serverError}
-              </Text>
+                  <Text style={{ color: colors.text, fontFamily: Fonts.sans }}>{c.name}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
+        </View>
+        {errors.college && <Text style={{ color: colors.danger, marginBottom: 20 }}>{errors.college}</Text>}
 
-          {/* Submit Button */}
-          <SubmitButton
-            onPress={handleRegister}
-            loading={submitting}
-            disabled={submitting}
-            primaryColor={colors.primary}
-          />
+        {/* Community Picker */}
+        {collegeId && (
+          <Animated.View entering={FadeInRight}>
+            <Text style={{ fontSize: 13, fontFamily: Fonts.bold, color: colors.textMuted, marginBottom: 12, textTransform: 'uppercase' }}>Select Community</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {filteredCommunities.length > 0 ? filteredCommunities.map(r => (
+                <TouchableOpacity
+                  key={r._id}
+                  onPress={() => setReligionId(r._id)}
+                  style={{
+                    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12,
+                    backgroundColor: religionId === r._id ? colors.primary : (isDark ? '#27272A' : '#F3F4F6'),
+                    borderWidth: 1,
+                    borderColor: religionId === r._id ? colors.primary : colors.border
+                  }}
+                >
+                  <Text style={{ color: religionId === r._id ? '#fff' : colors.text, fontFamily: Fonts.sans }}>{r.name}</Text>
+                </TouchableOpacity>
+              )) : (
+                <Text style={{ color: colors.textMuted, fontStyle: 'italic' }}>No communities found for this campus.</Text>
+              )}
+            </View>
+          </Animated.View>
+        )}
+        {errors.community && <Text style={{ color: colors.danger, marginTop: 8 }}>{errors.community}</Text>}
 
-          {/* Terms */}
-          <Text
-            style={{
-              marginTop: 14,
-              textAlign: "center",
-              color: labelColor,
-              fontSize: 11,
-              lineHeight: 16,
-            }}
-          >
-            By creating an account, you agree to our{" "}
-            <Text style={{ color: colors.primary, fontFamily: Fonts.bold }}>Terms of Service</Text> and{" "}
-            <Text style={{ color: colors.primary, fontFamily: Fonts.bold }}>Privacy Policy</Text>.
-          </Text>
+        {serverError && (
+          <View style={{ marginTop: 20, padding: 12, backgroundColor: isDark ? '#450a0a' : '#fee2e2', borderRadius: 8 }}>
+            <Text style={{ color: colors.danger }}>{serverError}</Text>
+          </View>
+        )}
+
+        <WizardButton
+          label="Join Campustry"
+          onPress={handleRegister}
+          primaryColor={colors.primary}
+          loading={submitting}
+          icon="rocket"
+        />
+      </Animated.View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView contentContainerStyle={{ paddingTop: insets.top + 20, paddingHorizontal: 24, paddingBottom: 40 }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+          <TouchableOpacity onPress={prevStep} style={{ padding: 8, marginLeft: -8 }}>
+            <Ionicons name="chevron-back" size={24} color={colors.text} />
+          </TouchableOpacity>
         </View>
 
-        {/* Divider */}
-        <View style={{ marginVertical: 24, flexDirection: "row", alignItems: "center" }}>
-          <View
-            style={{
-              flex: 1,
-              height: 1,
-              backgroundColor: colors.border,
-            }}
-          />
-          <Text style={{ marginHorizontal: 16, color: labelColor, fontSize: 13 }}>or</Text>
-          <View
-            style={{
-              flex: 1,
-              height: 1,
-              backgroundColor: colors.border,
-            }}
-          />
-        </View>
+        {/* Progress */}
+        <StepIndicator currentStep={step} totalSteps={totalSteps} color={colors.primary} />
 
-        {/* Login Link */}
-        <TouchableOpacity
-          onPress={() => router.push("/modal")}
-          style={{
-            backgroundColor: isDark ? colors.muted : colors.background,
-            borderColor: colors.border,
-            borderWidth: 1,
-            paddingVertical: 14,
-            borderRadius: 12,
-            flexDirection: "row",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
-          <Ionicons name="log-in-outline" size={18} color={textColor} />
-          <Text style={{ marginLeft: 8, color: textColor, fontFamily: Fonts.bold, fontSize: 15 }}>
-            Already have an account? Log in
-          </Text>
-        </TouchableOpacity>
+        {/* Steps */}
+        {step === 1 && renderIdentity()}
+        {step === 2 && renderCredentials()}
+        {step === 3 && renderCommunity()}
+
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

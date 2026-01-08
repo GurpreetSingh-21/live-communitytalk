@@ -1,7 +1,7 @@
 // CommunityTalkMobile/constants/theme.ts
 
 /**
- * Global design tokens for CommunityTalk Mobile
+ * Global design tokens for Campustry Mobile
  * --------------------------------------------------
  * These define the app's light/dark palettes and font stacks.
  * You can use them across components, Tailwind, and custom styles.

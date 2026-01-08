@@ -24,6 +24,7 @@ import { refreshSocketAuth, disconnectSocket } from "../api/socket";
 import { registerForPushNotificationsAsync } from "../utils/notifications";
 import { getOrCreateKeyPair } from "../utils/e2ee";
 import { uploadPublicKey } from "../api/e2eeApi";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /* ───────────────────────────────────────────
    Types
@@ -120,6 +121,51 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   const [communities, setCommunities] = useState<any[]>([]);
   const clearingRef = useRef(false);
 
+  /* --------------------- Smart Avatar Upload --------------------- */
+  // Checks if we have a pending avatar from signup for this user
+  const checkPendingAvatar = useCallback(async (userEmail: string) => {
+    try {
+      if (!userEmail) return;
+      const key = `pending_avatar_${userEmail.trim().toLowerCase()}`;
+      const pendingUri = await AsyncStorage.getItem(key);
+
+      if (pendingUri) {
+        console.log("[AuthContext] Found pending avatar upload:", pendingUri);
+
+        // Construct form data
+        const formData = new FormData();
+        // @ts-ignore
+        formData.append('profilePicture', {
+          uri: pendingUri,
+          name: 'profile.jpg',
+          type: 'image/jpeg',
+        });
+
+        // Upload
+        const res = await api.put('/api/user/profile-picture', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+
+        // Update state if successful
+        const newUrl = res.data?.user?.profilePicture || res.data?.user?.avatar;
+        if (newUrl) {
+          console.log("[AuthContext] Avatar auto-uploaded successfully!");
+          setUser((prev: any) => prev ? ({ ...prev, avatar: newUrl }) : null);
+          await AsyncStorage.removeItem(key);
+        }
+      }
+    } catch (err) {
+      console.warn("[AuthContext] Auto-upload avatar failed:", err);
+    }
+  }, []);
+
+  /* --------------------- Auto-Upload Watcher --------------------- */
+  useEffect(() => {
+    if (user?.email) {
+      checkPendingAvatar(user.email);
+    }
+  }, [user?.email, checkPendingAvatar]);
+
   /* --------------------- Apply auth --------------------- */
   const applyAuthState = useCallback((u: any | null, cs: any[]) => {
     if (!mountedRef.current) return;
@@ -144,10 +190,10 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     try {
       await removeAccessToken();
       // Clear all caches on logout
-      const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+      const AsyncStorageLib = (await import('@react-native-async-storage/async-storage')).default;
       await Promise.all([
-        AsyncStorage.removeItem('@communities_cache_v1'),
-        AsyncStorage.removeItem('@dms_cache_v1'),
+        AsyncStorageLib.removeItem('@communities_cache_v1'),
+        AsyncStorageLib.removeItem('@dms_cache_v1'),
       ]);
     } catch { }
 
@@ -159,8 +205,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }, [applyAuthState]);
 
   const triedLegacyOnce = useRef(false);
-
-  // CommunityTalkMobile/src/context/AuthContext.tsx (inside AuthProvider)
 
   /* --------------------- Bootstrap --------------------- */
   const refreshBootstrap = useCallback(
@@ -222,8 +266,6 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     },
     [applyAuthState, clearAuthState]
   );
-
-  // CommunityTalkMobile/src/context/AuthContext.tsx (around line 290, the initialLoad function)
 
   /* --------------------- Initial Load --------------------- */
   const initialLoad = useCallback(async () => {

@@ -72,14 +72,18 @@ api.interceptors.request.use(
         "→ auth? true",
         `(tokenLen=${token.length})`
       );
-    } else {
-      console.log(
-        "[api:req]",
-        method,
-        fullUrl,
-        "→ auth? false",
-        token ? "(skipped for auth route)" : "(no token)"
-      );
+
+
+      // Reduced verbosity for public endpoints
+      if (__DEV__ && !fullUrl.includes('/public/')) {
+         console.log(
+           "[api:req]",
+           method,
+           fullUrl,
+           "→ auth? false",
+           token ? "(skipped for auth route)" : "(no token)"
+         );
+      }
     }
 
     return cfg;

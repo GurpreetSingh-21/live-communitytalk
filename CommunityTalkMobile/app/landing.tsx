@@ -4,6 +4,7 @@ import {
   ScrollView,
   Pressable,
   Dimensions,
+  Image,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
@@ -20,9 +21,8 @@ import { Colors, Fonts } from "@/constants/theme";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// --- Configuration ---
-const NODE_SIZE = 52;
-const VERTICAL_SPACING = 140;
+const NODE_SIZE = 64;
+const VERTICAL_SPACING = 100;
 
 type Feature = {
   id: string;
@@ -33,7 +33,6 @@ type Feature = {
   gradientEnd: string;
 };
 
-// --- Glowing Node Component ---
 const GlowingNode: React.FC<{
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   gradientStart: string;
@@ -41,24 +40,22 @@ const GlowingNode: React.FC<{
   index: number;
 }> = ({ icon, gradientStart, gradientEnd, index }) => (
   <MotiView
-    from={{ scale: 0, opacity: 0 }}
-    animate={{ scale: 1, opacity: 1 }}
-    transition={{ delay: 300 + index * 120, type: 'spring', damping: 12 }}
+    from={{ scale: 0, opacity: 0, rotate: '-180deg' }}
+    animate={{ scale: 1, opacity: 1, rotate: '0deg' }}
+    transition={{ delay: 600 + index * 120, type: 'spring', damping: 14 }}
   >
-    {/* Outer Glow */}
     <View
       style={{
-        width: NODE_SIZE + 16,
-        height: NODE_SIZE + 16,
-        borderRadius: (NODE_SIZE + 16) / 2,
+        width: NODE_SIZE + 24,
+        height: NODE_SIZE + 24,
+        borderRadius: (NODE_SIZE + 24) / 2,
         backgroundColor: gradientStart,
-        opacity: 0.2,
+        opacity: 0.12,
         position: 'absolute',
-        top: -8,
-        left: -8,
+        top: -12,
+        left: -12,
       }}
     />
-    {/* Main Node */}
     <LinearGradient
       colors={[gradientStart, gradientEnd]}
       start={{ x: 0, y: 0 }}
@@ -70,36 +67,41 @@ const GlowingNode: React.FC<{
         alignItems: 'center',
         justifyContent: 'center',
         shadowColor: gradientStart,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
-        elevation: 6,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.35,
+        shadowRadius: 16,
+        elevation: 10,
+        borderWidth: 3,
+        borderColor: 'rgba(255,255,255,0.25)',
       }}
     >
-      <MaterialCommunityIcons name={icon} size={24} color="#FFFFFF" />
+      <MaterialCommunityIcons name={icon} size={30} color="#FFFFFF" />
     </LinearGradient>
   </MotiView>
 );
 
-// --- Connecting Line (Vertical with Gradient) ---
 const VerticalConnector: React.FC<{ isDark: boolean; index: number }> = ({ isDark, index }) => (
   <MotiView
     from={{ scaleY: 0 }}
     animate={{ scaleY: 1 }}
-    transition={{ delay: 400 + index * 120, type: 'timing', duration: 600 }}
+    transition={{ delay: 650 + index * 120, type: 'timing', duration: 400 }}
     style={{
-      width: 2,
-      height: VERTICAL_SPACING - NODE_SIZE - 24,
-      backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+      width: 3,
+      height: VERTICAL_SPACING - NODE_SIZE - 8,
       alignSelf: 'center',
-      marginVertical: 12,
-      borderRadius: 1,
+      marginVertical: 4,
+      borderRadius: 2,
       transformOrigin: 'top',
+      overflow: 'hidden',
     }}
-  />
+  >
+    <LinearGradient
+      colors={isDark ? ['rgba(255,255,255,0.18)', 'rgba(255,255,255,0.06)'] : ['rgba(34,197,94,0.2)', 'rgba(34,197,94,0.08)']}
+      style={{ flex: 1 }}
+    />
+  </MotiView>
 );
 
-// --- Feature Row Component ---
 const FeatureRow: React.FC<{
   item: Feature;
   index: number;
@@ -108,17 +110,16 @@ const FeatureRow: React.FC<{
   colors: any;
 }> = ({ item, index, isRight, isDark, colors }) => (
   <MotiView
-    from={{ opacity: 0, translateX: isRight ? 30 : -30 }}
-    animate={{ opacity: 1, translateX: 0 }}
-    transition={{ delay: 350 + index * 120, type: 'spring', damping: 14 }}
+    from={{ opacity: 0, translateX: isRight ? 50 : -50, translateY: 15 }}
+    animate={{ opacity: 1, translateX: 0, translateY: 0 }}
+    transition={{ delay: 620 + index * 120, type: 'spring', damping: 15 }}
     style={{
       flexDirection: isRight ? 'row-reverse' : 'row',
       alignItems: 'center',
       paddingHorizontal: 20,
-      gap: 16,
+      gap: 18,
     }}
   >
-    {/* Node */}
     <GlowingNode
       icon={item.icon}
       gradientStart={item.gradientStart}
@@ -126,38 +127,42 @@ const FeatureRow: React.FC<{
       index={index}
     />
 
-    {/* Content Card */}
     <View
       style={{
         flex: 1,
-        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
-        borderRadius: 20,
-        paddingVertical: 16,
-        paddingHorizontal: 18,
+        backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF',
+        borderRadius: 24,
+        paddingVertical: 22,
+        paddingHorizontal: 24,
         borderWidth: 1,
-        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+        borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+        shadowColor: item.gradientStart,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: isDark ? 0.15 : 0.08,
+        shadowRadius: 20,
+        elevation: 5,
       }}
     >
       <ThemedText
-        numberOfLines={1}
         style={{
-          fontSize: 17,
+          fontSize: 20,
           fontFamily: Fonts.bold,
           color: colors.text,
-          marginBottom: 4,
+          marginBottom: 8,
           textAlign: isRight ? 'right' : 'left',
+          letterSpacing: -0.6,
         }}
       >
         {item.title}
       </ThemedText>
       <ThemedText
-        numberOfLines={2}
         style={{
-          fontSize: 13,
+          fontSize: 15,
           fontFamily: Fonts.regular,
-          color: isDark ? '#999' : '#666',
-          lineHeight: 18,
+          color: colors.textMuted,
+          lineHeight: 22,
           textAlign: isRight ? 'right' : 'left',
+          letterSpacing: -0.3,
         }}
       >
         {item.desc}
@@ -186,194 +191,434 @@ export default function Landing() {
   const FEATURES: Feature[] = [
     {
       id: '1',
-      icon: "school",
-      title: "Verified Students",
-      desc: ".edu email required. No imposters.",
-      gradientStart: "#10B981",
-      gradientEnd: "#059669",
+      icon: "shield-check",
+      title: "No Catfish, Promise",
+      desc: "100% .edu verified. Real students only. No random creeps from the internet.",
+      gradientStart: colors.primary,
+      gradientEnd: "#15803d",
     },
     {
       id: '2',
-      icon: "heart",
-      title: "Campus Dating",
-      desc: "Find your match nearby.",
+      icon: "heart-flash",
+      title: "Find Your Campus Crush",
+      desc: "Swipe on someone from your 8am lecture. Or that cute person from the library.",
       gradientStart: "#F43F5E",
-      gradientEnd: "#E11D48",
+      gradientEnd: "#BE123C",
     },
     {
       id: '3',
       icon: "account-group",
-      title: "Communities",
-      desc: "Clubs, Greek life, faith groups.",
+      title: "Actually Make Friends",
+      desc: "Join clubs, Greek life, study groups. Find your people. Build your crew.",
       gradientStart: "#8B5CF6",
-      gradientEnd: "#7C3AED",
+      gradientEnd: "#6D28D9",
     },
     {
       id: '4',
-      icon: "message-text",
-      title: "Real-time Chat",
-      desc: "Instant messaging that works.",
+      icon: "message-flash",
+      title: "Group Chats That Hit",
+      desc: "Coordinate plans. Share memes. Find a study buddy at 2am. We got you.",
       gradientStart: "#06B6D4",
-      gradientEnd: "#0891B2",
+      gradientEnd: "#0E7490",
     },
     {
       id: '5',
-      icon: "shield-check",
-      title: "Private & Encrypted",
-      desc: "No ads. No tracking. Ever.",
-      gradientStart: "#3B82F6",
-      gradientEnd: "#2563EB",
+      icon: "calendar-star",
+      title: "Never Miss the Function",
+      desc: "Parties, mixers, campus events. Know what's happening before everyone else.",
+      gradientStart: "#F59E0B",
+      gradientEnd: "#D97706",
     },
   ];
 
-  const bgColor = isDark ? '#050505' : '#FFFFFF';
+  const bgColor = isDark ? '#000000' : '#FAFAFA';
 
   return (
     <View style={{ flex: 1, backgroundColor: bgColor }}>
       <StatusBar style={isDark ? "light" : "dark"} />
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 48 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* ===== HERO ===== */}
-        <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 24 }}>
+        {/* HERO SECTION */}
+        <View style={{ paddingTop: insets.top + 20, paddingHorizontal: 24 }}>
 
-          {/* Minimal Header - Single Sign In */}
+          {/* Header */}
           <MotiView
             from={{ opacity: 0, translateY: -10 }}
             animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'timing', duration: 600 }}
+            style={{
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 36,
+            }}
           >
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <LinearGradient
-                  colors={[colors.primary, '#1A6B3F']}
-                  style={{
-                    width: 36, height: 36, borderRadius: 10,
-                    alignItems: 'center', justifyContent: 'center'
-                  }}
-                >
-                  <ThemedText style={{ color: '#fff', fontFamily: Fonts.bold, fontSize: 14 }}>CT</ThemedText>
-                </LinearGradient>
-                <ThemedText style={{ fontSize: 16, fontFamily: Fonts.bold, color: colors.text, letterSpacing: -0.3 }}>
-                  CommunityTalk
-                </ThemedText>
-              </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{
+                width: 10,
+                height: 10,
+                borderRadius: 5,
+                backgroundColor: colors.primary,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.6,
+                shadowRadius: 6,
+              }} />
+              <ThemedText style={{
+                fontSize: 22,
+                fontFamily: Fonts.bold,
+                letterSpacing: -0.8,
+                color: colors.text
+              }}>
+                Campustry.
+              </ThemedText>
+            </View>
+            <Pressable
+              onPress={() => router.push("/modal")}
+              style={({ pressed }) => ({
+                paddingHorizontal: 20,
+                paddingVertical: 10,
+                borderRadius: 100,
+                backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+                transform: [{ scale: pressed ? 0.95 : 1 }]
+              })}
+            >
+              <ThemedText style={{
+                fontSize: 15,
+                fontFamily: Fonts.bold,
+                color: colors.text,
+                letterSpacing: -0.3
+              }}>
+                Log in
+              </ThemedText>
+            </Pressable>
+          </MotiView>
 
-              <Pressable onPress={() => router.push("/modal")}>
-                <View style={{
-                  paddingHorizontal: 16, paddingVertical: 8,
-                  borderRadius: 20,
-                  borderWidth: 1.5,
-                  borderColor: isDark ? '#333' : '#E0E0E0',
+          {/* Hero Image */}
+          <MotiView
+            from={{ opacity: 0, scale: 0.9, translateY: 30 }}
+            animate={{ opacity: 1, scale: 1, translateY: 0 }}
+            transition={{
+              type: 'spring',
+              damping: 20,
+              stiffness: 80,
+              delay: 100
+            }}
+            style={{
+              height: 400,
+              backgroundColor: isDark ? '#0F0F0F' : '#E8F5E9',
+              borderRadius: 36,
+              marginBottom: 32,
+              overflow: 'hidden',
+              position: 'relative',
+              shadowColor: isDark ? '#000' : colors.primary,
+              shadowOffset: { width: 0, height: 24 },
+              shadowOpacity: isDark ? 0.5 : 0.18,
+              shadowRadius: 48,
+              elevation: 24,
+            }}
+          >
+            <Image
+              source={require('../assets/images/hero_collage.png')}
+              style={{
+                width: '100%',
+                height: '100%',
+                resizeMode: 'cover',
+              }}
+            />
+
+            <LinearGradient
+              colors={[
+                'transparent',
+                'rgba(0,0,0,0.3)',
+                'rgba(0,0,0,0.75)',
+                'rgba(0,0,0,0.95)'
+              ]}
+              locations={[0.3, 0.55, 0.8, 1]}
+              style={{
+                position: 'absolute',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: 260
+              }}
+            />
+
+            <View style={{
+              position: 'absolute',
+              bottom: 24,
+              left: 28,
+              right: 28
+            }}>
+              <MotiView
+                from={{ opacity: 0, translateY: 20 }}
+                animate={{ opacity: 1, translateY: 0 }}
+                transition={{ delay: 400, type: 'spring', damping: 18 }}
+              >
+                <ThemedText style={{
+                  fontSize: 44,
+                  fontFamily: Fonts.bold,
+                  color: '#fff',
+                  lineHeight: 48,
+                  letterSpacing: -1.8,
+                  marginBottom: 12,
+                  textShadowColor: 'rgba(0,0,0,0.6)',
+                  textShadowOffset: { width: 0, height: 2 },
+                  textShadowRadius: 8,
                 }}>
-                  <ThemedText style={{ fontSize: 13, fontFamily: Fonts.bold, color: colors.text }}>Log in</ThemedText>
-                </View>
-              </Pressable>
+                  Your Campus.{'\n'}Your People.
+                </ThemedText>
+                <ThemedText style={{
+                  fontSize: 16,
+                  fontFamily: Fonts.regular,
+                  color: 'rgba(255,255,255,0.95)',
+                  lineHeight: 22,
+                  letterSpacing: -0.3,
+                  textShadowColor: 'rgba(0,0,0,0.5)',
+                  textShadowOffset: { width: 0, height: 1 },
+                  textShadowRadius: 6,
+                }}>
+                  Where campus chemistry happens ✨
+                </ThemedText>
+              </MotiView>
             </View>
           </MotiView>
 
-          {/* Hero Text - Clean & Bold */}
-          <View style={{ marginBottom: 20 }}>
-            <MotiView
-              from={{ opacity: 0, translateY: 15 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ delay: 100 }}
-            >
-              <ThemedText style={{
-                fontSize: 44,
-                fontFamily: Fonts.bold,
-                color: colors.text,
-                lineHeight: 48,
-                letterSpacing: -1.5,
-              }}>
-                Your Campus.
-              </ThemedText>
-            </MotiView>
-
-            <MotiView
-              from={{ opacity: 0, translateY: 15 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ delay: 180 }}
-            >
-              <ThemedText style={{
-                fontSize: 44,
-                fontFamily: Fonts.bold,
-                color: colors.primary,
-                lineHeight: 48,
-                letterSpacing: -1.5,
-              }}>
-                Your People.
-              </ThemedText>
-            </MotiView>
-          </View>
-
-          {/* Subtitle */}
+          {/* Catchy Tagline */}
           <MotiView
-            from={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 260 }}
+            from={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ delay: 200, type: 'spring', damping: 18 }}
+            style={{ marginBottom: 40 }}
           >
             <ThemedText style={{
-              fontSize: 15,
+              fontSize: 17,
               fontFamily: Fonts.regular,
-              color: isDark ? '#888' : '#555',
-              lineHeight: 22,
-              marginBottom: 28,
+              color: colors.textMuted,
+              lineHeight: 26,
+              textAlign: 'center',
+              letterSpacing: -0.3,
+              paddingHorizontal: 12,
             }}>
-              The exclusive network for verified .edu students.
+              Stop lurking on 5 different apps.{'\n'}
+              <ThemedText style={{ fontFamily: Fonts.bold, color: colors.primary }}>
+                Your whole campus life is right here.
+              </ThemedText>
             </ThemedText>
-          </MotiView>
-
-          {/* Single Primary CTA */}
-          <MotiView
-            from={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 340, type: 'spring' }}
-          >
-            <Pressable
-              onPress={() => router.push("/register")}
-              style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.98 : 1 }] })}
-            >
-              <LinearGradient
-                colors={[colors.primary, '#1A6B3F']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={{
-                  paddingVertical: 16,
-                  borderRadius: 14,
-                  alignItems: 'center',
-                  shadowColor: colors.primary,
-                  shadowOffset: { width: 0, height: 6 },
-                  shadowOpacity: 0.35,
-                  shadowRadius: 12,
-                  elevation: 6,
-                }}
-              >
-                <ThemedText style={{ color: '#fff', fontSize: 16, fontFamily: Fonts.bold }}>
-                  Get Started →
-                </ThemedText>
-              </LinearGradient>
-            </Pressable>
           </MotiView>
         </View>
 
-        {/* ===== ZIGZAG JOURNEY ===== */}
-        <View style={{ marginTop: 56, alignItems: 'center' }}>
+        {/* OUR STORY SECTION */}
+        <View style={{ paddingHorizontal: 24, marginBottom: 64 }}>
+          <MotiView
+            from={{ opacity: 0, scale: 0.94, translateY: 30 }}
+            animate={{ opacity: 1, scale: 1, translateY: 0 }}
+            transition={{ delay: 300, type: 'spring', damping: 18 }}
+          >
+            <View style={{
+              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
+              borderRadius: 32,
+              padding: 32,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 16 },
+              shadowOpacity: 0.1,
+              shadowRadius: 32,
+              elevation: 8,
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+            }}>
+              <View style={{
+                alignSelf: 'flex-start',
+                backgroundColor: `${colors.primary}15`,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 100,
+                marginBottom: 24,
+              }}>
+                <ThemedText style={{
+                  fontSize: 11,
+                  fontFamily: Fonts.bold,
+                  color: colors.primary,
+                  letterSpacing: 1,
+                }}>
+                  THE REAL STORY
+                </ThemedText>
+              </View>
 
-          {/* Start Dot */}
+              <ThemedText style={{
+                fontSize: 26,
+                fontFamily: Fonts.bold,
+                color: colors.text,
+                marginBottom: 20,
+                letterSpacing: -0.8,
+                lineHeight: 32,
+              }}>
+                Built by students who were tired of the BS.
+              </ThemedText>
+
+              <ThemedText style={{
+                fontSize: 16,
+                fontFamily: Fonts.regular,
+                color: colors.textMuted,
+                lineHeight: 26,
+                letterSpacing: -0.3,
+                marginBottom: 18,
+              }}>
+                We're three friends from Queens College. We saw students juggling Tinder, Instagram DMs, GroupMe, and random Discord servers just to connect with their own campus.
+              </ThemedText>
+
+              <ThemedText style={{
+                fontSize: 16,
+                fontFamily: Fonts.regular,
+                color: colors.textMuted,
+                lineHeight: 26,
+                letterSpacing: -0.3,
+                marginBottom: 18,
+              }}>
+                That's honestly ridiculous. So we built Campustry — the <ThemedText style={{ fontFamily: Fonts.bold, color: colors.text }}>chemistry</ThemedText> between <ThemedText style={{ fontFamily: Fonts.bold, color: colors.text }}>campus</ThemedText> and community.
+              </ThemedText>
+
+              <ThemedText style={{
+                fontSize: 16,
+                fontFamily: Fonts.regular,
+                color: colors.textMuted,
+                lineHeight: 26,
+                letterSpacing: -0.3,
+                marginBottom: 32,
+              }}>
+                One app. Verified students. Real connections. No weird randoms. That's it.
+              </ThemedText>
+
+              <View style={{
+                flexDirection: 'row',
+                gap: 10,
+                flexWrap: 'wrap',
+              }}>
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(34,197,94,0.08)',
+                  paddingHorizontal: 16,
+                  paddingVertical: 11,
+                  borderRadius: 100,
+                  gap: 8,
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(34,197,94,0.15)',
+                }}>
+                  <MaterialCommunityIcons name="shield-check" size={18} color={colors.primary} />
+                  <ThemedText style={{
+                    fontSize: 14,
+                    fontFamily: Fonts.bold,
+                    color: colors.text,
+                    letterSpacing: -0.2,
+                  }}>
+                    .edu Only
+                  </ThemedText>
+                </View>
+
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(34,197,94,0.08)',
+                  paddingHorizontal: 16,
+                  paddingVertical: 11,
+                  borderRadius: 100,
+                  gap: 8,
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(34,197,94,0.15)',
+                }}>
+                  <MaterialCommunityIcons name="account-group" size={18} color={colors.primary} />
+                  <ThemedText style={{
+                    fontSize: 14,
+                    fontFamily: Fonts.bold,
+                    color: colors.text,
+                    letterSpacing: -0.2,
+                  }}>
+                    1K+ Students
+                  </ThemedText>
+                </View>
+
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(34,197,94,0.08)',
+                  paddingHorizontal: 16,
+                  paddingVertical: 11,
+                  borderRadius: 100,
+                  gap: 8,
+                  borderWidth: 1,
+                  borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(34,197,94,0.15)',
+                }}>
+                  <MaterialCommunityIcons name="school" size={18} color={colors.primary} />
+                  <ThemedText style={{
+                    fontSize: 14,
+                    fontFamily: Fonts.bold,
+                    color: colors.text,
+                    letterSpacing: -0.2,
+                  }}>
+                    Queens College
+                  </ThemedText>
+                </View>
+              </View>
+            </View>
+          </MotiView>
+        </View>
+
+        {/* FEATURES SECTION HEADER */}
+        <View style={{ paddingHorizontal: 24, marginBottom: 48 }}>
+          <MotiView
+            from={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ delay: 450, type: 'spring', damping: 18 }}
+          >
+            <ThemedText style={{
+              fontSize: 32,
+              fontFamily: Fonts.bold,
+              color: colors.text,
+              marginBottom: 14,
+              letterSpacing: -1.2,
+              textAlign: 'center',
+              lineHeight: 38,
+            }}>
+              Everything you need.{'\n'}
+              <ThemedText style={{ color: colors.primary }}>Nothing you don't.</ThemedText>
+            </ThemedText>
+            <ThemedText style={{
+              fontSize: 16,
+              fontFamily: Fonts.regular,
+              color: colors.textMuted,
+              lineHeight: 24,
+              textAlign: 'center',
+              letterSpacing: -0.3,
+              paddingHorizontal: 20,
+            }}>
+              The features that actually matter for campus life
+            </ThemedText>
+          </MotiView>
+        </View>
+
+        {/* ZIGZAG FEATURES JOURNEY */}
+        <View style={{ alignItems: 'center', marginBottom: 64 }}>
           <MotiView
             from={{ scale: 0 }}
             animate={{ scale: 1 }}
-            transition={{ delay: 450, type: 'spring' }}
+            transition={{ delay: 550, type: 'spring', damping: 12 }}
             style={{
-              width: 10, height: 10, borderRadius: 5,
-              backgroundColor: colors.text,
-              marginBottom: 16,
+              width: 14,
+              height: 14,
+              borderRadius: 7,
+              backgroundColor: colors.primary,
+              marginBottom: 8,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
             }}
           />
 
-          {/* Features with Connectors */}
           {FEATURES.map((item, index) => {
             const isRight = index % 2 !== 0;
             const isLast = index === FEATURES.length - 1;
@@ -394,65 +639,125 @@ export default function Landing() {
             );
           })}
 
-          {/* End Dot */}
           <MotiView
             from={{ scale: 0 }}
             animate={{ scale: 1 }}
-            transition={{ delay: 1000, type: 'spring' }}
+            transition={{ delay: 1250, type: 'spring', damping: 12 }}
             style={{
-              width: 10, height: 10, borderRadius: 5,
+              width: 14,
+              height: 14,
+              borderRadius: 7,
               backgroundColor: colors.primary,
-              marginTop: 24,
+              marginTop: 8,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.5,
+              shadowRadius: 12,
             }}
           />
         </View>
 
-        {/* ===== FINAL CTA ===== */}
-        <MotiView
-          from={{ opacity: 0, translateY: 20 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ delay: 1100 }}
-          style={{ paddingHorizontal: 24, marginTop: 48 }}
-        >
-          <Pressable
-            onPress={() => router.push("/register")}
-            style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.98 : 1 }] })}
+        {/* FINAL CTA */}
+        <View style={{ paddingHorizontal: 24 }}>
+          <MotiView
+            from={{ opacity: 0, scale: 0.94, translateY: 25 }}
+            animate={{ opacity: 1, scale: 1, translateY: 0 }}
+            transition={{ delay: 1350, type: 'spring', damping: 18 }}
+            style={{
+              backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF',
+              borderRadius: 28,
+              paddingVertical: 40,
+              paddingHorizontal: 28,
+              alignItems: 'center',
+              borderWidth: 1,
+              borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 12 },
+              shadowOpacity: 0.08,
+              shadowRadius: 24,
+              elevation: 6,
+            }}
           >
-            <View
-              style={{
-                backgroundColor: isDark ? '#111' : '#F8F8F8',
-                borderRadius: 24,
-                paddingVertical: 32,
-                paddingHorizontal: 24,
-                alignItems: 'center',
-                borderWidth: 1,
-                borderColor: isDark ? '#222' : '#EEE',
-              }}
-            >
-              <ThemedText style={{
-                fontSize: 22,
-                fontFamily: Fonts.bold,
-                color: colors.text,
-                marginBottom: 16,
-              }}>
-                Ready to connect?
-              </ThemedText>
+            <ThemedText style={{
+              fontSize: 28,
+              fontFamily: Fonts.bold,
+              color: colors.text,
+              marginBottom: 16,
+              letterSpacing: -1,
+              textAlign: 'center',
+              lineHeight: 34,
+            }}>
+              Stop missing out.
+            </ThemedText>
 
-              <View
+            <ThemedText style={{
+              fontSize: 16,
+              fontFamily: Fonts.regular,
+              color: colors.textMuted,
+              marginBottom: 36,
+              textAlign: 'center',
+              lineHeight: 24,
+              letterSpacing: -0.3,
+              paddingHorizontal: 12,
+            }}>
+              Join 1000+ students who actually know{'\n'}what's happening on campus.
+            </ThemedText>
+
+            <Pressable
+              onPress={() => router.push("/register")}
+              style={({ pressed }) => ({
+                width: '100%',
+                transform: [{ scale: pressed ? 0.98 : 1 }]
+              })}
+            >
+              <LinearGradient
+                colors={[colors.primary, '#15803d']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 style={{
-                  backgroundColor: colors.primary,
-                  paddingVertical: 14,
+                  paddingVertical: 18,
                   paddingHorizontal: 32,
-                  borderRadius: 12,
+                  borderRadius: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 16,
+                  elevation: 8,
+                  flexDirection: 'row',
+                  gap: 8,
                 }}
               >
-                <ThemedText style={{ color: '#fff', fontSize: 15, fontFamily: Fonts.bold }}>
-                  Join Free →
+                <ThemedText style={{
+                  fontSize: 16,
+                  fontFamily: Fonts.bold,
+                  color: '#fff',
+                  letterSpacing: -0.2
+                }}>
+                  Let's Go
                 </ThemedText>
-              </View>
-            </View>
-          </Pressable>
-        </MotiView>
+                <ThemedText style={{
+                  fontSize: 16,
+                  color: '#fff',
+                }}>
+                  →
+                </ThemedText>
+              </LinearGradient>
+            </Pressable>
+
+            <ThemedText style={{
+              fontSize: 13,
+              fontFamily: Fonts.regular,
+              color: colors.textMuted,
+              marginTop: 20,
+              letterSpacing: -0.2,
+            }}>
+              Free. Always will be.
+            </ThemedText>
+          </MotiView>
+        </View>
+
       </ScrollView>
     </View>
   );

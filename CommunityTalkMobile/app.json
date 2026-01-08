@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "CommunityTalkMobile",
-    "slug": "community-talk",
+    "name": "Campustry",
+    "slug": "campustry",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

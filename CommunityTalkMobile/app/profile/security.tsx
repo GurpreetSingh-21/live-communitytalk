@@ -208,7 +208,7 @@ export default function SecurityAndPrivacyScreen() {
   };
 
   const handleSignOut = () => {
-    Alert.alert('Sign out', 'Sign out from CommunityTalk on this device?', [
+    Alert.alert('Sign out', 'Sign out from Campustry on this device?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign out',
@@ -253,7 +253,7 @@ export default function SecurityAndPrivacyScreen() {
     Alert.alert(
       'Delete account',
       [
-        'This will remove your CommunityTalk account and associated data from our systems.',
+        'This will remove your Campustry account and associated data from our systems.',
         '',
         'We currently handle deletion requests manually to keep things safe and prevent abuse.',
         '',
@@ -266,9 +266,9 @@ export default function SecurityAndPrivacyScreen() {
           style: 'destructive',
           onPress: () => {
             const bodyLines = [
-              'Hi CommunityTalk team,',
+              'Hi Campustry team,',
               '',
-              'I want to permanently delete my CommunityTalk account.',
+              'I want to permanently delete my Campustry account.',
               '',
               `Account email: ${user?.email || '<add your .edu email here>'}`,
               user?._id ? `Account ID: ${user._id}` : '',
@@ -277,7 +277,7 @@ export default function SecurityAndPrivacyScreen() {
               '',
               'Thanks.',
             ].join('\n');
-            openEmail('Request to delete CommunityTalk account', bodyLines);
+            openEmail('Request to delete Campustry account', bodyLines);
           },
         },
       ],
@@ -749,7 +749,7 @@ export default function SecurityAndPrivacyScreen() {
           }}
         >
           These settings control how your presence, message requests, and account
-          safety work inside CommunityTalk. Your device&apos;s system settings and
+          safety work inside Campustry. Your device&apos;s system settings and
           your campus policies still apply on top of this.
         </Text>
       </ScrollView>

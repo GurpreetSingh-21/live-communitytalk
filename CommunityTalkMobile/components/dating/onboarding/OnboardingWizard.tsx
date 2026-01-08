@@ -284,7 +284,7 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             </View>
             <Text style={[styles.title, { color: theme.text }]}>Verified & Exclusive</Text>
             <Text style={[styles.text, { color: theme.textMuted }]}>
-                CommunityTalk Dating is exclusively for verified CUNY students.
+                Campustry Dating is exclusively for verified CUNY students.
             </Text>
             <View style={[styles.bulletList, { backgroundColor: theme.surface }]}>
                 <Text style={[styles.bullet, { color: theme.text }]}>• Real Names Only</Text>

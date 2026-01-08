@@ -71,7 +71,7 @@ function resolveBaseUrl(): string {
     console.warn(
       `[config] ❌ Invalid API base URL resolved ('${chosen}'). Falling back to production fallback.`
     );
-    chosen = "https://communitytalkv1.onrender.com";
+    chosen = "https://stephane-mastoparietal-saniyah.ngrok-free.dev";
   }
 
   if (__DEV__) {

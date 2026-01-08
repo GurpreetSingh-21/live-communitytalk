@@ -68,7 +68,7 @@ export default function HelpAndSupportScreen() {
 
   const handleReportProblem = () => {
     const bodyLines = [
-      `Hi CommunityTalk team,`,
+      `Hi Campustry team,`,
       ``,
       `I’d like to report a problem I’m seeing in the app.`,
       ``,
@@ -87,12 +87,12 @@ export default function HelpAndSupportScreen() {
       ``,
       `Thanks!`,
     ].join('\n');
-    openEmail('Issue report from CommunityTalk app', bodyLines);
+    openEmail('Issue report from Campustry app', bodyLines);
   };
 
   const handleContactSupport = () => {
     const bodyLines = [
-      `Hi CommunityTalk team,`,
+      `Hi Campustry team,`,
       ``,
       `I need help with my account or something inside the app.`,
       ``,

@@ -227,6 +227,74 @@ const ActionCard = ({
 };
 
 /* ───────────────────── Auth: Login Gateway ───────────────────── */
+/* ────────────────────────── Components ────────────────────────── */
+const PremiumInput = ({
+  icon,
+  value,
+  onChangeText,
+  placeholder,
+  secureTextEntry,
+  autoCapitalize,
+  keyboardType,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  secureTextEntry?: boolean;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  keyboardType?: "default" | "email-address" | "numeric";
+}) => {
+  const scheme = useColorScheme() ?? "light";
+  const colors = Colors[scheme];
+  const [isFocused, setIsFocused] = useState(false);
+
+  return (
+    <MotiView
+      animate={{
+        borderColor: isFocused ? colors.primary : "transparent",
+        backgroundColor: isFocused ? (scheme === 'dark' ? 'rgba(255,255,255,0.08)' : '#fff') : (scheme === 'dark' ? 'rgba(255,255,255,0.05)' : '#F2F2F2'),
+      }}
+      transition={{ type: "timing", duration: 200 }}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        borderRadius: 16,
+        borderWidth: 1,
+        paddingHorizontal: 16,
+        height: 60,
+        marginBottom: 16,
+      }}
+    >
+      <Ionicons
+        name={icon}
+        size={20}
+        color={isFocused ? colors.primary : colors.textMuted}
+        style={{ marginRight: 12 }}
+      />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        secureTextEntry={secureTextEntry}
+        autoCapitalize={autoCapitalize}
+        keyboardType={keyboardType}
+        style={{
+          flex: 1,
+          fontSize: 16,
+          fontFamily: Fonts.sans,
+          color: colors.text,
+          height: "100%",
+        }}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+      />
+    </MotiView>
+  );
+};
+
+/* ───────────────────── Auth: Login Gateway ───────────────────── */
 function LoginGateway({ onDone }: { onDone: () => void }) {
   const scheme = useColorScheme() ?? 'light';
   const insets = useSafeAreaInsets();
@@ -245,197 +313,165 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      // We now call the 'signIn' function from AuthContext
       await auth.signIn(email, password);
-      // onDone() will be called, which closes the modal
       onDone();
-
     } catch (e: any) {
-      // --- START OF FIX ---
-
-      // Check for the specific "EMAIL_NOT_VERIFIED" code from the backend
       const errorCode = e?.response?.data?.code;
       const errorMessage = e?.response?.data?.error || (typeof e?.message === "string" ? e.message : "Login failed");
 
       if (errorCode === "EMAIL_NOT_VERIFIED") {
-        // This is the user we need to verify
         const userEmail = email.trim().toLowerCase();
-
-        // Navigate to the verify screen, passing the email and message
         router.replace({
           pathname: "/verify-email",
           params: { email: userEmail, message: errorMessage }
         });
       } else {
-        // It's a different error (like "Invalid password"), so just show it
         setError(String(errorMessage));
       }
-      // --- END OF FIX ---
     } finally {
       setBusy(false);
     }
   };
+
   const handleClose = () => {
-    console.log("🔴 LoginGateway close button pressed");
     safeClose();
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      {/* Close Button - Fixed at top */}
-      <View
-        style={{
-          position: 'absolute',
-          top: insets.top,
-          left: 20,
-          zIndex: 9999,
-        }}
-      >
+      {/* Close Button */}
+      <View style={{ position: 'absolute', top: insets.top + 10, left: 24, zIndex: 10 }}>
         <TouchableOpacity
           onPress={handleClose}
           style={{
-            height: 44,
-            width: 44,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.surface,
-            borderRadius: 22,
+            width: 40, height: 40, borderRadius: 20,
+            backgroundColor: scheme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+            alignItems: 'center', justifyContent: 'center'
           }}
-          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-          activeOpacity={0.6}
         >
-          <Ionicons name="close" size={28} color={colors.text} />
+          <Ionicons name="close" size={24} color={colors.text} />
         </TouchableOpacity>
       </View>
 
-      {/* Scrollable Content */}
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingTop: insets.top + 60,
-          paddingHorizontal: 24,
-          paddingBottom: Math.max(insets.bottom + 24, 40),
-        }}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
       >
-        <MotiView
-          from={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: "spring", delay: 100 }}
-          className="items-center mb-8"
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 24, justifyContent: 'center' }}
+          keyboardShouldPersistTaps="handled"
         >
-          <FloatingHeaderIllustration icon="✨" />
-        </MotiView>
-
-        <Text style={{ fontSize: 30, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text, textAlign: "center" }}>
-          Welcome
-        </Text>
-        <Text style={{ fontSize: 16, marginBottom: 40, color: colors.textMuted, textAlign: "center" }}>
-          Log in to continue.
-        </Text>
-
-        {/* Email */}
-        <View style={{ marginBottom: 16 }}>
-          <Text style={{ fontSize: 14, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text }}>Email</Text>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            placeholder="you@example.com"
-            placeholderTextColor={colors.textMuted}
-            style={{
-              backgroundColor: colors.surface,
-              borderRadius: 12,
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-              color: colors.text,
-              fontSize: 16,
-              fontFamily: Fonts.sans,
-            }}
-          />
-        </View>
-
-        {/* Password */}
-        <View style={{ marginBottom: 8 }}>
-          <Text style={{ fontSize: 14, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text }}>Password</Text>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="••••••••"
-            placeholderTextColor={colors.textMuted}
-            style={{
-              backgroundColor: colors.surface,
-              borderRadius: 12,
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-              color: colors.text,
-              fontSize: 16,
-              fontFamily: Fonts.sans,
-            }}
-          />
-        </View>
-
-        {!!error && (
-          <View style={{ marginBottom: 16, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, backgroundColor: colors.danger + "20", borderWidth: 1, borderColor: colors.danger }}>
-            <Text style={{ color: colors.danger, fontSize: 14, fontFamily: Fonts.regular }}>{error}</Text>
-          </View>
-        )}
-
-        {/* Log in */}
-        <TouchableOpacity
-          onPress={doLogin}
-          disabled={!canSubmit || busy}
-          style={{ borderRadius: 12, overflow: "hidden", opacity: !canSubmit || busy ? 0.7 : 1 }}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={[colors.primary, "#064E3B"] as const} // Forest Green gradient
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ paddingVertical: 16, alignItems: "center" }}
+          <MotiView
+            from={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'spring', damping: 20 }}
+            style={{ alignItems: 'center', marginBottom: 40 }}
           >
-            {busy ? (
-              <ActivityIndicator color="white" />
-            ) : (
-              <Text style={{ color: "white", fontFamily: Fonts.bold, fontSize: 16 }}>Log in</Text>
+            <View style={{
+              width: 80, height: 80, borderRadius: 24,
+              backgroundColor: colors.primary,
+              alignItems: 'center', justifyContent: 'center',
+              marginBottom: 24,
+              shadowColor: colors.primary,
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.3,
+              shadowRadius: 20,
+            }}>
+              <Text style={{ fontSize: 40 }}>✨</Text>
+            </View>
+            <Text style={{ fontSize: 32, fontFamily: Fonts.bold, color: colors.text, marginBottom: 8 }}>
+              Welcome back
+            </Text>
+            <Text style={{ fontSize: 16, color: colors.textMuted }}>
+              Please enter your details to sign in.
+            </Text>
+          </MotiView>
+
+          <MotiView
+            from={{ opacity: 0, translateY: 20 }}
+            animate={{ opacity: 1, translateY: 0 }}
+            transition={{ type: 'spring', delay: 100, damping: 20 }}
+          >
+            <PremiumInput
+              icon="mail-outline"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email address"
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+
+            <PremiumInput
+              icon="lock-closed-outline"
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Password"
+              secureTextEntry
+              autoCapitalize="none"
+            />
+
+            {!!error && (
+              <MotiView
+                from={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                style={{
+                  marginBottom: 16,
+                  backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                  padding: 12,
+                  borderRadius: 12,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8
+                }}
+              >
+                <Ionicons name="alert-circle" size={20} color={colors.danger} />
+                <Text style={{ color: colors.danger, fontFamily: Fonts.sans, flex: 1 }}>{error}</Text>
+              </MotiView>
             )}
-          </LinearGradient>
-        </TouchableOpacity>
 
-        {/* Divider */}
-        <View style={{ alignItems: "center", marginVertical: 24 }}>
-          <Text style={{ color: colors.textMuted }}>Don't have an account?</Text>
-        </View>
+            <TouchableOpacity
+              onPress={doLogin}
+              disabled={!canSubmit || busy}
+              style={{ marginTop: 8 }}
+              activeOpacity={0.8}
+            >
+              <LinearGradient
+                colors={[colors.primary, '#15803d']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{
+                  height: 56,
+                  borderRadius: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: colors.primary,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 16,
+                  opacity: !canSubmit || busy ? 0.7 : 1
+                }}
+              >
+                {busy ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <Text style={{ color: '#fff', fontSize: 16, fontFamily: Fonts.bold }}>Sign in</Text>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          </MotiView>
 
-        {/* Sign up → navigate to register */}
-        <TouchableOpacity
-          onPress={() => {
-            console.log("🟡 Sign up button pressed");
-            // Close modal first, then navigate to register
-            safeClose();
-            setTimeout(() => {
-              console.log("🟡 Navigating to /register");
-              router.push("/register");
-            }, 150);
-          }}
-          style={{ borderRadius: 12, overflow: "hidden" }}
-          activeOpacity={0.8}
-        >
-          <LinearGradient
-            colors={[colors.accent, "#F43F5E"] as const} // Warm Coral / Rose gradient
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={{ paddingVertical: 16, alignItems: "center" }}
-          >
-            <Text style={{ color: "white", fontFamily: Fonts.bold, fontSize: 16 }}>Sign up</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-      </ScrollView>
+          {/* Footer */}
+          <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 32 }}>
+            <Text style={{ color: colors.textMuted, fontSize: 15 }}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => {
+              safeClose();
+              setTimeout(() => router.push("/register"), 150);
+            }}>
+              <Text style={{ color: colors.primary, fontSize: 15, fontFamily: Fonts.bold }}>Sign up</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
