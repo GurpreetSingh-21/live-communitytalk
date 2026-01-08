@@ -75,10 +75,10 @@ export async function encryptMessage(
 
     // Generate random nonce (24 bytes)
     const nonce = nacl.randomBytes(nacl.box.nonceLength);
-    
+
     // Encode message as Uint8Array
     const messageUint8 = new TextEncoder().encode(plainText);
-    
+
     // Encrypt with precomputed shared key
     const encrypted = nacl.box.after(messageUint8, nonce, sharedKey);
     if (!encrypted) throw new Error('Encryption failed');
@@ -106,18 +106,36 @@ export async function decryptMessage(
   cipherTextB64: string,
   senderPublicKeyB64: string
 ): Promise<string> {
-  if (!cipherTextB64 || !senderPublicKeyB64) return '[Locked]';
+  if (!cipherTextB64 || !senderPublicKeyB64) {
+    console.warn('🔐 [Decrypt] Missing input - cipher:', !!cipherTextB64, 'publicKey:', !!senderPublicKeyB64);
+    return '[Locked]';
+  }
 
   try {
     const secretKey = await getSecretKey();
-    if (!secretKey) return '[No Key]';
+    if (!secretKey) {
+      console.warn('🔐 [Decrypt] No secret key found in SecureStore');
+      return '[No Key]';
+    }
+
+    console.log('🔐 [Decrypt] Input:', {
+      cipherLen: cipherTextB64.length,
+      pubKeyLen: senderPublicKeyB64.length,
+      cipherStart: cipherTextB64.substring(0, 20) + '...',
+      pubKeyStart: senderPublicKeyB64.substring(0, 20) + '...'
+    });
 
     const messageWithNonce = decodeBase64(cipherTextB64);
-    if (messageWithNonce.length < nacl.box.nonceLength) return '[Corrupt]';
+    if (messageWithNonce.length < nacl.box.nonceLength) {
+      console.error('🔐 [Decrypt] Corrupt - message too short:', messageWithNonce.length, 'bytes');
+      return '[Corrupt]';
+    }
 
     // Extract nonce (first 24 bytes) and ciphertext
     const nonce = messageWithNonce.slice(0, nacl.box.nonceLength);
     const ciphertext = messageWithNonce.slice(nacl.box.nonceLength);
+
+    console.log('🔐 [Decrypt] Extracted - nonce:', nonce.length, 'bytes, cipher:', ciphertext.length, 'bytes');
 
     // Compute shared key
     const sharedKey = nacl.box.before(
@@ -125,13 +143,21 @@ export async function decryptMessage(
       decodeBase64(secretKey)
     );
 
+    console.log('🔐 [Decrypt] Shared key computed, attempting decryption...');
+
     // Decrypt with precomputed shared key
     const decrypted = nacl.box.open.after(ciphertext, nonce, sharedKey);
-    if (!decrypted) return '[Decryption Failed]';
+    if (!decrypted) {
+      console.error('🔐 [Decrypt] FAILED - nacl.box.open.after returned null');
+      console.error('🔐 [Decrypt] - This usually means key mismatch or corrupted ciphertext');
+      return '[Decryption Failed]';
+    }
 
-    return new TextDecoder().decode(decrypted);
+    const result = new TextDecoder().decode(decrypted);
+    console.log('🔐 [Decrypt] ✅ SUCCESS -', result.substring(0, 30) + '...');
+    return result;
   } catch (err) {
-    console.warn('🔐 [E2EE] Decrypt failed:', err);
+    console.error('🔐 [Decrypt] Exception:', err);
     return '[Error]';
   }
 }
@@ -160,19 +186,19 @@ export async function clearKeys(): Promise<void> {
  */
 export async function forceRegenerateKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
   console.log('🔐 [E2EE] Force regenerating keypair...');
-  
+
   // Clear old keys
   await SecureStore.deleteItemAsync(PUB_KEY);
   await SecureStore.deleteItemAsync(SEC_KEY);
-  
+
   // Generate new keypair
   const kp = nacl.box.keyPair();
   const publicKey = encodeBase64(kp.publicKey);
   const secretKey = encodeBase64(kp.secretKey);
-  
+
   await SecureStore.setItemAsync(PUB_KEY, publicKey);
   await SecureStore.setItemAsync(SEC_KEY, secretKey);
-  
+
   console.log('🔐 [E2EE] New keypair generated and stored');
   return { publicKey, secretKey };
 }
@@ -184,12 +210,12 @@ export async function forceRegenerateKeyPair(): Promise<{ publicKey: string; sec
 export async function ensureKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
   const existingPub = await SecureStore.getItemAsync(PUB_KEY);
   const existingSec = await SecureStore.getItemAsync(SEC_KEY);
-  
+
   if (existingPub && existingSec) {
     console.log('🔐 [E2EE] Keys verified in SecureStore');
     return { publicKey: existingPub, secretKey: existingSec };
   }
-  
+
   console.log('🔐 [E2EE] Keys missing! Regenerating...');
   return await forceRegenerateKeyPair();
 }

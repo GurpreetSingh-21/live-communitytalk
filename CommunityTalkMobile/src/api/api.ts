@@ -72,17 +72,16 @@ api.interceptors.request.use(
         "→ auth? true",
         `(tokenLen=${token.length})`
       );
-
-
+    } else {
       // Reduced verbosity for public endpoints
       if (__DEV__ && !fullUrl.includes('/public/')) {
-         console.log(
-           "[api:req]",
-           method,
-           fullUrl,
-           "→ auth? false",
-           token ? "(skipped for auth route)" : "(no token)"
-         );
+        console.log(
+          "[api:req]",
+          method,
+          fullUrl,
+          "→ auth? false",
+          token ? "(skipped for auth route)" : "(no token)"
+        );
       }
     }
 
@@ -113,9 +112,9 @@ api.interceptors.response.use(
     // This prevents the error toast from the unauthenticated bootstrap call.
     const isBootstrap = urlPath.includes("/bootstrap");
     if (isBootstrap && status === 401) {
-       console.log("[api:note] Silencing expected 401 error for /api/bootstrap.");
-       // Resolve the promise to prevent the error from propagating to the global handler
-       return Promise.resolve({ data: null, _silenced401: true });
+      console.log("[api:note] Silencing expected 401 error for /api/bootstrap.");
+      // Resolve the promise to prevent the error from propagating to the global handler
+      return Promise.resolve({ data: null, _silenced401: true });
     }
 
     // Keep your existing logging (dev only)
