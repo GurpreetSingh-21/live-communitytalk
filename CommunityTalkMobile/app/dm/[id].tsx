@@ -275,10 +275,7 @@ export default function DMThreadScreen() {
   /* ─────── Partner header fetch ─────── */
   const USER_ENDPOINTS = useMemo(
     () => [
-      `/api/person/${partnerId}`,
-      `/api/people/${partnerId}`,
-      `/api/users/${partnerId}`,
-      `/api/user/${partnerId}`,
+      `/api/user/${partnerId}`, // Correct endpoint
     ],
     [partnerId]
   );
