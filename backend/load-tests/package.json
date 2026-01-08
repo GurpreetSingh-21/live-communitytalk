@@ -1,0 +1,19 @@
+{
+    "name": "communitytalk-load-tests",
+    "version": "1.0.0",
+    "description": "Load testing scripts for CommunityTalk backend",
+    "scripts": {
+        "test:auth": "k6 run auth-test.js",
+        "test:socket": "k6 run socket-test.js",
+        "test:all": "k6 run auth-test.js && k6 run socket-test.js",
+        "test:auth:cloud": "k6 cloud auth-test.js",
+        "test:socket:cloud": "k6 cloud socket-test.js"
+    },
+    "keywords": [
+        "load-testing",
+        "k6",
+        "performance"
+    ],
+    "author": "",
+    "license": "MIT"
+}
