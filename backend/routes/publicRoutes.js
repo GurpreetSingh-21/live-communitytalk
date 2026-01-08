@@ -84,14 +84,30 @@ router.get("/communities", async (req, res) => {
       }
     }
 
-    // Text search
+    // CollegeSlug filter: ONLY show communities that have this college in their tags
+    // This is an EXCLUSIVE filter - communities MUST have the college tag to be shown
+    const collegeSlug = req.query.collegeSlug;
+    if (collegeSlug && typeof collegeSlug === 'string' && collegeSlug.trim()) {
+      // Use 'has' to check if the college slug is in the tags array
+      where.tags = {
+        ...where.tags, // Preserve any existing tag filters
+        has: collegeSlug.toLowerCase().trim()
+      };
+    }
+
+    // Text search - use AND to combine with existing filters
     if (q && q.trim()) {
       const qs = q.trim();
-      where.OR = [
-        { name: { contains: qs, mode: 'insensitive' } },
-        { key: { contains: qs, mode: 'insensitive' } },
-        { slug: { contains: qs, mode: 'insensitive' } },
-        { description: { contains: qs, mode: 'insensitive' } },
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { name: { contains: qs, mode: 'insensitive' } },
+            { key: { contains: qs, mode: 'insensitive' } },
+            { slug: { contains: qs, mode: 'insensitive' } },
+            { description: { contains: qs, mode: 'insensitive' } },
+          ]
+        }
       ];
     }
 

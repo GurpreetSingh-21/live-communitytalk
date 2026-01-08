@@ -383,7 +383,7 @@ export default function CommunitiesScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const isDark = useColorScheme() === 'dark';
   const theme = isDark ? Colors.dark : Colors.light;
-  const { socket, unreadThreads = {}, refreshUnread } = useSocket();
+  const { socket, unreadThreads = {}, refreshUnread, subscribeToLocalMessages } = useSocket();
   const { isAuthed, communities: myCommunities } = React.useContext(AuthContext) as any;
 
   const [isLoading, setIsLoading] = useState(true);
@@ -548,6 +548,35 @@ export default function CommunitiesScreen(): React.JSX.Element {
       s.off?.('receive_message', onCommunityMsg);
     };
   }, [socket, myCommunities, myCommunityIds]);
+
+  /* ------------------- Local message events (instant update) ------------------- */
+  useEffect(() => {
+    if (!subscribeToLocalMessages) return;
+
+    const unsubscribe = subscribeToLocalMessages((event: any) => {
+      const cid = String(event?.communityId || '');
+      if (!cid || !myCommunityIds.has(cid)) return;
+
+      // Immediately update the thread with new message
+      const newContent = event.type === 'photo' ? '📷 Image' : String(event.content ?? '');
+      const newMsg: MessageContent = {
+        type: event.type === 'photo' ? 'photo' : event.type === 'video' ? 'voice' : 'text',
+        content: newContent.length > 50 ? newContent.substring(0, 50) + '...' : newContent,
+      };
+
+      setThreads((prev) => {
+        const idx = prev.findIndex((t) => t.id === cid);
+        if (idx >= 0) {
+          const copy = [...prev];
+          copy[idx] = { ...copy[idx], lastMsg: newMsg, lastAt: event.timestamp || Date.now() };
+          return resortByPinnedAndRecent(copy);
+        }
+        return prev;
+      });
+    });
+
+    return unsubscribe;
+  }, [subscribeToLocalMessages, myCommunityIds]);
 
   /* ------------------- Join rooms ------------------- */
 

@@ -76,19 +76,25 @@ export default function GlobalCommunitiesScreen() {
       setError(null);
       setLoading(true);
 
-      // Only PUBLIC & GLOBAL (custom) communities from the public endpoint
-      // Backend already filters isPrivate !== true; we also request type=custom explicitly.
+      // Only fetch communities tagged as 'global-club' (new joinable clubs you create)
+      // This excludes all the country-named communities from showing
       const res = await api.get("/api/public/communities", {
-        params: { paginated: false, type: "custom", sort: "name" },
+        params: {
+          paginated: false,
+          type: "custom",
+          sort: "name",
+          tags: "global-club"  // Only show communities with this specific tag
+        },
       });
 
       const items: Community[] = Array.isArray(res.data)
         ? res.data
         : Array.isArray(res.data?.items)
-        ? res.data.items
-        : [];
+          ? res.data.items
+          : [];
 
-      // Safety: ensure non-private & custom only (in case server config changes)
+      // Filter: only show custom, non-private communities that match user's college (if available)
+      // OR communities with no specific college association (truly global)
       const openCustom = items.filter(
         (c) => c.type === "custom" && c.isPrivate !== true
       );

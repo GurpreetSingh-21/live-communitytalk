@@ -51,7 +51,7 @@ const getCachedPublicKey = async (userId: string): Promise<string | null> => {
     console.log('🔐 [Cache] Public key HIT for user:', userId.substring(0, 8));
     return PUBLIC_KEY_CACHE.get(userId)!;
   }
-  
+
   try {
     const key = await fetchPublicKey(userId);
     if (key) {
@@ -360,7 +360,7 @@ export default function DMThreadScreen() {
       try {
         const data = messagesResponse?.data;
         msgs = Array.isArray(data) ? data : data?.items ?? [];
-        
+
         // Save to cache for next time
         try {
           const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
@@ -374,19 +374,28 @@ export default function DMThreadScreen() {
       }
 
 
-      // 🔐 Decrypt encrypted messages (BLOCKING - but works reliably)
+      // 🔐 Decrypt encrypted messages
+      // NaCl box shared key is SYMMETRIC: always use partner's public key + my secret key
+      // This produces the same shared key regardless of who sent the message
       const decryptedMsgs = await Promise.all(
         msgs.map(async (m: any) => {
+          // Only decrypt if explicitly marked as encrypted
           if (m.isEncrypted && m.content && partnerPubKey) {
             try {
               const decrypted = await decryptMessage(m.content, partnerPubKey);
-              console.log('🔐 [E2EE] Decrypted message:', m._id?.substring(0, 8));
+              // Check if decryption returned an error code
+              if (decrypted.startsWith('[') && decrypted.endsWith(']')) {
+                console.warn('🔐 [E2EE] Decryption returned error:', decrypted, 'for msg:', m._id?.substring(0, 8));
+                return { ...m, content: '🔒 ' + decrypted.slice(1, -1), _decrypted: false };
+              }
+              console.log('🔐 [E2EE] ✅ Decrypted:', m._id?.substring(0, 8));
               return { ...m, content: decrypted, _decrypted: true };
             } catch (err) {
-              console.error('🔐 [E2EE] Decryption failed for message:', m._id, err);
-              return { ...m, content: '[Decryption Failed]' };
+              console.error('🔐 [E2EE] Decryption error:', err);
+              return { ...m, content: '🔒 Encrypted', _decrypted: false };
             }
           }
+          // Not encrypted OR no partner key - return as-is (plaintext)
           return m;
         })
       );
@@ -455,14 +464,20 @@ export default function DMThreadScreen() {
       let content = String(p.content ?? "");
 
       // 🔐 E2EE: Decrypt incoming encrypted messages
-      // ALWAYS use partner's public key - shared key is symmetric!
+      // NaCl shared key is symmetric - always use partner's public key
       if (p.isEncrypted && content && recipientPublicKey) {
         try {
-          content = await decryptMessage(content, recipientPublicKey);
-          console.log('🔐 [E2EE] Real-time message decrypted');
+          const decrypted = await decryptMessage(content, recipientPublicKey);
+          if (!decrypted.startsWith('[')) {
+            content = decrypted;
+            console.log('🔐 [E2EE] Real-time decrypted ok');
+          } else {
+            console.warn('🔐 [E2EE] Real-time:', decrypted);
+            content = '🔒 ' + decrypted.slice(1, -1);
+          }
         } catch (err) {
-          console.warn('🔐 [E2EE] Real-time decryption failed:', err);
-          content = '[Encrypted]';
+          console.warn('🔐 [E2EE] Real-time failed:', err);
+          content = '🔒 Encrypted';
         }
       }
 
@@ -1121,8 +1136,8 @@ export default function DMThreadScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.bg }}
-        behavior={Platform.select({ ios: "padding", android: "height" })}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
         {loading ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
@@ -1139,7 +1154,7 @@ export default function DMThreadScreen() {
               onEndReachedThreshold={0.2}
               onEndReached={loadOlder}
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-              contentContainerStyle={{ paddingBottom: Math.max(92, insets.bottom + 60) }}
+              contentContainerStyle={{ paddingBottom: 16 }}
               showsVerticalScrollIndicator={false}
             />
 
@@ -1155,9 +1170,9 @@ export default function DMThreadScreen() {
             {/* Composer - Toggle between Recording and Normal */}
             <View
               style={{
-                paddingHorizontal: 16,
-                paddingTop: 10,
-                paddingBottom: 10,
+                paddingHorizontal: 12,
+                paddingTop: 8,
+                paddingBottom: Math.max(insets.bottom, 8),
                 borderTopWidth: 0.5,
                 borderTopColor: colors.border,
                 backgroundColor: colors.bg,

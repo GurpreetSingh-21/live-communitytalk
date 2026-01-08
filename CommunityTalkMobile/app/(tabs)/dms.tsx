@@ -54,7 +54,7 @@ const getCachedPublicKey = async (userId: string): Promise<string | null> => {
   if (PUBLIC_KEY_CACHE.has(userId)) {
     return PUBLIC_KEY_CACHE.get(userId)!;
   }
-  
+
   try {
     const key = await fetchPublicKey(userId);
     if (key) {
@@ -536,7 +536,7 @@ export default function DMsScreen(): React.JSX.Element {
 
       // 🔐 E2EE: Decrypt message previews BEFORE showing (WhatsApp style - blocking but correct)
       console.log(`🔐 [DM Inbox] Starting decryption for ${normalizedRaw.filter((t: any) => t._needsDecryption).length} encrypted previews`);
-      
+
       const decryptedThreads = await Promise.all(
         normalizedRaw.map(async (thread: any) => {
           if (!thread._needsDecryption) {
@@ -548,7 +548,7 @@ export default function DMsScreen(): React.JSX.Element {
             // Fetch partner's public key
             console.log(`🔐 [DM Inbox] Fetching public key for ${thread.name} (${thread.id.substring(0, 8)})`);
             const partnerPubKey = await getCachedPublicKey(thread.id);
-            
+
             if (!partnerPubKey) {
               console.warn(`🔐 [DM Inbox] ❌ No public key found for ${thread.name}`);
               return {
@@ -562,7 +562,7 @@ export default function DMsScreen(): React.JSX.Element {
             console.log(`🔐 [DM Inbox] Decrypting preview for ${thread.name}...`);
             const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey);
             console.log(`🔐 [DM Inbox] ✅ Decrypted preview for ${thread.name}: "${decryptedContent.substring(0, 30)}..."`);
-            
+
             return {
               ...thread,
               lastMsg: { ...thread.lastMsg, content: decryptedContent },
@@ -572,7 +572,7 @@ export default function DMsScreen(): React.JSX.Element {
             console.error(`🔐 [DM Inbox] ❌ Decryption failed for ${thread.name}:`, err);
             return {
               ...thread,
-              lastMsg: { ...thread.lastMsg, content: '[Decryption Failed]' },
+              lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
               _needsDecryption: undefined
             };
           }

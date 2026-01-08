@@ -110,13 +110,14 @@ const navigateFromModal = (to: "/global/communities" | "/(tabs)/explore") => {
 };
 
 /* ────────────────────────── UI Bits ────────────────────────── */
-const FloatingHeaderIllustration = ({ icon }: { icon: string }) => {
-  const isDark = useColorScheme() === "dark";
+const FloatingHeaderIllustration = ({ iconName }: { iconName: keyof typeof Ionicons.glyphMap }) => {
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
   const translateY = useSharedValue(0);
 
   useEffect(() => {
     translateY.value = withRepeat(
-      withTiming(10, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
+      withTiming(8, { duration: 2000, easing: Easing.inOut(Easing.ease) }),
       -1,
       true
     );
@@ -126,53 +127,49 @@ const FloatingHeaderIllustration = ({ icon }: { icon: string }) => {
     transform: [{ translateY: translateY.value }],
   }));
 
-  const scheme = useColorScheme() ?? 'light';
-  const colors = Colors[scheme];
-
-  // ...
-  const shadowColor = colors.primary + "60";
-
   return (
     <Animated.View style={[{ alignItems: "center" }, animatedStyle]}>
       <View
         style={{
-          height: 96,
-          width: 96,
-          borderRadius: 24,
+          height: 72,
+          width: 72,
+          borderRadius: 20,
           backgroundColor: colors.primary,
           alignItems: "center",
           justifyContent: "center",
-          shadowColor,
-          shadowOffset: { width: 0, height: 10 },
-          shadowOpacity: 0.8,
-          shadowRadius: 20,
+          shadowColor: colors.primary,
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.3,
+          shadowRadius: 16,
         }}
       >
-        <Text style={{ fontSize: 50 }}>{icon}</Text>
+        <Ionicons name={iconName} size={32} color="#fff" />
       </View>
     </Animated.View>
   );
 };
 
+/* ──────────── Premium Action Card (Minimalist) ──────────── */
 const ActionCard = ({
-  icon,
+  iconName,
   title,
   description,
   onPress,
-  gradient,
 }: {
-  icon: string;
+  iconName: keyof typeof Ionicons.glyphMap;
   title: string;
   description: string;
   onPress: () => void;
-  gradient: readonly [string, string, ...string[]];
 }) => {
+  const scheme = useColorScheme() ?? 'light';
+  const colors = Colors[scheme];
   const scale = useSharedValue(1);
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
 
-  const onPressIn = () => (scale.value = withTiming(0.96, { duration: 100 }));
+  const onPressIn = () => (scale.value = withTiming(0.98, { duration: 100 }));
   const onPressOut = () => {
     scale.value = withTiming(1, { duration: 100 });
     onPress();
@@ -185,46 +182,44 @@ const ActionCard = ({
           animatedStyle,
           {
             borderRadius: 16,
-            overflow: "hidden",
-            marginBottom: 16,
-            shadowColor: gradient[0],
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
+            backgroundColor: colors.surface,
+            marginBottom: 12,
+            borderWidth: 1,
+            borderColor: colors.border,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: scheme === 'dark' ? 0.3 : 0.06,
             shadowRadius: 8,
           },
         ]}
       >
-        <LinearGradient
-          colors={gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{ padding: 20, flexDirection: "row", alignItems: "center" }}
-        >
+        <View style={{ padding: 16, flexDirection: "row", alignItems: "center" }}>
           <View
             style={{
-              width: 56,
-              height: 56,
-              borderRadius: 16,
-              backgroundColor: "rgba(255,255,255,0.2)",
+              width: 48,
+              height: 48,
+              borderRadius: 14,
+              backgroundColor: colors.primary + '15',
               alignItems: "center",
               justifyContent: "center",
-              marginRight: 16,
+              marginRight: 14,
             }}
           >
-            <Text style={{ fontSize: 28 }}>{icon}</Text>
+            <Ionicons name={iconName} size={24} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: "white", fontSize: 18, fontWeight: "700", marginBottom: 4 }}>
+            <Text style={{ color: colors.text, fontSize: 16, fontFamily: Fonts.bold, marginBottom: 2 }}>
               {title}
             </Text>
-            <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 14 }}>{description}</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 13, fontFamily: Fonts.regular }}>{description}</Text>
           </View>
-          <Ionicons name="chevron-forward" size={24} color="rgba(255,255,255,0.8)" />
-        </LinearGradient>
+          <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+        </View>
       </Animated.View>
     </Pressable>
   );
 };
+
 
 /* ───────────────────── Auth: Login Gateway ───────────────────── */
 /* ────────────────────────── Components ────────────────────────── */
@@ -571,32 +566,30 @@ export default function ModalScreen() {
           from={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: "spring", delay: 100 }}
-          className="items-center mb-8"
+          style={{ alignItems: 'center', marginBottom: 24 }}
         >
-          <FloatingHeaderIllustration icon="✨" />
+          <FloatingHeaderIllustration iconName="sparkles" />
         </MotiView>
 
-        <Text style={{ fontSize: 30, fontFamily: Fonts.bold, marginBottom: 8, color: colors.text, textAlign: "center" }}>
+        <Text style={{ fontSize: 28, fontFamily: Fonts.bold, marginBottom: 6, color: colors.text, textAlign: "center" }}>
           Quick Actions
         </Text>
-        <Text style={{ fontSize: 16, marginBottom: 48, color: colors.textMuted, textAlign: "center" }}>
+        <Text style={{ fontSize: 15, marginBottom: 32, color: colors.textMuted, textAlign: "center" }}>
           What would you like to do?
         </Text>
 
         <ActionCard
-          icon="🌍"
+          iconName="globe-outline"
           title="Global Communities"
           description="Join public groups you're not in yet"
           onPress={() => navigateFromModal("/global/communities")}
-          gradient={[colors.primary, "#064E3B"] as const}
         />
 
         <ActionCard
-          icon="🔍"
+          iconName="compass-outline"
           title="Explore"
           description="Discover communities and connect"
           onPress={() => navigateFromModal("/(tabs)/explore")}
-          gradient={[colors.accent, "#E11D48"] as const}
         />
       </ScrollView>
     </View>

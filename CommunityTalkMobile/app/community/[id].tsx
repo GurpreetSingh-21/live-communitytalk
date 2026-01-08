@@ -172,8 +172,8 @@ export default function CommunityScreen() {
 
   const { id } = useLocalSearchParams<{ id: string }>();
   const communityId = String(id || "");
-  const { user } = React.useContext(AuthContext) as any;
-  const { socket, socketConnected, uploadAndSendFile } = useSocket() as any;
+  const { user, refreshBootstrap } = React.useContext(AuthContext) as any;
+  const { socket, socketConnected, uploadAndSendFile, notifyLocalMessage } = useSocket() as any;
   const insets = useSafeAreaInsets();
 
   const [community, setCommunity] = useState<Community | null>(null);
@@ -518,6 +518,13 @@ export default function CommunityScreen() {
         console.log('📩 [REPLY] Updated message with replyTo:', next[idx].replyTo);
         return next;
       });
+      // Notify communities list for instant update
+      notifyLocalMessage?.({
+        communityId,
+        content: text,
+        type: 'text',
+        timestamp: Date.now(),
+      });
     } catch (e: any) {
       setMessages((prev) =>
         prev.map((m) =>
@@ -850,10 +857,10 @@ export default function CommunityScreen() {
     try {
       setBusy(true);
       await api.post(`/api/communities/${communityId}/join`);
-      if (Array.isArray(user?.communityIds)) user.communityIds.push(communityId);
+      // Properly refresh auth state to get updated communityIds
+      await refreshBootstrap?.();
+      // Also reload local data
       await loadCommunity();
-      await fetchMembers({ reset: true });
-      await fetchInitialChat();
     } catch (e: any) {
       Alert.alert("Join failed", e?.response?.data?.error || "Unable to join this community");
     } finally {

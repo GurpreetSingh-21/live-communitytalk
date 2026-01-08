@@ -14,6 +14,17 @@ import * as FileSystem from 'expo-file-system/legacy';
 
 type SocketRef = ReturnType<typeof getSocket> | null;
 
+// Event type for local message notification (bypasses socket round-trip)
+type LocalMessageEvent = {
+  communityId: string;
+  content: string;
+  type?: 'text' | 'photo' | 'video' | 'file';
+  timestamp: number;
+};
+
+// Subscribers for local message events
+const localMessageListeners: Set<(event: LocalMessageEvent) => void> = new Set();
+
 type SocketContextValue = {
   socket: SocketRef;
   socketConnected: boolean;
@@ -30,6 +41,8 @@ type SocketContextValue = {
     communityId: string,
     clientMessageId: string
   ) => Promise<void>;
+  notifyLocalMessage: (event: LocalMessageEvent) => void;
+  subscribeToLocalMessages: (listener: (event: LocalMessageEvent) => void) => () => void;
 };
 
 const defaultValue: SocketContextValue = {
@@ -41,6 +54,8 @@ const defaultValue: SocketContextValue = {
   refreshUnread: async () => { },
   markThreadRead: async () => { },
   uploadAndSendFile: async () => { },
+  notifyLocalMessage: () => { },
+  subscribeToLocalMessages: () => () => { },
 };
 
 export const SocketContext = createContext(defaultValue);
@@ -400,6 +415,19 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
   /*                                CONTEXT VALUE                               */
   /* -------------------------------------------------------------------------- */
 
+  // Notify local message - triggers immediate update in communities list
+  const notifyLocalMessage = React.useCallback((event: LocalMessageEvent) => {
+    localMessageListeners.forEach(listener => listener(event));
+  }, []);
+
+  // Subscribe to local message events
+  const subscribeToLocalMessages = React.useCallback((listener: (event: LocalMessageEvent) => void) => {
+    localMessageListeners.add(listener);
+    return () => {
+      localMessageListeners.delete(listener);
+    };
+  }, []);
+
   const value = useMemo(
     () => ({
       socket: ready ? getSocket() : null,
@@ -409,7 +437,9 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
       unreadCommunities,
       refreshUnread,
       markThreadRead,
-      uploadAndSendFile, // Exposed
+      uploadAndSendFile,
+      notifyLocalMessage,
+      subscribeToLocalMessages,
     }),
     [
       ready,
@@ -419,6 +449,8 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
       refreshUnread,
       markThreadRead,
       uploadAndSendFile,
+      notifyLocalMessage,
+      subscribeToLocalMessages,
     ]
   );
 
