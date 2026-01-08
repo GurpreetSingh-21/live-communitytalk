@@ -64,7 +64,7 @@ function resolveBaseUrl(): string {
     normalizeBase(fromLegacy) ??
     (__DEV__
       ? "http://localhost:3000"
-      : "https://communitytalkv1.onrender.com");
+      : "https://distrustfully-conglomeratic-adrienne.ngrok-free.dev");
 
   // Final validation fallback
   if (!isValidHttp(chosen)) {
