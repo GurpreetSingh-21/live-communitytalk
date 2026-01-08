@@ -90,7 +90,7 @@ async function authenticate(req, res, next) {
 
     const token = getTokenFromRequest(req);
     if (!token) {
-      // Use originalUrl so you see the full path (mounted routers often show '/' in req.path)
+      console.log('[DEBUG] authenticate: No token provided');
       return res.status(401).json({ error: "No token provided", code: "NO_TOKEN" });
     }
 
@@ -101,6 +101,7 @@ async function authenticate(req, res, next) {
         clockTolerance: 5,
       });
     } catch (err) {
+      console.log('[DEBUG] authenticate: Token verification failed:', err.name, err.message);
       if (err.name === "TokenExpiredError") {
         return res.status(401).json({
           error: "Token expired",
@@ -118,6 +119,7 @@ async function authenticate(req, res, next) {
     }
 
     if (!decoded?.id) {
+      console.log('[DEBUG] authenticate: Malformed token (no id)');
       return res.status(401).json({ error: "Malformed token", code: "MALFORMED_TOKEN" });
     }
 
@@ -125,7 +127,7 @@ async function authenticate(req, res, next) {
     const userDoc = await prisma.user.findUnique({
       where: { id: decoded.id },
     });
-    
+
     if (!userDoc) {
       return res.status(401).json({ error: "User not found", code: "USER_NOT_FOUND" });
     }

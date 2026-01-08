@@ -15,6 +15,7 @@ const requireModerator = async (req, res, next) => {
         });
 
         if (!user || (user.role !== 'admin' && user.role !== 'mod')) {
+            console.log('[DEBUG] requireModerator: Access denied for user', req.user.id, 'role:', user ? user.role : 'not found');
             return res.status(403).json({ error: 'Access denied. Moderator privileges required.' });
         }
 
@@ -26,13 +27,18 @@ const requireModerator = async (req, res, next) => {
     }
 };
 
+/**
+ * @route   POST /api/admin/login
+ * @desc    Login for admin/moderator
  * @access  Admin / Mod
-    */
+ */
 router.post('/login', async (req, res) => {
+    console.log('[DEBUG] Admin login attempt:', { email: req.body.email, hasPassword: !!req.body.password });
     try {
         const { email, password } = req.body;
 
         if (!email || !password) {
+            console.log('[DEBUG] Missing email or password');
             return res.status(400).json({ error: 'Please provide email and password' });
         }
 
@@ -49,6 +55,7 @@ router.post('/login', async (req, res) => {
         }
 
         const isMatch = await bcrypt.compare(password, user.password);
+        console.log('[DEBUG] Password match result:', isMatch);
         if (!isMatch) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -81,9 +88,9 @@ router.post('/login', async (req, res) => {
  */
 router.get('/dating/profiles/pending', authenticate, requireModerator, async (req, res) => {
     try {
-        const profiles = await prisma.DatingProfile.findMany({
-            where: { isPhotoApproved: false, isSuspended: false },
-            include: { user: true }
+        const profiles = await prisma.datingProfile.findMany({
+            where: { approvalStatus: 'PENDING' },
+            include: { user: true, photos: true }
         });
 
         // Map to frontend format with _id
@@ -106,9 +113,9 @@ router.get('/dating/profiles/pending', authenticate, requireModerator, async (re
  */
 router.put('/dating/profiles/:id/approve', authenticate, requireModerator, async (req, res) => {
     try {
-        const updatedProfile = await prisma.DatingProfile.update({
+        const updatedProfile = await prisma.datingProfile.update({
             where: { id: req.params.id },
-            data: { isPhotoApproved: true, isProfileVisible: true }
+            data: { approvalStatus: 'APPROVED', isProfileVisible: true }
         });
         res.status(200).json(updatedProfile);
     } catch (error) {
@@ -124,9 +131,9 @@ router.put('/dating/profiles/:id/approve', authenticate, requireModerator, async
  */
 router.put('/dating/profiles/:id/reject', authenticate, requireModerator, async (req, res) => {
     try {
-        const updatedProfile = await prisma.DatingProfile.update({
+        const updatedProfile = await prisma.datingProfile.update({
             where: { id: req.params.id },
-            data: { isSuspended: true, isProfileVisible: false, isPhotoApproved: false }
+            data: { approvalStatus: 'REJECTED', isProfileVisible: false, rejectionReason: req.body.reason || 'Rejected by moderator' }
         });
         res.status(200).json(updatedProfile);
     } catch (error) {
@@ -154,14 +161,14 @@ router.get('/communities', authenticate, requireModerator, async (req, res) => {
         if (type) where.type = type;
         if (includePrivate !== 'true') where.isPrivate = false;
 
-        const communities = await prisma.Community.findMany({
+        const communities = await prisma.community.findMany({
             where,
             orderBy: { createdAt: 'desc' },
             take: parseInt(limit)
         });
 
         // Count by type
-        const counts = await prisma.Community.groupBy({
+        const counts = await prisma.community.groupBy({
             by: ['type'],
             _count: { id: true }
         });
@@ -175,12 +182,17 @@ router.get('/communities', authenticate, requireModerator, async (req, res) => {
         };
 
         // Map to frontend format with _id
-        const items = communities.map(c => ({
-            ...c,
-            _id: c.id
-        }));
+        // IMPORTANT: Rename 'key' to 'communityKey' to avoid React interpreting it as key prop
+        const items = communities.map(c => {
+            const { key, ...rest } = c;
+            return {
+                ...rest,
+                _id: c.id,
+                communityKey: key  // renamed from 'key' to avoid React conflicts
+            };
+        });
 
-        const totalCount = await prisma.Community.count({ where });
+        const totalCount = await prisma.community.count({ where });
 
         res.status(200).json({
             items,
@@ -290,7 +302,7 @@ router.get('/photos/pending', authenticate, requireModerator, async (req, res) =
         const total = await prisma.datingPhoto.count({ where: { status: 'PENDING' } });
 
         res.status(200).json({
-            photos,
+            items: photos,
             pagination: {
                 total,
                 limit: parseInt(limit),
@@ -448,7 +460,7 @@ router.get('/reports', authenticate, requireModerator, async (req, res) => {
         const total = await prisma.report.count({ where });
 
         res.status(200).json({
-            reports,
+            items: reports,
             pagination: {
                 total,
                 limit: parseInt(limit),
@@ -727,7 +739,7 @@ router.get('/appeals', authenticate, requireModerator, async (req, res) => {
         const total = await prisma.appeal.count({ where });
 
         res.status(200).json({
-            appeals,
+            items: appeals,
             pagination: {
                 total,
                 limit: parseInt(limit),
@@ -848,7 +860,7 @@ router.get('/logs', authenticate, requireModerator, async (req, res) => {
         const total = await prisma.moderationLog.count({ where });
 
         res.status(200).json({
-            logs,
+            items: logs,
             pagination: {
                 total,
                 limit: parseInt(limit),
@@ -868,6 +880,7 @@ router.get('/logs', authenticate, requireModerator, async (req, res) => {
  * @access  Admin/Mod
  */
 router.get('/users', authenticate, requireModerator, async (req, res) => {
+    console.log('[DEBUG] GET /users endpoint hit');
     try {
         const { accountStatus, search, limit = 50, offset = 0 } = req.query;
 
@@ -895,9 +908,9 @@ router.get('/users', authenticate, requireModerator, async (req, res) => {
                 reportsReceivedCount: true,
                 suspendedUntil: true,
                 bannedAt: true,
-                emailVerified: true,
                 profileVerified: true,
-                photoVerified: true
+                photoVerified: true,
+                role: true
             }
         });
 

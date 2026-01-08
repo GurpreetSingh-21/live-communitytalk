@@ -19,6 +19,8 @@ export const adminApi = axios.create({
   baseURL: BASE,
   headers: {
     "Content-Type": "application/json",
+    // 🔧 Bypass ngrok's browser warning interstitial page
+    "ngrok-skip-browser-warning": "true",
   },
 });
 

@@ -4,7 +4,7 @@
     "slug": "campustry",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./public/logo.png",
     "scheme": "communitytalkmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,

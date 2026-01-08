@@ -3,7 +3,7 @@ import { Platform } from "react-native";
 import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { api } from "@/src/api/api";
-import { getAccessToken } from "../utils/storage";
+import { getAccessToken } from "./storage";
 
 /* ───────────────────────────────────────────
    Foreground Notification Handler

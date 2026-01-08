@@ -124,7 +124,7 @@ app.use(
     origin: ORIGIN,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
   })
 );
 

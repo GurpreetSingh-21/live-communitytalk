@@ -58,7 +58,7 @@ type Community = {
   _id: string;
   name: string;
   type: CommunityType;
-  key: string;
+  communityKey: string;  // renamed from 'key' to avoid React conflicts
   slug?: string;
   isPrivate?: boolean;
   tags?: string[];
@@ -122,7 +122,7 @@ export default function AdminCommunitiesPage() {
 
   const prepareEditForm = (c: Community) => {
     setEditName(c.name || "");
-    setEditKey(c.key || "");
+    setEditKey(c.communityKey || "");
     setEditPrivate(!!c.isPrivate);
     setEditTags((c.tags || []).join(", "));
   };
@@ -188,7 +188,7 @@ export default function AdminCommunitiesPage() {
       list = list.filter(
         (c) =>
           rx.test(c.name || "") ||
-          rx.test(c.key || "") ||
+          rx.test(c.communityKey || "") ||
           (c.tags || []).some((t) => rx.test(t))
       );
     }
@@ -426,8 +426,8 @@ export default function AdminCommunitiesPage() {
                       typeFilter === opt.id
                         ? "bg-slate-900 text-slate-50"
                         : opt.id === "all" && typeFilter === "all"
-                        ? "bg-slate-900 text-slate-50"
-                        : "bg-transparent text-slate-600 hover:bg-slate-100",
+                          ? "bg-slate-900 text-slate-50"
+                          : "bg-transparent text-slate-600 hover:bg-slate-100",
                     ].join(" ")}
                   >
                     {opt.label}
@@ -527,9 +527,9 @@ export default function AdminCommunitiesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCommunities.map((c) => (
+                {filteredCommunities.map((c, idx) => (
                   <TableRow
-                    key={c._id}
+                    key={c._id || `community-${idx}`}
                     className="border-slate-100 hover:bg-slate-50/80"
                   >
                     <TableCell className="align-top">
@@ -554,7 +554,7 @@ export default function AdminCommunitiesPage() {
                           </Badge>
                         </div>
                         <div className="text-[11px] text-slate-500">
-                          key: <span className="font-mono">{c.key}</span>
+                          key: <span className="font-mono">{c.communityKey}</span>
                         </div>
                       </div>
                     </TableCell>
