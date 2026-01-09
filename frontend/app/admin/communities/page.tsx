@@ -1,9 +1,11 @@
 // frontend/app/admin/communities/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback } from "react";
 import { adminApi } from "@/lib/api";
 import { toast } from "sonner";
+import { motion } from "framer-motion";
+import Image from "next/image";
 
 import {
   Card,
@@ -12,14 +14,6 @@ import {
   CardDescription,
   CardContent,
 } from "@/components/ui/card";
-import {
-  Table,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableBody,
-  TableCell,
-} from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -45,11 +39,14 @@ import {
   Globe2,
   Layers,
   Plus,
-  Filter,
   Shield,
   Trash2,
   Pencil,
   RefreshCw,
+  Search,
+  ImagePlus,
+  X,
+  Loader2,
 } from "lucide-react";
 
 type CommunityType = "college" | "religion" | "custom";
@@ -58,10 +55,11 @@ type Community = {
   _id: string;
   name: string;
   type: CommunityType;
-  communityKey: string;  // renamed from 'key' to avoid React conflicts
+  communityKey: string;
   slug?: string;
   isPrivate?: boolean;
   tags?: string[];
+  imageUrl?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -98,14 +96,28 @@ export default function AdminCommunitiesPage() {
   const [newKey, setNewKey] = useState("");
   const [newPrivate, setNewPrivate] = useState(false);
   const [newTags, setNewTags] = useState("");
+  const [newImageUrl, setNewImageUrl] = useState("");
+  const [newImagePreview, setNewImagePreview] = useState("");
+  const [uploadingNew, setUploadingNew] = useState(false);
 
   // edit form state
   const [editName, setEditName] = useState("");
   const [editKey, setEditKey] = useState("");
   const [editPrivate, setEditPrivate] = useState(false);
   const [editTags, setEditTags] = useState("");
+  const [editImageUrl, setEditImageUrl] = useState("");
+  const [editImagePreview, setEditImagePreview] = useState("");
+  const [uploadingEdit, setUploadingEdit] = useState(false);
 
-  const [meta, setMeta] = useState<{ total: number; colleges: number; religions: number; customs: number }>({
+  const newImageInputRef = useRef<HTMLInputElement>(null);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
+
+  const [meta, setMeta] = useState<{
+    total: number;
+    colleges: number;
+    religions: number;
+    customs: number;
+  }>({
     total: 0,
     colleges: 0,
     religions: 0,
@@ -118,6 +130,8 @@ export default function AdminCommunitiesPage() {
     setNewKey("");
     setNewPrivate(false);
     setNewTags("");
+    setNewImageUrl("");
+    setNewImagePreview("");
   };
 
   const prepareEditForm = (c: Community) => {
@@ -125,6 +139,73 @@ export default function AdminCommunitiesPage() {
     setEditKey(c.communityKey || "");
     setEditPrivate(!!c.isPrivate);
     setEditTags((c.tags || []).join(", "));
+    setEditImageUrl(c.imageUrl || "");
+    setEditImagePreview(c.imageUrl || "");
+  };
+
+  // Image upload utility
+  const uploadImage = useCallback(async (file: File): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        try {
+          const base64 = reader.result as string;
+          const { data } = await adminApi.post("/api/upload/base64", {
+            image: base64,
+            fileName: file.name,
+            folder: "community_talk_community_images",
+          });
+          resolve(data.url);
+        } catch (err: any) {
+          console.error("Image upload failed:", err);
+          toast.error("Failed to upload image");
+          resolve(null);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const handleNewImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Preview
+    const previewUrl = URL.createObjectURL(file);
+    setNewImagePreview(previewUrl);
+
+    // Upload
+    setUploadingNew(true);
+    const url = await uploadImage(file);
+    setUploadingNew(false);
+
+    if (url) {
+      setNewImageUrl(url);
+      toast.success("Image uploaded");
+    } else {
+      setNewImagePreview("");
+    }
+  };
+
+  const handleEditImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Preview
+    const previewUrl = URL.createObjectURL(file);
+    setEditImagePreview(previewUrl);
+
+    // Upload
+    setUploadingEdit(true);
+    const url = await uploadImage(file);
+    setUploadingEdit(false);
+
+    if (url) {
+      setEditImageUrl(url);
+      toast.success("Image uploaded");
+    } else {
+      setEditImagePreview(editImageUrl); // Revert to original
+    }
   };
 
   const loadCommunities = async () => {
@@ -134,7 +215,6 @@ export default function AdminCommunitiesPage() {
         params: {
           q: search || undefined,
           type: typeFilter === "all" ? undefined : typeFilter,
-          // always include private, we'll filter client-side
           includePrivate: "true",
           limit: 400,
         },
@@ -142,7 +222,6 @@ export default function AdminCommunitiesPage() {
 
       const items = Array.isArray(data.items) ? data.items : [];
 
-      // basic stats
       const colleges = items.filter((c) => c.type === "college").length;
       const religions = items.filter((c) => c.type === "religion").length;
       const customs = items.filter((c) => c.type === "custom").length;
@@ -214,6 +293,7 @@ export default function AdminCommunitiesPage() {
         key: newKey.trim() || undefined,
         isPrivate: newPrivate,
         tags,
+        imageUrl: newImageUrl || undefined,
       });
 
       toast.success("Community created");
@@ -251,6 +331,7 @@ export default function AdminCommunitiesPage() {
         key: editKey.trim() || undefined,
         isPrivate: editPrivate,
         tags,
+        imageUrl: editImageUrl || undefined,
       });
 
       toast.success("Community updated");
@@ -291,359 +372,377 @@ export default function AdminCommunitiesPage() {
   };
 
   return (
-    <div className="space-y-5">
-      {/* Top metrics row */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-slate-200 bg-slate-900 text-slate-50 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs uppercase tracking-[0.16em] text-slate-400">
-              Total communities
-            </CardDescription>
-            <CardTitle className="flex items-baseline gap-2 text-2xl font-semibold">
-              {meta.total}
-              <span className="text-xs font-normal text-slate-400">
-                across all types
-              </span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2 text-xs text-slate-300">
-            <Shield className="h-3.5 w-3.5 text-emerald-300" />
-            <span>Managed and audited from this panel only.</span>
-          </CardContent>
-        </Card>
+    <div className="min-h-screen bg-slate-50/50 p-8">
+      <div className="mx-auto max-w-7xl space-y-8">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Communities
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Manage college, religion, and custom community spaces
+            </p>
+          </div>
+          <Button
+            onClick={() => {
+              resetCreateForm();
+              setCreating(true);
+            }}
+            className="h-10 gap-2 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+          >
+            <Plus className="h-4 w-4" />
+            New Community
+          </Button>
+        </div>
 
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs uppercase tracking-[0.16em] text-slate-500">
-              Colleges
-            </CardDescription>
-            <CardTitle className="flex items-baseline gap-2 text-xl">
-              {meta.colleges}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2 text-xs text-slate-500">
-            <Building2 className="h-3.5 w-3.5" />
-            <span>College-wide communities students join on sign-up.</span>
-          </CardContent>
-        </Card>
+        {/* Stats Grid */}
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            {
+              label: "Total Communities",
+              value: meta.total,
+              icon: Layers,
+              color: "text-slate-700",
+              bg: "bg-white",
+              border: "border-slate-200",
+            },
+            {
+              label: "Colleges",
+              value: meta.colleges,
+              icon: Building2,
+              color: "text-blue-700",
+              bg: "bg-blue-50/50",
+              border: "border-blue-200/50",
+            },
+            {
+              label: "Religion",
+              value: meta.religions,
+              icon: Globe2,
+              color: "text-purple-700",
+              bg: "bg-purple-50/50",
+              border: "border-purple-200/50",
+            },
+            {
+              label: "Custom",
+              value: meta.customs,
+              icon: Layers,
+              color: "text-orange-700",
+              bg: "bg-orange-50/50",
+              border: "border-orange-200/50",
+            },
+          ].map((stat, i) => (
+            <motion.div
+              key={stat.label}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: i * 0.05 }}
+            >
+              <Card className={`border ${stat.border} ${stat.bg} shadow-sm`}>
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-slate-600">{stat.label}</p>
+                      <p className={`mt-2 text-3xl font-semibold ${stat.color}`}>
+                        {stat.value}
+                      </p>
+                    </div>
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-xl ${stat.bg}`}
+                    >
+                      <stat.icon className={`h-6 w-6 ${stat.color}`} />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </div>
 
+        {/* Main Content */}
         <Card className="border-slate-200 bg-white shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs uppercase tracking-[0.16em] text-slate-500">
-              Religion communities
-            </CardDescription>
-            <CardTitle className="flex items-baseline gap-2 text-xl">
-              {meta.religions}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2 text-xs text-slate-500">
-            <Globe2 className="h-3.5 w-3.5" />
-            <span>Faith-based groups tied to specific campuses.</span>
-          </CardContent>
-        </Card>
+          {/* Toolbar */}
+          <div className="border-b border-slate-100 p-6">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              {/* Search */}
+              <div className="relative flex-1 sm:max-w-sm">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search communities..."
+                  className="h-10 pl-10 text-sm"
+                />
+              </div>
 
-        <Card className="border-slate-200 bg-white shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs uppercase tracking-[0.16em] text-slate-500">
-              Custom spaces
-            </CardDescription>
-            <CardTitle className="flex items-baseline gap-2 text-xl">
-              {meta.customs}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex items-center gap-2 text-xs text-slate-500">
-            <Layers className="h-3.5 w-3.5" />
-            <span>Extra communities added by admins as needed.</span>
-          </CardContent>
+              {/* Filters */}
+              <div className="flex items-center gap-3">
+                {/* Type Filter */}
+                <div className="inline-flex h-10 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/50 p-1">
+                  {["all", "college", "religion", "custom"].map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setTypeFilter(type as any)}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${typeFilter === type
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                        }`}
+                    >
+                      {type === "all" ? "All" : typeLabels[type as CommunityType]}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Privacy Filter */}
+                <div className="inline-flex h-10 items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/50 p-1">
+                  {["all", "public", "private"].map((privacy) => (
+                    <button
+                      key={privacy}
+                      onClick={() => setPrivacyFilter(privacy as any)}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${privacyFilter === privacy
+                          ? "bg-white text-slate-900 shadow-sm"
+                          : "text-slate-600 hover:text-slate-900"
+                        }`}
+                    >
+                      {privacy.charAt(0).toUpperCase() + privacy.slice(1)}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Refresh */}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={loadCommunities}
+                  disabled={loading}
+                  className="h-10 w-10"
+                >
+                  <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          {/* Communities List */}
+          <div className="divide-y divide-slate-100">
+            {loading && communities.length === 0 ? (
+              <div className="flex h-64 items-center justify-center text-slate-500">
+                <div className="text-center">
+                  <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-slate-900" />
+                  <p className="text-sm">Loading communities...</p>
+                </div>
+              </div>
+            ) : filteredCommunities.length === 0 ? (
+              <div className="flex h-64 items-center justify-center text-slate-500">
+                <div className="text-center">
+                  <Search className="mx-auto mb-4 h-12 w-12 text-slate-300" />
+                  <p className="text-sm font-medium text-slate-700">No communities found</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Try adjusting your filters or search query
+                  </p>
+                </div>
+              </div>
+            ) : (
+              filteredCommunities.map((c, idx) => (
+                <motion.div
+                  key={c._id || idx}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: 0.2, delay: idx * 0.02 }}
+                  className="group p-6 transition-colors hover:bg-slate-50/50"
+                >
+                  <div className="flex items-center gap-6">
+                    {/* Image or Icon */}
+                    {c.imageUrl ? (
+                      <div className="relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-lg border border-slate-200">
+                        <Image
+                          src={c.imageUrl}
+                          alt={c.name}
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg ${c.type === "college"
+                            ? "bg-blue-100 text-blue-700"
+                            : c.type === "religion"
+                              ? "bg-purple-100 text-purple-700"
+                              : "bg-orange-100 text-orange-700"
+                          }`}
+                      >
+                        {c.type === "college" && <Building2 className="h-5 w-5" />}
+                        {c.type === "religion" && <Globe2 className="h-5 w-5" />}
+                        {c.type === "custom" && <Layers className="h-5 w-5" />}
+                      </div>
+                    )}
+
+                    {/* Content */}
+                    <div className="flex min-w-0 flex-1 items-center gap-6">
+                      {/* Name & Key */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="truncate text-sm font-medium text-slate-900">
+                            {c.name}
+                          </h3>
+                          {c.isPrivate && (
+                            <Badge className="h-5 gap-1 bg-slate-100 text-slate-700 hover:bg-slate-100">
+                              <Shield className="h-3 w-3" />
+                              Private
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 text-xs">
+                          <Badge
+                            variant="outline"
+                            className={`border ${c.type === "college"
+                                ? "border-blue-200 bg-blue-50 text-blue-700"
+                                : c.type === "religion"
+                                  ? "border-purple-200 bg-purple-50 text-purple-700"
+                                  : "border-orange-200 bg-orange-50 text-orange-700"
+                              }`}
+                          >
+                            {typeLabels[c.type]}
+                          </Badge>
+                          <span className="text-slate-400">•</span>
+                          <code className="font-mono text-slate-500">{c.communityKey}</code>
+                        </div>
+                      </div>
+
+                      {/* Tags */}
+                      <div className="hidden w-64 lg:block">
+                        {(c.tags || []).length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {c.tags!.slice(0, 3).map((tag, i) => (
+                              <Badge
+                                key={`${tag}-${i}`}
+                                variant="secondary"
+                                className="bg-slate-100 text-xs text-slate-700"
+                              >
+                                {tag}
+                              </Badge>
+                            ))}
+                            {(c.tags?.length || 0) > 3 && (
+                              <span className="text-xs text-slate-400">
+                                +{(c.tags?.length || 0) - 3}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">No tags</span>
+                        )}
+                      </div>
+
+                      {/* Date */}
+                      <div className="hidden w-32 text-right sm:block">
+                        <p className="text-xs text-slate-500">{formatDate(c.createdAt)}</p>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleOpenEdit(c)}
+                        className="h-8 w-8 text-slate-400 hover:text-slate-900"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(c._id)}
+                        className="h-8 w-8 text-slate-400 hover:text-red-600"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </motion.div>
+              ))
+            )}
+          </div>
         </Card>
       </div>
 
-      {/* Directory + filters */}
-      <Card className="border-slate-200 bg-white shadow-sm">
-        <CardHeader className="border-b border-slate-100 pb-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="space-y-1">
-              <CardTitle className="text-base font-semibold">
-                Communities · Directory
-              </CardTitle>
-              <CardDescription className="text-xs text-slate-500">
-                Browse all communities, filter by type / privacy, and create new
-                ones without touching seed scripts.
-              </CardDescription>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={loadCommunities}
-                disabled={loading}
-              >
-                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                {loading ? "Refreshing…" : "Refresh"}
-              </Button>
-              <Button
-                size="sm"
-                className="bg-slate-900 text-xs text-slate-50 hover:bg-slate-800"
-                onClick={() => {
-                  resetCreateForm();
-                  setCreating(true);
-                }}
-              >
-                <Plus className="mr-1.5 h-3.5 w-3.5" />
-                New community
-              </Button>
-            </div>
-          </div>
-
-          {/* filter row */}
-          <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="flex items-center gap-1 text-[11px] text-slate-500">
-                <Filter className="h-3.5 w-3.5" />
-                Filters:
-              </span>
-
-              {/* Type filter pills */}
-              <div className="inline-flex gap-1 rounded-full bg-slate-50 p-1">
-                {[
-                  { id: "all", label: "All" },
-                  { id: "college", label: "Colleges" },
-                  { id: "religion", label: "Religion" },
-                  { id: "custom", label: "Custom" },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() =>
-                      setTypeFilter(
-                        opt.id === "all" ? "all" : (opt.id as CommunityType)
-                      )
-                    }
-                    className={[
-                      "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
-                      typeFilter === opt.id
-                        ? "bg-slate-900 text-slate-50"
-                        : opt.id === "all" && typeFilter === "all"
-                          ? "bg-slate-900 text-slate-50"
-                          : "bg-transparent text-slate-600 hover:bg-slate-100",
-                    ].join(" ")}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Privacy filter pills */}
-              <div className="inline-flex gap-1 rounded-full bg-slate-50 p-1">
-                {[
-                  { id: "all", label: "All" },
-                  { id: "public", label: "Public only" },
-                  { id: "private", label: "Private only" },
-                ].map((opt) => (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() =>
-                      setPrivacyFilter(opt.id as "all" | "public" | "private")
-                    }
-                    className={[
-                      "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
-                      privacyFilter === opt.id
-                        ? "bg-slate-900 text-slate-50"
-                        : "bg-transparent text-slate-600 hover:bg-slate-100",
-                    ].join(" ")}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex w-full max-w-xs items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500">
-              <svg
-                className="h-3.5 w-3.5"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  d="M15.5 15.5 20 20"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle
-                  cx="11"
-                  cy="11"
-                  r="5.25"
-                  stroke="currentColor"
-                  strokeWidth={1.5}
-                />
-              </svg>
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, key, or tag…"
-                className="h-6 border-0 bg-transparent p-0 text-xs focus-visible:ring-0"
-              />
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-0">
-          {loading ? (
-            <div className="flex items-center justify-center py-16 text-sm text-slate-500">
-              Loading communities…
-            </div>
-          ) : filteredCommunities.length === 0 ? (
-            <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-sm text-slate-500">
-              <p>No communities match the current filters.</p>
-              <p className="text-xs text-slate-400">
-                Adjust the type / privacy filters or clear the search term to see
-                more.
-              </p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="border-slate-100">
-                  <TableHead className="text-xs font-semibold text-slate-500">
-                    Community
-                  </TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500">
-                    Type / Key
-                  </TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500">
-                    Tags
-                  </TableHead>
-                  <TableHead className="text-xs font-semibold text-slate-500">
-                    Created
-                  </TableHead>
-                  <TableHead className="text-right text-xs font-semibold text-slate-500">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredCommunities.map((c, idx) => (
-                  <TableRow
-                    key={c._id || `community-${idx}`}
-                    className="border-slate-100 hover:bg-slate-50/80"
-                  >
-                    <TableCell className="align-top">
-                      <div className="flex flex-col gap-0.5">
-                        <span className="text-sm font-medium text-slate-900">
-                          {c.name}
-                        </span>
-                        <div className="flex items-center gap-1 text-[11px] text-slate-500">
-                          <Shield className="h-3 w-3" />
-                          {c.isPrivate ? "Private" : "Public"}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top text-xs text-slate-600">
-                      <div className="flex flex-col gap-1">
-                        <div className="inline-flex items-center gap-1">
-                          <Badge
-                            variant="outline"
-                            className="border-slate-300 bg-slate-50 text-[10px]"
-                          >
-                            {typeLabels[c.type] || c.type}
-                          </Badge>
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          key: <span className="font-mono">{c.communityKey}</span>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top">
-                      <div className="flex flex-wrap gap-1">
-                        {(c.tags || []).length === 0 ? (
-                          <span className="text-[11px] text-slate-400">—</span>
-                        ) : (
-                          c.tags!.map((tag) => (
-                            <Badge
-                              key={tag}
-                              variant="outline"
-                              className="border-slate-200 bg-slate-50 text-[10px]"
-                            >
-                              {tag}
-                            </Badge>
-                          ))
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell className="align-top text-[11px] text-slate-500">
-                      {formatDate(c.createdAt)}
-                    </TableCell>
-                    <TableCell className="align-top text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-slate-200 text-[11px]"
-                          onClick={() => handleOpenEdit(c)}
-                        >
-                          <Pencil className="mr-1 h-3 w-3" />
-                          Edit
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="border-red-200 text-[11px] text-red-600 hover:bg-red-50"
-                          onClick={() => handleDelete(c._id)}
-                        >
-                          <Trash2 className="mr-1 h-3 w-3" />
-                          Delete
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Create community dialog */}
+      {/* Create Dialog */}
       <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">
-              Create new community
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Use this panel to add a college, religion group, or custom
-              community. Students will see it instantly in their app.
+            <DialogTitle>Create Community</DialogTitle>
+            <DialogDescription>
+              Add a new community to your platform
             </DialogDescription>
           </DialogHeader>
 
-          <div className="mt-4 space-y-4 text-sm">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-700">
-                Name<span className="text-red-500">*</span>
-              </label>
+          <div className="space-y-4 pt-4">
+            {/* Image Upload */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">Image</label>
+              <div className="flex items-center gap-4">
+                {newImagePreview ? (
+                  <div className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200">
+                    <Image
+                      src={newImagePreview}
+                      alt="Preview"
+                      fill
+                      className="object-cover"
+                    />
+                    {uploadingNew && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-600" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewImagePreview("");
+                        setNewImageUrl("");
+                      }}
+                      className="absolute right-1 top-1 rounded-full bg-slate-900/70 p-1 text-white hover:bg-slate-900"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => newImageInputRef.current?.click()}
+                    className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-500"
+                  >
+                    <ImagePlus className="h-6 w-6" />
+                  </button>
+                )}
+                <input
+                  ref={newImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleNewImageSelect}
+                />
+                <div className="text-xs text-slate-500">
+                  <p>Upload a flag or logo</p>
+                  <p className="text-slate-400">PNG, JPG up to 5MB</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">Name</label>
               <Input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="e.g. Queens College, Sikh Society @ Queens, Film Club"
+                placeholder="e.g. Queens College"
               />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700">
-                  Type
-                </label>
-                <Select
-                  value={newType}
-                  onValueChange={(val) => setNewType(val as CommunityType)}
-                >
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue placeholder="Select type" />
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">Type</label>
+                <Select value={newType} onValueChange={(val) => setNewType(val as CommunityType)}>
+                  <SelectTrigger>
+                    <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="college">College</SelectItem>
@@ -653,163 +752,180 @@ export default function AdminCommunitiesPage() {
                 </Select>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700">
-                  Key (optional)
-                </label>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">Key</label>
                 <Input
                   value={newKey}
                   onChange={(e) => setNewKey(e.target.value)}
-                  placeholder="Auto-slugged from name if left blank"
-                  className="font-mono text-xs"
+                  placeholder="Auto-generated"
+                  className="font-mono text-sm"
                 />
               </div>
             </div>
 
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-              <div className="space-y-0.5">
-                <p className="text-xs font-medium text-slate-700">Private</p>
-                <p className="text-[11px] text-slate-500">
-                  Private communities are hidden from public listings and
-                  invite-only.
-                </p>
+            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+              <div>
+                <p className="text-sm font-medium text-slate-900">Private</p>
+                <p className="text-xs text-slate-500">Hide from public discovery</p>
               </div>
-              <Switch
-                checked={newPrivate}
-                onCheckedChange={(v) => setNewPrivate(v)}
-              />
+              <Switch checked={newPrivate} onCheckedChange={setNewPrivate} />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-700">
-                Tags (optional)
-              </label>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">Tags</label>
               <Textarea
                 value={newTags}
                 onChange={(e) => setNewTags(e.target.value)}
-                placeholder="Comma-separated, e.g. queens, commuter, international"
-                className="min-h-[60px] text-xs"
+                placeholder="Comma-separated tags..."
+                className="min-h-[80px] resize-none"
               />
-              <p className="text-[11px] text-slate-400">
-                Tags help search and analytics; they are not shown directly to
-                students.
-              </p>
             </div>
 
-            <div className="flex justify-end gap-2 pt-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => setCreating(false)}
-              >
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={() => setCreating(false)} className="flex-1">
                 Cancel
               </Button>
               <Button
-                size="sm"
-                className="bg-slate-900 text-xs text-slate-50 hover:bg-slate-800"
                 onClick={handleCreateCommunity}
+                disabled={uploadingNew}
+                className="flex-1 bg-slate-900 hover:bg-slate-800"
               >
-                Create community
+                {uploadingNew ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Uploading...
+                  </>
+                ) : (
+                  "Create"
+                )}
               </Button>
             </div>
           </div>
         </DialogContent>
       </Dialog>
 
-      {/* Edit community dialog */}
+      {/* Edit Dialog */}
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-base font-semibold">
-              Edit community
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Update the name, key, privacy and tags. Existing members will
-              keep their access.
+            <DialogTitle>Edit Community</DialogTitle>
+            <DialogDescription>
+              Update community details
             </DialogDescription>
           </DialogHeader>
 
           {editing && (
-            <div className="mt-4 space-y-4 text-sm">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700">
-                  Name<span className="text-red-500">*</span>
-                </label>
-                <Input
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                />
+            <div className="space-y-4 pt-4">
+              {/* Image Upload */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">Image</label>
+                <div className="flex items-center gap-4">
+                  {editImagePreview ? (
+                    <div className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200">
+                      <Image
+                        src={editImagePreview}
+                        alt="Preview"
+                        fill
+                        className="object-cover"
+                      />
+                      {uploadingEdit && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                          <Loader2 className="h-5 w-5 animate-spin text-slate-600" />
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditImagePreview("");
+                          setEditImageUrl("");
+                        }}
+                        className="absolute right-1 top-1 rounded-full bg-slate-900/70 p-1 text-white hover:bg-slate-900"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => editImageInputRef.current?.click()}
+                      className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-500"
+                    >
+                      <ImagePlus className="h-6 w-6" />
+                    </button>
+                  )}
+                  <input
+                    ref={editImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleEditImageSelect}
+                  />
+                  <div className="text-xs text-slate-500">
+                    <p>Upload a flag or logo</p>
+                    <p className="text-slate-400">PNG, JPG up to 5MB</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">Name</label>
+                <Input value={editName} onChange={(e) => setEditName(e.target.value)} />
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">
-                    Type
-                  </label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-900">Type</label>
                   <Input
-                    value={typeLabels[editing.type] || editing.type}
+                    value={typeLabels[editing.type]}
                     disabled
-                    className="bg-slate-50 text-xs text-slate-500"
+                    className="bg-slate-50"
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-slate-700">
-                    Key
-                  </label>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-900">Key</label>
                   <Input
                     value={editKey}
                     onChange={(e) => setEditKey(e.target.value)}
-                    className="font-mono text-xs"
+                    className="font-mono text-sm"
                   />
                 </div>
               </div>
 
-              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="space-y-0.5">
-                  <p className="text-xs font-medium text-slate-700">Private</p>
-                  <p className="text-[11px] text-slate-500">
-                    Toggle to hide or show this community in student-facing
-                    discovery.
-                  </p>
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Private</p>
+                  <p className="text-xs text-slate-500">Hide from public discovery</p>
                 </div>
-                <Switch
-                  checked={editPrivate}
-                  onCheckedChange={(v) => setEditPrivate(v)}
-                />
+                <Switch checked={editPrivate} onCheckedChange={setEditPrivate} />
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-slate-700">
-                  Tags
-                </label>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-900">Tags</label>
                 <Textarea
                   value={editTags}
                   onChange={(e) => setEditTags(e.target.value)}
-                  className="min-h-[60px] text-xs"
+                  className="min-h-[80px] resize-none"
                 />
-                <p className="text-[11px] text-slate-400">
-                  Comma-separated. Existing tags will be replaced with this
-                  list.
-                </p>
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => setEditing(null)}
-                >
+              <div className="flex gap-3 pt-4">
+                <Button variant="outline" onClick={() => setEditing(null)} className="flex-1">
                   Cancel
                 </Button>
                 <Button
-                  size="sm"
-                  className="bg-slate-900 text-xs text-slate-50 hover:bg-slate-800"
                   onClick={handleSaveEdit}
+                  disabled={uploadingEdit}
+                  className="flex-1 bg-slate-900 hover:bg-slate-800"
                 >
-                  Save changes
+                  {uploadingEdit ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Uploading...
+                    </>
+                  ) : (
+                    "Save"
+                  )}
                 </Button>
               </div>
             </div>

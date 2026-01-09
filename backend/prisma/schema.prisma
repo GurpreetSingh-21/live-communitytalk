@@ -133,6 +133,7 @@ model Community {
   description String?
   isPrivate   Boolean @default(false)
   tags        String[]
+  imageUrl    String? // Community flag/logo image (Cloudinary URL)
 
   createdBy   String? // ID of creator (optional)
 

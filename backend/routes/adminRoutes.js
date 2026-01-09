@@ -209,6 +209,120 @@ router.get('/communities', authenticate, requireModerator, async (req, res) => {
 });
 
 /**
+ * @route   POST /api/admin/communities
+ * @desc    Create a new community
+ * @access  Admin/Mod
+ */
+router.post('/communities', authenticate, requireModerator, async (req, res) => {
+    try {
+        const { name, type, key, isPrivate, tags, imageUrl } = req.body;
+
+        if (!name || !name.trim()) {
+            return res.status(400).json({ error: 'Community name is required' });
+        }
+
+        // Generate key from name if not provided
+        const communityKey = key?.trim() || name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+        // Generate slug
+        const slug = communityKey;
+
+        // Check for duplicate key
+        const existing = await prisma.community.findFirst({
+            where: { OR: [{ key: communityKey }, { slug }] }
+        });
+
+        if (existing) {
+            return res.status(400).json({ error: 'A community with this key already exists' });
+        }
+
+        const community = await prisma.community.create({
+            data: {
+                name: name.trim(),
+                type: type || 'custom',
+                key: communityKey,
+                slug,
+                isPrivate: isPrivate || false,
+                tags: tags || [],
+                imageUrl: imageUrl || null,
+                createdBy: req.user.id
+            }
+        });
+
+        res.status(201).json({
+            ...community,
+            _id: community.id,
+            communityKey: community.key
+        });
+    } catch (error) {
+        console.error('POST /api/admin/communities error:', error);
+        return res.status(500).json({ error: 'Failed to create community' });
+    }
+});
+
+/**
+ * @route   PATCH /api/admin/communities/:id
+ * @desc    Update a community
+ * @access  Admin/Mod
+ */
+router.patch('/communities/:id', authenticate, requireModerator, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, key, isPrivate, tags, imageUrl } = req.body;
+
+        const existing = await prisma.community.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ error: 'Community not found' });
+        }
+
+        const updateData = {};
+
+        if (name !== undefined) updateData.name = name.trim();
+        if (key !== undefined) updateData.key = key.trim();
+        if (isPrivate !== undefined) updateData.isPrivate = isPrivate;
+        if (tags !== undefined) updateData.tags = tags;
+        if (imageUrl !== undefined) updateData.imageUrl = imageUrl;
+
+        const community = await prisma.community.update({
+            where: { id },
+            data: updateData
+        });
+
+        res.status(200).json({
+            ...community,
+            _id: community.id,
+            communityKey: community.key
+        });
+    } catch (error) {
+        console.error('PATCH /api/admin/communities/:id error:', error);
+        return res.status(500).json({ error: 'Failed to update community' });
+    }
+});
+
+/**
+ * @route   DELETE /api/admin/communities/:id
+ * @desc    Delete a community
+ * @access  Admin/Mod
+ */
+router.delete('/communities/:id', authenticate, requireModerator, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const existing = await prisma.community.findUnique({ where: { id } });
+        if (!existing) {
+            return res.status(404).json({ error: 'Community not found' });
+        }
+
+        await prisma.community.delete({ where: { id } });
+
+        res.status(200).json({ message: 'Community deleted successfully' });
+    } catch (error) {
+        console.error('DELETE /api/admin/communities/:id error:', error);
+        return res.status(500).json({ error: 'Failed to delete community' });
+    }
+});
+
+/**
  * @route   GET /api/admin/dashboard/stats
  * @desc    Get moderation dashboard statistics
  * @access  Admin/Mod
