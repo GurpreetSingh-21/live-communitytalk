@@ -47,6 +47,7 @@ import {
   ImagePlus,
   X,
   Loader2,
+  Flag,
 } from "lucide-react";
 
 type CommunityType = "college" | "religion" | "custom";
@@ -109,8 +110,18 @@ export default function AdminCommunitiesPage() {
   const [editImagePreview, setEditImagePreview] = useState("");
   const [uploadingEdit, setUploadingEdit] = useState(false);
 
+  // Bulk update state
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [uniqueNames, setUniqueNames] = useState<{ name: string; count: number }[]>([]);
+  const [selectedBulkName, setSelectedBulkName] = useState("");
+  const [bulkImageUrl, setBulkImageUrl] = useState("");
+  const [bulkImagePreview, setBulkImagePreview] = useState("");
+  const [uploadingBulk, setUploadingBulk] = useState(false);
+  const [bulkUpdating, setBulkUpdating] = useState(false);
+
   const newImageInputRef = useRef<HTMLInputElement>(null);
   const editImageInputRef = useRef<HTMLInputElement>(null);
+  const bulkImageInputRef = useRef<HTMLInputElement>(null);
 
   const [meta, setMeta] = useState<{
     total: number;
@@ -205,6 +216,65 @@ export default function AdminCommunitiesPage() {
       toast.success("Image uploaded");
     } else {
       setEditImagePreview(editImageUrl); // Revert to original
+    }
+  };
+
+  const handleBulkImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const previewUrl = URL.createObjectURL(file);
+    setBulkImagePreview(previewUrl);
+
+    setUploadingBulk(true);
+    const url = await uploadImage(file);
+    setUploadingBulk(false);
+
+    if (url) {
+      setBulkImageUrl(url);
+      toast.success("Image uploaded");
+    } else {
+      setBulkImagePreview("");
+    }
+  };
+
+  const loadUniqueNames = async () => {
+    try {
+      const { data } = await adminApi.get("/api/admin/communities/names");
+      setUniqueNames(data.names || []);
+    } catch (err) {
+      console.error("Failed to load unique names", err);
+    }
+  };
+
+  const handleOpenBulkDialog = async () => {
+    setSelectedBulkName("");
+    setBulkImageUrl("");
+    setBulkImagePreview("");
+    await loadUniqueNames();
+    setBulkDialogOpen(true);
+  };
+
+  const handleBulkUpdate = async () => {
+    if (!selectedBulkName || !bulkImageUrl) {
+      toast.error("Select a community name and upload an image");
+      return;
+    }
+
+    setBulkUpdating(true);
+    try {
+      const { data } = await adminApi.patch("/api/admin/communities/bulk/image", {
+        communityName: selectedBulkName,
+        imageUrl: bulkImageUrl,
+      });
+      toast.success(`Updated ${data.count} communities!`);
+      setBulkDialogOpen(false);
+      await loadCommunities();
+    } catch (err: any) {
+      console.error("Bulk update error", err);
+      toast.error(err?.response?.data?.error || "Failed to update communities");
+    } finally {
+      setBulkUpdating(false);
     }
   };
 
@@ -384,16 +454,26 @@ export default function AdminCommunitiesPage() {
               Manage college, religion, and custom community spaces
             </p>
           </div>
-          <Button
-            onClick={() => {
-              resetCreateForm();
-              setCreating(true);
-            }}
-            className="h-10 gap-2 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
-          >
-            <Plus className="h-4 w-4" />
-            New Community
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              onClick={handleOpenBulkDialog}
+              className="h-10 gap-2 rounded-lg px-4 text-sm font-medium"
+            >
+              <Flag className="h-4 w-4" />
+              Bulk Update Flag
+            </Button>
+            <Button
+              onClick={() => {
+                resetCreateForm();
+                setCreating(true);
+              }}
+              className="h-10 gap-2 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white shadow-sm hover:bg-slate-800"
+            >
+              <Plus className="h-4 w-4" />
+              New Community
+            </Button>
+          </div>
         </div>
 
         {/* Stats Grid */}
@@ -484,8 +564,8 @@ export default function AdminCommunitiesPage() {
                       key={type}
                       onClick={() => setTypeFilter(type as any)}
                       className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${typeFilter === type
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-600 hover:text-slate-900"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
                         }`}
                     >
                       {type === "all" ? "All" : typeLabels[type as CommunityType]}
@@ -500,8 +580,8 @@ export default function AdminCommunitiesPage() {
                       key={privacy}
                       onClick={() => setPrivacyFilter(privacy as any)}
                       className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${privacyFilter === privacy
-                          ? "bg-white text-slate-900 shadow-sm"
-                          : "text-slate-600 hover:text-slate-900"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
                         }`}
                     >
                       {privacy.charAt(0).toUpperCase() + privacy.slice(1)}
@@ -565,10 +645,10 @@ export default function AdminCommunitiesPage() {
                     ) : (
                       <div
                         className={`flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg ${c.type === "college"
-                            ? "bg-blue-100 text-blue-700"
-                            : c.type === "religion"
-                              ? "bg-purple-100 text-purple-700"
-                              : "bg-orange-100 text-orange-700"
+                          ? "bg-blue-100 text-blue-700"
+                          : c.type === "religion"
+                            ? "bg-purple-100 text-purple-700"
+                            : "bg-orange-100 text-orange-700"
                           }`}
                       >
                         {c.type === "college" && <Building2 className="h-5 w-5" />}
@@ -596,10 +676,10 @@ export default function AdminCommunitiesPage() {
                           <Badge
                             variant="outline"
                             className={`border ${c.type === "college"
-                                ? "border-blue-200 bg-blue-50 text-blue-700"
-                                : c.type === "religion"
-                                  ? "border-purple-200 bg-purple-50 text-purple-700"
-                                  : "border-orange-200 bg-orange-50 text-orange-700"
+                              ? "border-blue-200 bg-blue-50 text-blue-700"
+                              : c.type === "religion"
+                                ? "border-purple-200 bg-purple-50 text-purple-700"
+                                : "border-orange-200 bg-orange-50 text-orange-700"
                               }`}
                           >
                             {typeLabels[c.type]}
@@ -930,6 +1010,119 @@ export default function AdminCommunitiesPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Update Flag Dialog */}
+      <Dialog open={bulkDialogOpen} onOpenChange={setBulkDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bulk Update Flag</DialogTitle>
+            <DialogDescription>
+              Update flag/logo for all communities with the same name
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-4">
+            {/* Community Name Selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">
+                Community Name
+              </label>
+              <Select value={selectedBulkName} onValueChange={setSelectedBulkName}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select community name..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {uniqueNames.map((item) => (
+                    <SelectItem key={item.name} value={item.name}>
+                      {item.name} ({item.count} communities)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedBulkName && (
+                <p className="text-xs text-slate-500">
+                  This will update all communities named "{selectedBulkName}"
+                </p>
+              )}
+            </div>
+
+            {/* Image Upload */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">Flag/Logo</label>
+              <div className="flex items-center gap-4">
+                {bulkImagePreview ? (
+                  <div className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200">
+                    <Image
+                      src={bulkImagePreview}
+                      alt="Preview"
+                      fill
+                      className="object-cover"
+                    />
+                    {uploadingBulk && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                        <Loader2 className="h-5 w-5 animate-spin text-slate-600" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkImagePreview("");
+                        setBulkImageUrl("");
+                      }}
+                      className="absolute right-1 top-1 rounded-full bg-slate-900/70 p-1 text-white hover:bg-slate-900"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => bulkImageInputRef.current?.click()}
+                    className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-slate-200 text-slate-400 transition-colors hover:border-slate-300 hover:text-slate-500"
+                  >
+                    <ImagePlus className="h-6 w-6" />
+                  </button>
+                )}
+                <input
+                  ref={bulkImageInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleBulkImageSelect}
+                />
+                <div className="text-xs text-slate-500">
+                  <p>Upload a flag or logo</p>
+                  <p className="text-slate-400">This will apply to all matching communities</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => setBulkDialogOpen(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleBulkUpdate}
+                disabled={uploadingBulk || bulkUpdating || !selectedBulkName || !bulkImageUrl}
+                className="flex-1 bg-slate-900 hover:bg-slate-800"
+              >
+                {bulkUpdating ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  "Update All"
+                )}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
