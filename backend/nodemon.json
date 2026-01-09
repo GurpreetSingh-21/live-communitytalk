@@ -1,0 +1,13 @@
+{
+    "ignore": [
+        "*.json",
+        "logs/*",
+        "uploads/*",
+        "load-test-results.json",
+        "test-results/*",
+        "coverage/*",
+        ".git/*",
+        "temp/*"
+    ],
+    "ext": "js,mjs,cjs,json"
+}

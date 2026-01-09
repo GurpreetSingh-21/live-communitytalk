@@ -3,7 +3,7 @@
     "name": "Campustry",
     "slug": "campustry",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./public/logo.png",
     "scheme": "communitytalkmobile",
     "userInterfaceStyle": "automatic",

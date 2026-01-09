@@ -10,7 +10,7 @@ import {
   RefreshControl,
   useColorScheme,
   Animated,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { LinearGradient } from "expo-linear-gradient";
@@ -23,7 +23,7 @@ import { useSocket } from "@/src/context/SocketContext";
 import { AuthContext } from "@/src/context/AuthContext";
 
 
-const { width } = Dimensions.get("window");
+
 
 /* ----------------------------- THEME HOOK ----------------------------- */
 const useTheme = () => {
@@ -81,6 +81,7 @@ const Floating = ({ children, delay = 0, range = 8 }: any) => {
 /* ------------------------------ BACKDROP MESH ------------------------------ */
 const MeshBackground = () => {
   const { colors, isDark } = useTheme();
+  const { width } = useWindowDimensions();
   const a = React.useRef(new Animated.Value(0)).current;
   const b = React.useRef(new Animated.Value(0)).current;
 
