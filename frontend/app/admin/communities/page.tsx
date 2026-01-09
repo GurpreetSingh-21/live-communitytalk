@@ -639,6 +639,7 @@ export default function AdminCommunitiesPage() {
                           src={c.imageUrl}
                           alt={c.name}
                           fill
+                          sizes="48px"
                           className="object-cover"
                         />
                       </div>
@@ -767,6 +768,7 @@ export default function AdminCommunitiesPage() {
                       src={newImagePreview}
                       alt="Preview"
                       fill
+                      sizes="80px"
                       className="object-cover"
                     />
                     {uploadingNew && (
@@ -906,6 +908,7 @@ export default function AdminCommunitiesPage() {
                         src={editImagePreview}
                         alt="Preview"
                         fill
+                        sizes="80px"
                         className="object-cover"
                       />
                       {uploadingEdit && (
@@ -1058,6 +1061,7 @@ export default function AdminCommunitiesPage() {
                       src={bulkImagePreview}
                       alt="Preview"
                       fill
+                      sizes="80px"
                       className="object-cover"
                     />
                     {uploadingBulk && (

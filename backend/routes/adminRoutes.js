@@ -261,6 +261,80 @@ router.post('/communities', authenticate, requireModerator, async (req, res) => 
 });
 
 /**
+ * @route   PATCH /api/admin/communities/bulk/image
+ * @desc    Bulk update images for communities matching a name pattern
+ * @access  Admin/Mod
+ * IMPORTANT: This route MUST come before /communities/:id to avoid route conflicts
+ */
+router.patch('/communities/bulk/image', authenticate, requireModerator, async (req, res) => {
+    try {
+        const { communityName, imageUrl } = req.body;
+
+        if (!communityName || !imageUrl) {
+            return res.status(400).json({ error: 'communityName and imageUrl are required' });
+        }
+
+        // Find all communities with the matching name (case-insensitive)
+        const communities = await prisma.community.findMany({
+            where: {
+                name: { equals: communityName, mode: 'insensitive' }
+            }
+        });
+
+        if (communities.length === 0) {
+            return res.status(404).json({ error: 'No communities found with that name' });
+        }
+
+        // Update all matching communities
+        const result = await prisma.community.updateMany({
+            where: {
+                name: { equals: communityName, mode: 'insensitive' }
+            },
+            data: { imageUrl }
+        });
+
+        res.status(200).json({
+            message: `Updated ${result.count} communities`,
+            count: result.count
+        });
+    } catch (error) {
+        console.error('PATCH /api/admin/communities/bulk/image error:', error);
+        return res.status(500).json({ error: 'Failed to bulk update communities' });
+    }
+});
+
+/**
+ * @route   GET /api/admin/communities/names
+ * @desc    Get unique community names for bulk operations
+ * @access  Admin/Mod
+ * IMPORTANT: This route MUST come before /communities/:id to avoid route conflicts
+ */
+router.get('/communities/names', authenticate, requireModerator, async (req, res) => {
+    try {
+        const communities = await prisma.community.findMany({
+            select: { name: true },
+            orderBy: { name: 'asc' }
+        });
+
+        // Get unique names with counts
+        const nameMap = communities.reduce((acc, c) => {
+            acc[c.name] = (acc[c.name] || 0) + 1;
+            return acc;
+        }, {});
+
+        const uniqueNames = Object.entries(nameMap).map(([name, count]) => ({
+            name,
+            count
+        })).sort((a, b) => a.name.localeCompare(b.name));
+
+        res.status(200).json({ names: uniqueNames });
+    } catch (error) {
+        console.error('GET /api/admin/communities/names error:', error);
+        return res.status(500).json({ error: 'Failed to get community names' });
+    }
+});
+
+/**
  * @route   PATCH /api/admin/communities/:id
  * @desc    Update a community
  * @access  Admin/Mod
@@ -319,78 +393,6 @@ router.delete('/communities/:id', authenticate, requireModerator, async (req, re
     } catch (error) {
         console.error('DELETE /api/admin/communities/:id error:', error);
         return res.status(500).json({ error: 'Failed to delete community' });
-    }
-});
-
-/**
- * @route   PATCH /api/admin/communities/bulk/image
- * @desc    Bulk update images for communities matching a name pattern
- * @access  Admin/Mod
- */
-router.patch('/communities/bulk/image', authenticate, requireModerator, async (req, res) => {
-    try {
-        const { communityName, imageUrl } = req.body;
-
-        if (!communityName || !imageUrl) {
-            return res.status(400).json({ error: 'communityName and imageUrl are required' });
-        }
-
-        // Find all communities with the matching name (case-insensitive)
-        const communities = await prisma.community.findMany({
-            where: {
-                name: { equals: communityName, mode: 'insensitive' }
-            }
-        });
-
-        if (communities.length === 0) {
-            return res.status(404).json({ error: 'No communities found with that name' });
-        }
-
-        // Update all matching communities
-        const result = await prisma.community.updateMany({
-            where: {
-                name: { equals: communityName, mode: 'insensitive' }
-            },
-            data: { imageUrl }
-        });
-
-        res.status(200).json({
-            message: `Updated ${result.count} communities`,
-            count: result.count
-        });
-    } catch (error) {
-        console.error('PATCH /api/admin/communities/bulk/image error:', error);
-        return res.status(500).json({ error: 'Failed to bulk update communities' });
-    }
-});
-
-/**
- * @route   GET /api/admin/communities/names
- * @desc    Get unique community names for bulk operations
- * @access  Admin/Mod
- */
-router.get('/communities/names', authenticate, requireModerator, async (req, res) => {
-    try {
-        const communities = await prisma.community.findMany({
-            select: { name: true },
-            orderBy: { name: 'asc' }
-        });
-
-        // Get unique names with counts
-        const nameMap = communities.reduce((acc, c) => {
-            acc[c.name] = (acc[c.name] || 0) + 1;
-            return acc;
-        }, {});
-
-        const uniqueNames = Object.entries(nameMap).map(([name, count]) => ({
-            name,
-            count
-        })).sort((a, b) => a.name.localeCompare(b.name));
-
-        res.status(200).json({ names: uniqueNames });
-    } catch (error) {
-        console.error('GET /api/admin/communities/names error:', error);
-        return res.status(500).json({ error: 'Failed to get community names' });
     }
 });
 
