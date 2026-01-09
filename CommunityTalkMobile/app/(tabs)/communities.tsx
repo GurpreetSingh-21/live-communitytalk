@@ -12,6 +12,7 @@ import {
   View,
   Text,
   RefreshControl,
+  Image,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
@@ -51,6 +52,7 @@ type CommunityThread = {
   id: string;
   name: string;
   avatar: string;
+  imageUrl?: string; // Cloudinary image URL from admin panel
   lastMsg: MessageContent;
   lastAt: number;
   unread?: number;
@@ -277,7 +279,7 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                 pointerEvents="none"
               />
 
-              {/* Modern Avatar with gradient background */}
+              {/* Modern Avatar with gradient background or Image */}
               <View style={{
                 width: 52,
                 height: 52,
@@ -286,8 +288,17 @@ const CommunityRow = React.memo(({ item, onDelete, onPinToggle, onOpen, now }: R
                 alignItems: 'center',
                 justifyContent: 'center',
                 marginRight: 12,
+                overflow: 'hidden',
               }}>
-                <Text style={{ fontSize: 26 }}>{item.avatar || '🏛️'}</Text>
+                {item.imageUrl ? (
+                  <Image
+                    source={{ uri: item.imageUrl }}
+                    style={{ width: 52, height: 52, borderRadius: 14 }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Text style={{ fontSize: 26 }}>{item.avatar || '🏛️'}</Text>
+                )}
 
                 {/* Pinned indicator */}
                 {item.pinned && (
@@ -421,6 +432,7 @@ export default function CommunitiesScreen(): React.JSX.Element {
         id: item.id,
         name: item.name,
         avatar: item.avatar || '🏛️',
+        imageUrl: item.imageUrl || null, // Include image URL from backend
         lastMsg: item.lastMsg,
         lastAt: item.lastAt,
         unread: item.unread || 0,

@@ -142,6 +142,7 @@ router.get("/my-threads", async (req, res) => {
           select: {
             id: true,
             name: true,
+            imageUrl: true, // Include the image URL from admin uploads
             updatedAt: true,
             createdAt: true,
             // pinned: true, // Not in schema
@@ -219,7 +220,8 @@ router.get("/my-threads", async (req, res) => {
       return {
         id: c.id,
         name: c.name,
-        avatar: "🏛️", // Hardcoded for now
+        avatar: "🏛️", // Fallback emoji for mobile display
+        imageUrl: c.imageUrl || null, // Cloudinary image URL from admin panel
         lastMsg,
         lastAt,
         unread,
