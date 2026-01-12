@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Campustry",
-    "slug": "campustry",
+    "slug": "campustry-debugdragons",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./public/logo.png",
@@ -66,9 +66,8 @@
       "API_URL_PROD": "http://localhost:3000",
       "router": {},
       "eas": {
-        "projectId": "fc828742-1044-46ce-a60e-65d1acd26002"
+        "projectId": "f68cb752-501d-4545-a5fd-5a5cbfb85f5d"
       }
-    },
-    "owner": "debugdragons4"
+    }
   }
 }
