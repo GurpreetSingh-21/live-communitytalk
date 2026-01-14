@@ -214,7 +214,8 @@ model Message {
   readAt          DateTime?
 
   // Sender info (snapshot)
-  senderName String // Captured at send time
+  senderName   String // Captured at send time
+  senderAvatar String @default("/default-avatar.png") // 🚀 PERFORMANCE: Denormalized for fast queries
 
   // Relations
   senderId    String
@@ -234,6 +235,7 @@ model Message {
   reactions Reaction[]
 
   @@index([communityId, createdAt(sort: Desc)])
+  @@index([senderId])  // 🚀 PERFORMANCE: Optimize sender queries
   @@map("messages")
 }
 
@@ -288,6 +290,7 @@ model DirectMessage {
   reactions DirectMessageReaction[]
 
   @@index([fromId, toId, createdAt])
+  @@index([toId, status])  // 🚀 PERFORMANCE: Optimize unread count queries
   @@map("direct_messages")
 }
 

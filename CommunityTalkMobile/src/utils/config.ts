@@ -1,5 +1,6 @@
 // CommunityTalkMobile/src/utils/config.ts
 import Constants from "expo-constants";
+import { logger } from "./logger";
 
 /**
  * Priority (highest → lowest):
@@ -68,17 +69,17 @@ function resolveBaseUrl(): string {
 
   // Final validation fallback
   if (!isValidHttp(chosen)) {
-    console.warn(
-      `[config] ❌ Invalid API base URL resolved ('${chosen}'). Falling back to production fallback.`
+    logger.warn(
+      `Invalid API base URL resolved ('${chosen}'). Falling back to production fallback.`
     );
     chosen = "https://photophilous-britney-uppishly.ngrok-free.dev";
   }
 
   if (__DEV__) {
-    console.log("[config:debug] fromEnv   =", fromEnv || "<undefined>");
-    console.log("[config:debug] fromExtra =", fromExtra || "<undefined>");
-    console.log("[config:debug] fromLegacy=", fromLegacy || "<undefined>");
-    console.log("[config:debug] chosen    =", chosen);
+    logger.debug("[config:debug] fromEnv   =", fromEnv || "<undefined>");
+    logger.debug("[config:debug] fromExtra =", fromExtra || "<undefined>");
+    logger.debug("[config:debug] fromLegacy=", fromLegacy || "<undefined>");
+    logger.debug("[config:debug] chosen    =", chosen);
   }
 
   return chosen;
@@ -95,19 +96,19 @@ export const API_BASE_URL = resolveBaseUrl();
    ──────────────────────────────────────────────────────────── */
 if (__DEV__) {
   if (!API_BASE_URL) {
-    console.warn(
-      "[config] ❌ API_BASE_URL is empty. Set EXPO_PUBLIC_API_BASE_URL or expo.extra.EXPO_PUBLIC_API_BASE_URL."
+    logger.warn(
+      "API_BASE_URL is empty. Set EXPO_PUBLIC_API_BASE_URL or expo.extra.EXPO_PUBLIC_API_BASE_URL."
     );
   } else if (
     API_BASE_URL.includes("localhost") ||
     API_BASE_URL.includes("127.0.0.1")
   ) {
-    console.warn(
-      `[config] ⚠️ Using '${API_BASE_URL}' → this will likely fail on a physical device.\n` +
+    logger.warn(
+      `Using '${API_BASE_URL}' → this will likely fail on a physical device.\n` +
       "1. Tweak '.env' (see .env.example) to set EXPO_PUBLIC_API_BASE_URL=https://your-ngrok-url.ngrok-free.dev\n" +
       "2. Or ensure you are running on a Simulator which can reach localhost."
     );
   } else {
-    console.log("[config] ✅ Using API_BASE_URL →", API_BASE_URL);
+    logger.info("Using API_BASE_URL →", API_BASE_URL);
   }
 }

@@ -128,56 +128,51 @@ router.get("/", async (req, res) => {
       if (headers.length >= limit) break;
     }
 
-    // Enrich with User info
+    // 🚀 PERFORMANCE: Fetch users and unread counts in parallel
     const partnerIds = headers.map(h => h.partnerId);
-
-    const users = await prisma.user.findMany({
-      where: { id: { in: partnerIds } },
-      select: { id: true, fullName: true, email: true, avatar: true }
-    });
+    
+    const [users, unreadCounts] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: partnerIds } },
+        select: { id: true, fullName: true, email: true, avatar: true }
+      }),
+      prisma.directMessage.groupBy({
+        by: ['fromId'],
+        where: {
+          toId: me,
+          fromId: { in: partnerIds },
+          status: { in: ['sent', 'edited'] }
+        },
+        _count: true
+      })
+    ]);
+    
     const userMap = new Map(users.map(u => [u.id, u]));
+    const unreadMap = new Map(unreadCounts.map(u => [u.fromId, u._count]));
 
-    // Filter by Q if present (in memory, inefficient but acceptable given 'limit' applied before search?)
-    // Original Mongoose code applied Q *after* grouping but *before* limiting final result?
-    // Actually Mongoose pipeline: Match -> Sort -> Group -> Lookup -> Unwind -> Search Filter -> Slice.
-    // So it searches *all* conversations.
-    // My JS approach only searches top 1000 messages. If I chatted with "Zelda" 2 years ago, she won't show up here if I have 1000 newer messages.
-    // This is a trade-off. For scalable inbox, use Search Engine (future). 
-    // For now, JS is fine for MVP migration.
-
+    // Map headers to normalized conversations
     let normalized = headers.map(h => {
       const u = userMap.get(h.partnerId);
       return {
         ...h,
         fullName: u?.fullName || u?.email || "Unknown User",
-        firstName: u?.firstName, // helper
-        lastName: u?.lastName, // helper
+        firstName: u?.firstName,
+        lastName: u?.lastName,
         email: u?.email || "",
         avatar: u?.avatar || "/default-avatar.png",
         hasAttachment: Array.isArray(h.lastAttachments) && h.lastAttachments.length > 0
       };
     });
 
+    // Filter by search query if present
     if (q) {
       const rx = new RegExp(q, "i");
       normalized = normalized.filter(h =>
-        rx.test(h.fullName) || rx.test(h.email) // || rx.test(h.firstName) etc
+        rx.test(h.fullName) || rx.test(h.email)
       );
     }
 
-    // Fetch Unread Counts (only for displayed items)
-    // where toId = me, fromId = partner, status = sent|edited
-    const unreadCounts = await prisma.directMessage.groupBy({
-      by: ['fromId'],
-      where: {
-        toId: me,
-        fromId: { in: partnerIds },
-        status: { in: ['sent', 'edited'] }
-      },
-      _count: true
-    });
-
-    const unreadMap = new Map(unreadCounts.map(u => [u.fromId, u._count]));
+    // Add unread counts
 
     normalized = normalized.map(h => ({
       ...h,
@@ -309,21 +304,20 @@ const handleSend = async (req, res) => {
     if (!text && cleanAttachments.length === 0)
       return res.status(400).json({ error: "Message content or attachments required" });
 
-    // Anti-spam: Check exists
-    const hasReplied = await prisma.directMessage.findFirst({
-      where: { fromId: to, toId: from }
-    });
-
-    if (!hasReplied) {
-      // Count my sent messages
-      const mySentCount = await prisma.directMessage.count({
+    // 🚀 PERFORMANCE: Parallelize anti-spam checks
+    const [hasReplied, mySentCount] = await Promise.all([
+      prisma.directMessage.findFirst({
+        where: { fromId: to, toId: from }
+      }),
+      prisma.directMessage.count({
         where: { fromId: from, toId: to }
+      })
+    ]);
+
+    if (!hasReplied && mySentCount >= 5) {
+      return res.status(403).json({
+        error: "You cannot send more messages until the user replies."
       });
-      if (mySentCount >= 5) {
-        return res.status(403).json({
-          error: "You cannot send more messages until the user replies."
-        });
-      }
     }
 
     const dm = await prisma.directMessage.create({

@@ -146,12 +146,11 @@ async function authenticate(req, res, next) {
       createdAt: userDoc.createdAt,
     };
 
-    // If scope missing on the person record, derive from memberships (non-persistent)
-    if (!user.collegeSlug || !user.religionKey) {
-      const derived = await deriveUserScope(userDoc);
-      user.collegeSlug = user.collegeSlug || derived.collegeSlug;
-      user.religionKey = user.religionKey || derived.religionKey;
-    }
+    // 🚀 PERFORMANCE FIX: Removed expensive deriveUserScope()
+    // Previously ran 2 DB queries (Member + Community) on EVERY authenticated request
+    // This added 100-250ms to every API call
+    // These fields should be set on the user record at registration/login
+    // If missing, routes that need them can handle it individually
 
     req.user = user;
     req.userDoc = userDoc;

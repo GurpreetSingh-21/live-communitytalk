@@ -62,8 +62,8 @@
       "reactCompiler": true
     },
     "extra": {
-      "API_URL_DEV": "",
-      "API_URL_PROD": "http://localhost:3000",
+      "API_URL_DEV": "http://localhost:3000",
+      "API_URL_PROD": "https://api.campustry.com",
       "router": {},
       "eas": {
         "projectId": "f68cb752-501d-4545-a5fd-5a5cbfb85f5d"

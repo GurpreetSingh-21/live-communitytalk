@@ -12,6 +12,25 @@ router.use((req, res, next) => {
 
 const ROOM = (id) => `community:${id}`;
 
+/* ───────────────────────── Cache Invalidation Helpers ───────────────────────── */
+/**
+ * 🚀 PERFORMANCE: Invalidate message cache for a community
+ */
+async function invalidateMessageCache(req, communityId) {
+  if (req.redisClient) {
+    try {
+      const pattern = `messages:${communityId}:*`;
+      const keys = await req.redisClient.keys(pattern);
+      if (keys.length > 0) {
+        await req.redisClient.del(...keys);
+        console.log(`[CACHE] Invalidated ${keys.length} message cache entries for ${communityId}`);
+      }
+    } catch (err) {
+      console.warn('[CACHE] Message invalidation failed:', err);
+    }
+  }
+}
+
 /* ───────────────────────── helpers ───────────────────────── */
 async function assertCommunityAndMembership(communityId, userId) {
   // 🚀 PERFORMANCE: Run both queries in parallel
@@ -81,6 +100,7 @@ router.post("/", async (req, res) => {
         communityId: communityId,
         senderId: req.user.id,
         senderName: req.user.fullName || req.user.email || "Unknown",
+        senderAvatar: req.user.avatar || "/default-avatar.png", // 🚀 PERFORMANCE: Capture avatar at send time
         content: String(content),
         attachments: parsedAttachments, // JSONB
         replyToSnapshot: replyTo || undefined, // JSONB, store snapshot
@@ -138,6 +158,9 @@ router.post("/", async (req, res) => {
     // 6) Push notifications (EXPO)
     sendPushNotificationsAsync(communityId, req.user, msg).catch(() => { });
 
+    // 🚀 PERFORMANCE: Invalidate message cache
+    await invalidateMessageCache(req, communityId);
+
     return res.status(201).json(payload);
   } catch (error) {
     console.error("POST /api/messages error:", error);
@@ -153,32 +176,34 @@ router.post("/", async (req, res) => {
  */
 async function sendPushNotificationsAsync(communityId, sender, message) {
   try {
-    // Get active members (except sender)
-    const members = await prisma.member.findMany({
-      where: {
-        communityId: communityId,
-        userId: { not: sender.id },
-        memberStatus: { in: ['active', 'owner'] } // Prisma uses arrays for in/notIn
-      },
-      select: { userId: true }
-    });
+    // 🚀 PERFORMANCE: Parallelize member and community queries
+    const [members, community] = await Promise.all([
+      prisma.member.findMany({
+        where: {
+          communityId: communityId,
+          userId: { not: sender.id },
+          memberStatus: { in: ['active', 'owner'] }
+        },
+        select: { userId: true }
+      }),
+      prisma.community.findUnique({ 
+        where: { id: communityId }, 
+        select: { name: true } 
+      })
+    ]);
 
     const recipientIds = [...new Set(members.map(m => m.userId))];
     if (recipientIds.length === 0) return;
 
     // Fetch users with push tokens
     const recipients = await prisma.user.findMany({
-      where: {
-        id: { in: recipientIds },
-      },
+      where: { id: { in: recipientIds }},
       select: { id: true, pushTokens: true, fullName: true }
     });
 
     const validRecipients = recipients.filter(r => r.pushTokens && r.pushTokens.length > 0);
-
     if (validRecipients.length === 0) return;
 
-    const community = await prisma.community.findUnique({ where: { id: communityId }, select: { name: true } });
     const communityName = community?.name || "Community";
     const senderName = sender.fullName || "Someone";
     const truncatedMessage =
@@ -226,27 +251,37 @@ router.get("/:communityId", async (req, res) => {
     let before = req.query.before ? new Date(req.query.before) : new Date();
     if (isNaN(before.getTime())) before = new Date();
 
+    // 🚀 PERFORMANCE: Check Redis cache first (30s TTL)
+    const cacheKey = `messages:${communityId}:${limit}:${before.getTime()}`;
+    if (req.redisClient) {
+      try {
+        const cached = await req.redisClient.get(cacheKey);
+        if (cached) {
+          console.log(`[CACHE HIT] Message history for ${communityId}`);
+          return res.status(200).json(JSON.parse(cached));
+        }
+      } catch (cacheErr) {
+        console.warn('[CACHE ERROR] Message history read failed:', cacheErr);
+      }
+    }
+
+    // 🚀 PERFORMANCE: No JOIN - use denormalized senderName field
     const docs = await prisma.message.findMany({
       where: {
         communityId: communityId,
         createdAt: { lt: before }
       },
       take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        sender: {
-          select: { avatar: true, fullName: true }
-        }
-      }
+      orderBy: { createdAt: 'desc' }
     });
 
     // Map to frontend shape
     const results = docs.map((msg) => ({
       _id: msg.id,
       id: msg.id,
-      sender: msg.sender?.fullName || msg.senderName,
+      sender: msg.senderName,  // Use denormalized field
       senderId: msg.senderId,
-      avatar: msg.sender?.avatar || "/default-avatar.png",  // ✅ Real avatar from join!
+      avatar: msg.senderAvatar,  // 🚀 PERFORMANCE: Use denormalized avatar (no JOIN!)
       content: msg.content,
       timestamp: msg.createdAt,
       communityId: msg.communityId,
@@ -265,7 +300,18 @@ router.get("/:communityId", async (req, res) => {
     // `include: { sender: { select: { avatar: true } } }`
     // Let's do that for better UX.
 
-    return res.status(200).json(results.reverse());
+    const reversedResults = results.reverse();
+
+    // 🚀 PERFORMANCE: Cache results for 30 seconds
+    if (req.redisClient) {
+      try {
+        await req.redisClient.setex(cacheKey, 30, JSON.stringify(reversedResults));
+      } catch (cacheErr) {
+        console.warn('[CACHE ERROR] Message history write failed:', cacheErr);
+      }
+    }
+
+    return res.status(200).json(reversedResults);
   } catch (error) {
     console.error("GET /api/messages/:communityId error:", error);
     return res.status(500).json({ error: "Server Error" });

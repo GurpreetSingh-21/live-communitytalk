@@ -7,6 +7,7 @@ import 'react-native-get-random-values';
 import nacl from 'tweetnacl';
 import { encodeBase64, decodeBase64 } from 'tweetnacl-util';
 import * as SecureStore from 'expo-secure-store';
+import { e2eeLogger as logger } from './logger';
 
 const PUB_KEY = 'e2ee_public_key';
 const SEC_KEY = 'e2ee_secret_key';
@@ -31,7 +32,7 @@ export async function getOrCreateKeyPair(): Promise<{ publicKey: string; secretK
   await SecureStore.setItemAsync(PUB_KEY, publicKey);
   await SecureStore.setItemAsync(SEC_KEY, secretKey);
 
-  console.log('🔐 [E2EE] New keypair generated');
+  logger.info('New keypair generated');
   return { publicKey, secretKey };
 }
 
@@ -90,7 +91,7 @@ export async function encryptMessage(
 
     return encodeBase64(fullMessage);
   } catch (err) {
-    console.warn('🔐 [E2EE] Encrypt failed:', err);
+    logger.warn('Encrypt failed:', err);
     return null;
   }
 }
@@ -107,27 +108,26 @@ export async function decryptMessage(
   senderPublicKeyB64: string
 ): Promise<string> {
   if (!cipherTextB64 || !senderPublicKeyB64) {
-    console.warn('🔐 [Decrypt] Missing input - cipher:', !!cipherTextB64, 'publicKey:', !!senderPublicKeyB64);
+    logger.warn('Missing input - cipher:', !!cipherTextB64, 'publicKey:', !!senderPublicKeyB64);
     return '[Locked]';
   }
 
   try {
     const secretKey = await getSecretKey();
     if (!secretKey) {
-      console.warn('🔐 [Decrypt] No secret key found in SecureStore');
+      logger.warn('No secret key found in SecureStore');
       return '[No Key]';
     }
 
-    console.log('🔐 [Decrypt] Input:', {
+    // 🚀 PERFORMANCE: Only log in dev mode
+    logger.debug('Input:', {
       cipherLen: cipherTextB64.length,
-      pubKeyLen: senderPublicKeyB64.length,
-      cipherStart: cipherTextB64.substring(0, 20) + '...',
-      pubKeyStart: senderPublicKeyB64.substring(0, 20) + '...'
+      pubKeyLen: senderPublicKeyB64.length
     });
 
     const messageWithNonce = decodeBase64(cipherTextB64);
     if (messageWithNonce.length < nacl.box.nonceLength) {
-      console.error('🔐 [Decrypt] Corrupt - message too short:', messageWithNonce.length, 'bytes');
+      logger.error('Corrupt - message too short:', messageWithNonce.length, 'bytes');
       return '[Corrupt]';
     }
 
@@ -135,7 +135,7 @@ export async function decryptMessage(
     const nonce = messageWithNonce.slice(0, nacl.box.nonceLength);
     const ciphertext = messageWithNonce.slice(nacl.box.nonceLength);
 
-    console.log('🔐 [Decrypt] Extracted - nonce:', nonce.length, 'bytes, cipher:', ciphertext.length, 'bytes');
+    logger.debug('Extracted - nonce:', nonce.length, 'bytes, cipher:', ciphertext.length, 'bytes');
 
     // Compute shared key
     const sharedKey = nacl.box.before(
@@ -143,21 +143,21 @@ export async function decryptMessage(
       decodeBase64(secretKey)
     );
 
-    console.log('🔐 [Decrypt] Shared key computed, attempting decryption...');
+    logger.debug('Shared key computed, attempting decryption...');
 
     // Decrypt with precomputed shared key
     const decrypted = nacl.box.open.after(ciphertext, nonce, sharedKey);
     if (!decrypted) {
-      console.error('🔐 [Decrypt] FAILED - nacl.box.open.after returned null');
-      console.error('🔐 [Decrypt] - This usually means key mismatch or corrupted ciphertext');
+      logger.error('FAILED - nacl.box.open.after returned null');
+      logger.error('This usually means key mismatch or corrupted ciphertext');
       return '[Decryption Failed]';
     }
 
     const result = new TextDecoder().decode(decrypted);
-    console.log('🔐 [Decrypt] ✅ SUCCESS -', result.substring(0, 30) + '...');
+    logger.debug('SUCCESS');
     return result;
   } catch (err) {
-    console.error('🔐 [Decrypt] Exception:', err);
+    logger.error('Exception:', err);
     return '[Error]';
   }
 }
@@ -177,7 +177,7 @@ export async function hasKeyPair(): Promise<boolean> {
 export async function clearKeys(): Promise<void> {
   await SecureStore.deleteItemAsync(PUB_KEY);
   await SecureStore.deleteItemAsync(SEC_KEY);
-  console.log('🔐 [E2EE] Keys cleared');
+  logger.info('Keys cleared');
 }
 
 /**
@@ -185,7 +185,7 @@ export async function clearKeys(): Promise<void> {
  * This will create new keys even if old ones exist
  */
 export async function forceRegenerateKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
-  console.log('🔐 [E2EE] Force regenerating keypair...');
+  logger.info('Force regenerating keypair...');
 
   // Clear old keys
   await SecureStore.deleteItemAsync(PUB_KEY);
@@ -199,7 +199,7 @@ export async function forceRegenerateKeyPair(): Promise<{ publicKey: string; sec
   await SecureStore.setItemAsync(PUB_KEY, publicKey);
   await SecureStore.setItemAsync(SEC_KEY, secretKey);
 
-  console.log('🔐 [E2EE] New keypair generated and stored');
+  logger.info('New keypair generated and stored');
   return { publicKey, secretKey };
 }
 
@@ -212,10 +212,10 @@ export async function ensureKeyPair(): Promise<{ publicKey: string; secretKey: s
   const existingSec = await SecureStore.getItemAsync(SEC_KEY);
 
   if (existingPub && existingSec) {
-    console.log('🔐 [E2EE] Keys verified in SecureStore');
+    logger.debug('Keys verified in SecureStore');
     return { publicKey: existingPub, secretKey: existingSec };
   }
 
-  console.log('🔐 [E2EE] Keys missing! Regenerating...');
+  logger.warn('Keys missing! Regenerating...');
   return await forceRegenerateKeyPair();
 }

@@ -9,6 +9,39 @@ router.use(authenticate);
 
 /* ───────────────── helpers ───────────────── */
 
+/**
+ * 🚀 PERFORMANCE: Invalidate threads cache for a user
+ */
+async function invalidateThreadsCache(req, userId) {
+  if (req.redisClient) {
+    try {
+      const cacheKey = `threads:${userId}`;
+      await req.redisClient.del(cacheKey);
+      console.log(`[CACHE] Invalidated threads cache for user ${userId}`);
+    } catch (err) {
+      console.warn('[CACHE] Threads invalidation failed:', err);
+    }
+  }
+}
+
+/**
+ * 🚀 PERFORMANCE: Invalidate member cache for a community
+ */
+async function invalidateMemberCache(req, communityId) {
+  if (req.redisClient) {
+    try {
+      const pattern = `members:${communityId}:*`;
+      const keys = await req.redisClient.keys(pattern);
+      if (keys.length > 0) {
+        await req.redisClient.del(...keys);
+        console.log(`[CACHE] Invalidated ${keys.length} member cache entries for ${communityId}`);
+      }
+    } catch (err) {
+      console.warn('[CACHE] Member invalidation failed:', err);
+    }
+  }
+}
+
 function isAdmin(req) {
   return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
   return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
@@ -130,6 +163,20 @@ router.get("/my-threads", async (req, res) => {
     const userId = req.user.id;
     console.log(`[PERF] my-threads START for user ${userId}`);
 
+    // 🚀 PERFORMANCE: Check Redis cache first (60s TTL)
+    const cacheKey = `threads:${userId}`;
+    if (req.redisClient) {
+      try {
+        const cached = await req.redisClient.get(cacheKey);
+        if (cached) {
+          console.log(`[CACHE HIT] Threads for user ${userId}`);
+          return res.json(JSON.parse(cached));
+        }
+      } catch (cacheErr) {
+        console.warn('[CACHE ERROR] Threads read failed:', cacheErr);
+      }
+    }
+
     // 1. Get all active memberships
     const t1 = Date.now();
     const members = await prisma.member.findMany({
@@ -230,7 +277,18 @@ router.get("/my-threads", async (req, res) => {
       };
     });
 
-    return res.json({ items: threads.filter(Boolean) });
+    const response = { items: threads.filter(Boolean) };
+
+    // 🚀 PERFORMANCE: Cache for 60 seconds
+    if (req.redisClient) {
+      try {
+        await req.redisClient.setex(cacheKey, 60, JSON.stringify(response));
+      } catch (cacheErr) {
+        console.warn('[CACHE ERROR] Threads write failed:', cacheErr);
+      }
+    }
+
+    return res.json(response);
   } catch (error) {
     console.error("GET /api/communities/my-threads error:", error);
     return res.status(500).json({ error: "Server Error" });
@@ -442,8 +500,11 @@ router.post("/:id/join", async (req, res) => {
 
     if (!personId) return res.status(401).json({ error: "Unauthorized" });
 
-    const community = await prisma.community.findUnique({ where: { id } });
-    const user = await prisma.user.findUnique({ where: { id: personId } });
+    // 🚀 PERFORMANCE: Parallelize community and user fetch
+    const [community, user] = await Promise.all([
+      prisma.community.findUnique({ where: { id } }),
+      prisma.user.findUnique({ where: { id: personId } })
+    ]);
 
     if (!community) return res.status(404).json({ error: "Community not found" });
     if (!user) return res.status(401).json({ error: "User not found" });
@@ -478,6 +539,12 @@ router.post("/:id/join", async (req, res) => {
     } catch {
       // ignore socket errors
     }
+
+    // 🚀 PERFORMANCE: Invalidate caches
+    await Promise.all([
+      invalidateThreadsCache(req, req.user.id),
+      invalidateMemberCache(req, community.id)
+    ]);
 
     return res.status(201).json(membership || { message: "Joined" });
 

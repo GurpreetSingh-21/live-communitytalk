@@ -2,6 +2,7 @@
 import axios, { AxiosError } from "axios";
 import { API_BASE_URL } from "../utils/config";
 import { getAccessToken, removeAccessToken } from "../utils/storage";
+import { logger, logPerformance } from "../utils/logger";
 
 function normalizeBase(url?: string) {
   if (!url) return "";
@@ -63,9 +64,12 @@ api.interceptors.request.use(
     cfg.headers = cfg.headers ?? {};
     (cfg.headers as any)["Cache-Control"] = "no-cache";
 
+    // 📊 PERFORMANCE: Track request start time
+    (cfg as any)._requestStart = Date.now();
+
     if (token && !isAuthRoute) {
       (cfg.headers as any).Authorization = `Bearer ${token}`;
-      console.log(
+      logger.debug(
         "[api:req]",
         method,
         fullUrl,
@@ -75,7 +79,7 @@ api.interceptors.request.use(
     } else {
       // Reduced verbosity for public endpoints
       if (__DEV__ && !fullUrl.includes('/public/')) {
-        console.log(
+        logger.debug(
           "[api:req]",
           method,
           fullUrl,
@@ -91,10 +95,28 @@ api.interceptors.request.use(
 );
 
 // ────────────────────────────────────────────
-// Unified Error Handler + Silent 401 Fix
+// Unified Error Handler + Silent 401 Fix + Performance Logging
 // ────────────────────────────────────────────
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // 📊 PERFORMANCE: Log successful request timing
+    const requestStart = (res.config as any)._requestStart;
+    if (requestStart) {
+      const duration = Date.now() - requestStart;
+      const url = `${res.config.baseURL || ""}${res.config.url || ""}`;
+      const size = JSON.stringify(res.data).length;
+
+      console.log(
+        `⚡ [API] ${res.config.method?.toUpperCase()} ${url} → ${res.status} (${duration}ms, ${(size / 1024).toFixed(1)}KB)`
+      );
+
+      // Warn on slow requests
+      if (duration > 1000) {
+        console.warn(`🐌 [API SLOW] Request took ${duration}ms: ${url}`);
+      }
+    }
+    return res;
+  },
   async (error: AxiosError<any>) => {
     const status = error.response?.status;
     const triedUrl = `${error.config?.baseURL ?? ""}${error.config?.url ?? ""}`;
@@ -103,7 +125,7 @@ api.interceptors.response.use(
     // ⭐ FIX 1: Silent ignore of 401 BEFORE token loads
     if (status === 401 && !tokenLoaded) {
       if (__DEV__) {
-        console.log("[api:note] Ignoring early 401 while token not loaded:", triedUrl);
+        logger.debug("[api:note] Ignoring early 401 while token not loaded:", triedUrl);
       }
       return Promise.resolve({ data: null, _early401: true });
     }
@@ -112,14 +134,21 @@ api.interceptors.response.use(
     // This prevents the error toast from the unauthenticated bootstrap call.
     const isBootstrap = urlPath.includes("/bootstrap");
     if (isBootstrap && status === 401) {
-      console.log("[api:note] Silencing expected 401 error for /api/bootstrap.");
+      logger.debug("[api:note] Silencing expected 401 error for /api/bootstrap.");
       // Resolve the promise to prevent the error from propagating to the global handler
       return Promise.resolve({ data: null, _silenced401: true });
     }
 
+    // 📊 PERFORMANCE: Log failed request timing
+    const requestStart = (error.config as any)?._requestStart;
+    if (requestStart) {
+      const duration = Date.now() - requestStart;
+      console.log(`❌ [API ERROR] Request failed after ${duration}ms: ${triedUrl}`);
+    }
+
     // Keep your existing logging (dev only)
     if (__DEV__) {
-      console.log(
+      logger.debug(
         "[api:err]",
         error.code ?? "ERR_UNKNOWN",
         status ?? "NO_STATUS",
@@ -136,7 +165,7 @@ api.interceptors.response.use(
       try {
         await removeAccessToken();
       } catch (e) {
-        console.error("[api] Failed to remove token:", e);
+        logger.error("[api] Failed to remove token:", e);
       }
 
       try {

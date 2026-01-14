@@ -48,6 +48,43 @@ router.get("/:communityId", async (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit || "200", 10), 1), 500);
     const cursor = req.query.cursor || null;
 
+    // 🚀 PERFORMANCE: Check Redis cache first (120s TTL)
+    // Note: Cache key includes query params to ensure correct results
+    const cacheKey = `members:${communityId}:${q}:${statusFilter}:${limit}:${cursor || 'none'}`;
+    if (req.redisClient && !statusFilter) {  // Only cache non-presence-filtered queries
+      try {
+        const cached = await req.redisClient.get(cacheKey);
+        if (cached) {
+          console.log(`[CACHE HIT] Members for ${communityId}`);
+          // Still need to apply presence status since it's real-time
+          const cachedData = JSON.parse(cached);
+          
+          // Refresh presence data
+          let liveUsers = new Set();
+          try {
+            if (req.presence?.listOnlineUsers) {
+              const onlineList = await req.presence.listOnlineUsers();
+              if (Array.isArray(onlineList)) {
+                liveUsers = new Set(onlineList);
+              }
+            }
+          } catch (err) {
+            console.warn("[members] Failed to get online users:", err.message);
+          }
+          
+          // Update status in cached items
+          const itemsWithStatus = cachedData.items.map(item => ({
+            ...item,
+            status: liveUsers.has(item.person) ? "online" : "offline"
+          }));
+          
+          return res.json({ ...cachedData, items: itemsWithStatus });
+        }
+      } catch (cacheErr) {
+        console.warn('[CACHE ERROR] Members read failed:', cacheErr);
+      }
+    }
+
     // Live presence - listOnlineUsers is async!
     let liveUsers = new Set();
     try {
@@ -147,11 +184,28 @@ router.get("/:communityId", async (req, res) => {
 
     const nextCursor = membersRaw.length === limit ? membersRaw[membersRaw.length - 1].id : null;
 
-    return res.json({
+    const response = {
       items: byPresence,
       nextCursor,
       hasMore: membersRaw.length === limit,
-    });
+    };
+
+    // 🚀 PERFORMANCE: Cache for 120 seconds (only non-presence-filtered)
+    if (req.redisClient && !statusFilter) {
+      try {
+        // Cache the normalized data (before presence filter)
+        const cacheData = {
+          items: normalized,
+          nextCursor,
+          hasMore: membersRaw.length === limit,
+        };
+        await req.redisClient.setex(cacheKey, 120, JSON.stringify(cacheData));
+      } catch (cacheErr) {
+        console.warn('[CACHE ERROR] Members write failed:', cacheErr);
+      }
+    }
+
+    return res.json(response);
   } catch (error) {
     console.error("GET /api/members/:communityId error:", error);
     return res.status(500).json({ error: "Server Error" });

@@ -196,22 +196,23 @@ router.get("/pool", async (req, res) => {
 
     if (!myProfile) return res.status(400).json({ error: "Create a profile first" });
 
-    // 2. Get IDs I have ALREADY swiped (Left or Right)
-    const swipedRecords = await prisma.datingSwipe.findMany({
-      where: { swiperId: myProfile.id },
-      select: { targetId: true }
-    });
+    // 🚀 PERFORMANCE: Parallelize swipe and block queries
+    const [swipedRecords, blocksGiven, blocksReceived] = await Promise.all([
+      prisma.datingSwipe.findMany({
+        where: { swiperId: myProfile.id },
+        select: { targetId: true }
+      }),
+      prisma.datingBlock.findMany({
+        where: { blockerId: myProfile.id },
+        select: { blockedId: true }
+      }),
+      prisma.datingBlock.findMany({
+        where: { blockedId: myProfile.id },
+        select: { blockerId: true }
+      })
+    ]);
+    
     const swipedIds = swipedRecords.map(r => r.targetId);
-
-    // 2b. Get IDs related to BLOCKS (I blocked them OR they blocked me)
-    const blocksGiven = await prisma.datingBlock.findMany({
-      where: { blockerId: myProfile.id },
-      select: { blockedId: true }
-    });
-    const blocksReceived = await prisma.datingBlock.findMany({
-      where: { blockedId: myProfile.id },
-      select: { blockerId: true }
-    });
 
     const blockedIds = [
       ...blocksGiven.map(b => b.blockedId),

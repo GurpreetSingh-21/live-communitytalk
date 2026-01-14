@@ -219,14 +219,10 @@ router.post("/register", async (req, res) => {
       }
     });
 
-    // Send email
+    // Send email asynchronously (don't block response)
     if (userForEmail && verificationCode) {
-      try {
-        await sendVerificationEmail(userForEmail.email, verificationCode);
-      } catch (emailErr) {
-        console.error("Failed to send email:", emailErr);
-        // Don't fail the registration strictly? Or maybe warn?
-      }
+      sendVerificationEmail(userForEmail.email, verificationCode)
+        .catch(emailErr => console.error("Failed to send email:", emailErr));
     }
 
     if (isResend) {
@@ -307,23 +303,17 @@ router.post("/login", async (req, res) => {
     // Regular login (no 2FA)
     const token = signToken(user);
 
-    // Fetch communities via Memberships
-    // Note: Mongoose stored explicit communityIds array on Person.
-    // Prisma uses Relation. We need to fetch memberships to get the IDs, then fetch communities.
+    // 🚀 PERFORMANCE: Fetch communities via Memberships with include (1 query instead of 2)
     const memberships = await prisma.member.findMany({
       where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
-      select: { communityId: true },
+      include: {
+        community: {
+          select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true }
+        }
+      }
     });
 
-    const communityIds = memberships.map(m => m.communityId);
-
-    let communities = [];
-    if (communityIds.length > 0) {
-      communities = await prisma.community.findMany({
-        where: { id: { in: communityIds } },
-        select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true },
-      });
-    }
+    const communities = memberships.map(m => m.community).filter(Boolean);
 
     return res.status(200).json({
       message: "Login successful",
@@ -419,21 +409,17 @@ router.post("/verify-2fa-login", async (req, res) => {
     // Issue final auth token
     const token = signToken(user);
 
-    // Fetch communities via Memberships
+    // 🚀 PERFORMANCE: Fetch communities via include
     const memberships = await prisma.member.findMany({
       where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
-      select: { communityId: true },
+      include: {
+        community: {
+          select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true }
+        }
+      }
     });
 
-    const communityIds = memberships.map(m => m.communityId);
-
-    let communities = [];
-    if (communityIds.length > 0) {
-      communities = await prisma.community.findMany({
-        where: { id: { in: communityIds } },
-        select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true },
-      });
-    }
+    const communities = memberships.map(m => m.community).filter(Boolean);
 
     return res.status(200).json({
       message: "Login successful",
@@ -567,7 +553,11 @@ router.get("/bootstrap", authenticate, async (req, res) => {
       }),
       prisma.member.findMany({
         where: { userId: req.user.id, memberStatus: { in: ["active", "owner"] } },
-        select: { communityId: true },
+        include: {
+          community: {
+            select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true }
+          }
+        }
       })
     ]);
 
@@ -576,15 +566,8 @@ router.get("/bootstrap", authenticate, async (req, res) => {
     const hasProfile = !!existingProfile;
     const datingProfileId = existingProfile?.id || null;
 
-    // Fetch communities (depends on memberships from above)
-    const communityIds = memberships.map(m => m.communityId);
-    let communities = [];
-    if (communityIds.length > 0) {
-      communities = await prisma.community.findMany({
-        where: { id: { in: communityIds } },
-        select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true },
-      });
-    }
+    // 🚀 Communities already fetched via include above
+    const communities = memberships.map(m => m.community).filter(Boolean);
 
     const responseData = {
       message: "Bootstrap successful",

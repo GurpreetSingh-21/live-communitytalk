@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import { api } from "@/src/api/api";
 import { getAccessToken } from "./storage";
+import { notifyLogger as logger } from "./logger";
 
 /* ───────────────────────────────────────────
    Foreground Notification Handler
@@ -18,9 +19,9 @@ try {
       shouldSetBadge: false,
     }),
   });
-  console.log("[notify] Foreground notification handler attached.");
+  logger.debug("Foreground notification handler attached.");
 } catch (err) {
-  console.error("[notify] Failed to attach notification handler:", err);
+  logger.error("Failed to attach notification handler:", err);
 }
 
 /* ───────────────────────────────────────────
@@ -33,7 +34,7 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   // -----------------------------------------------------
   const jwt = await getAccessToken();
   if (!jwt) {
-    console.log("[notify] Skipping push registration → user not logged in");
+    logger.debug("Skipping push registration → user not logged in");
     return null;
   }
 
@@ -51,14 +52,14 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
         lightColor: "#FF231F7C",
       });
     } catch (err) {
-      console.error("[notify] Failed to set Android channel:", err);
+      logger.error("Failed to set Android channel:", err);
     }
   }
 
   /* -----------------------------------------------------
      3. Ask Permissions
      ----------------------------------------------------- */
-  console.log("[notify] Requesting permissions…");
+  logger.debug("Requesting permissions…");
 
   const { status: existingStatus } = await Notifications.getPermissionsAsync();
   let finalStatus = existingStatus;
@@ -69,11 +70,11 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   }
 
   if (finalStatus !== "granted") {
-    console.warn("[notify] Permissions denied.");
+    logger.warn("Permissions denied.");
     return null;
   }
 
-  console.log("[notify] Permissions granted.");
+  logger.debug("Permissions granted.");
 
   /* -----------------------------------------------------
      4. Generate Expo Push Token
@@ -81,15 +82,15 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   try {
     const projectId = Constants.expoConfig?.extra?.eas?.projectId;
     if (!projectId) {
-      console.error("[notify] Missing expo.extra.eas.projectId");
+      logger.error("Missing expo.extra.eas.projectId");
       return null;
     }
 
     const t = await Notifications.getExpoPushTokenAsync({ projectId });
     token = t.data;
-    console.log("[notify] Expo push token:", token);
+    logger.debug("Expo push token:", token);
   } catch (err) {
-    console.error("[notify] Failed to get Expo push token:", err);
+    logger.error("Failed to get Expo push token:", err);
     return null;
   }
 
@@ -99,18 +100,18 @@ export async function registerForPushNotificationsAsync(): Promise<string | null
   if (token) {
     const jwt2 = await getAccessToken(); // re-validate auth
     if (!jwt2) {
-      console.warn("[notify] Token generated but user not logged in → skipping backend sync.");
+      logger.warn("Token generated but user not logged in → skipping backend sync.");
       return token;
     }
 
     try {
       await api.post("/api/notifications/register", { token });
-      console.log("[notify] Push token registered with backend ✔");
+      logger.info("Push token registered with backend ✔");
     } catch (err: any) {
-      console.error("[notify] Backend registration failed:");
-      console.error(" • Status:", err?.response?.status);
-      console.error(" • Data:", err?.response?.data);
-      console.error(" • Message:", err?.message);
+      logger.error("Backend registration failed:");
+      logger.error(" • Status:", err?.response?.status);
+      logger.error(" • Data:", err?.response?.data);
+      logger.error(" • Message:", err?.message);
       // Do NOT throw — notifications should never break app flow
     }
   }

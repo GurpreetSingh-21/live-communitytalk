@@ -1,0 +1,5 @@
+# This file tells EAS Build which files to INCLUDE despite .gitignore
+# We need google-services.json for Android builds
+
+!google-services.json
+!GoogleService-Info.plist
