@@ -22,7 +22,7 @@ async function sendVerificationEmail(userEmail, verificationCode) {
     console.log(`📧 [Email] Attempting to send verification code to ${userEmail}...`);
     
     const { data, error } = await resend.emails.send({
-      from: 'CommunityTalk <onboarding@resend.dev>', // Update this with your verified domain later
+      from: 'CommunityTalk <noreply@debugdragons.com>',
       to: [userEmail],
       subject: 'Your CommunityTalk Verification Code',
       html: `
