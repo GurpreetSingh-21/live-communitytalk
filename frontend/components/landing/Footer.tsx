@@ -14,10 +14,10 @@ export function Footer() {
                         <Link href="/" className="flex flex-col items-center gap-4 group">
                             <div className="relative w-16 h-16">
                                 <Image
-                                    src="/logo.png"
+                                    src="/logo-new.png"
                                     alt="Campustry"
                                     fill
-                                    className="object-contain"
+                                    className="object-contain mix-blend-multiply"
                                 />
                             </div>
                             <span className="text-2xl font-bold text-[#2D5A47]">
@@ -51,13 +51,13 @@ export function Footer() {
                     </p>
 
                     <div className="flex items-center gap-6">
-                        <Link href="#" className="text-sm text-[#6B6B6B] hover:text-[#2D5A47] transition-colors">
+                        <Link href="/privacy-policy" className="text-sm text-[#6B6B6B] hover:text-[#2D5A47] transition-colors">
                             Privacy Policy
                         </Link>
-                        <Link href="#" className="text-sm text-[#6B6B6B] hover:text-[#2D5A47] transition-colors">
+                        <Link href="/terms-of-service" className="text-sm text-[#6B6B6B] hover:text-[#2D5A47] transition-colors">
                             Terms of Service
                         </Link>
-                        <Link href="#" className="text-sm text-[#6B6B6B] hover:text-[#2D5A47] transition-colors">
+                        <Link href="/contact" className="text-sm text-[#6B6B6B] hover:text-[#2D5A47] transition-colors">
                             Contact
                         </Link>
                     </div>

@@ -87,11 +87,11 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <Link href="/admin/dating" className="flex items-center gap-3">
             <div className="relative w-10 h-10">
               <Image
-                src="/logo.png"
+                src="/logo-new.png"
                 alt="Campustry"
                 fill
                 sizes="40px"
-                className="object-contain"
+                className="object-contain mix-blend-multiply"
               />
             </div>
             <div>
@@ -112,8 +112,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${isActive
-                    ? "bg-[#2D5A47] text-white shadow-lg"
-                    : "text-[#6B6B6B] hover:bg-[#F5F4F2] hover:text-[#1A1A1A]"
+                  ? "bg-[#2D5A47] text-white shadow-lg"
+                  : "text-[#6B6B6B] hover:bg-[#F5F4F2] hover:text-[#1A1A1A]"
                   }`}
               >
                 <Icon className="w-5 h-5" />

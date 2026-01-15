@@ -14,9 +14,7 @@ export const metadata: Metadata = {
   title: "Campustry - Connect, Learn, Thrive",
   description:
     "The verified student platform connecting campus communities. Join 10,000+ students across 50+ universities.",
-  icons: {
-    icon: "/logo.png",
-  },
+
 };
 
 export default function RootLayout({

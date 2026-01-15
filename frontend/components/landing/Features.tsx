@@ -7,28 +7,28 @@ const features = [
     {
         id: 1,
         title: "Verified Students Only",
-        description: "Connect with real, verified students from your campus and beyond. No bots, no spam—just authentic connections.",
+        description: "No bots. No boomers. Just authentic connections with real students from your campus.",
         image: "/verified-3d.png",
         imagePosition: "right" as const,
     },
     {
         id: 2,
         title: "Campus Communities",
-        description: "Join clubs, study groups, and interest-based communities. From chess club to coding bootcamps, find your tribe.",
+        description: "Stop doom-scrolling alone. Join clubs, study groups, and tribes that actually get you.",
         image: "/communities-3d.png",
         imagePosition: "left" as const,
     },
     {
         id: 3,
         title: "Private & Secure",
-        description: "Your conversations are encrypted end-to-end. What you share stays between you and your friends.",
+        description: "What happens on Campustry, stays on Campustry. Encrypted chats for your peace of mind.",
         image: "/security-3d.png",
         imagePosition: "right" as const,
     },
     {
         id: 4,
         title: "Events & Meetups",
-        description: "Discover campus events, study sessions, and social gatherings. Never miss what's happening around you.",
+        description: "FOMO proof your life. Discover parties, study sessions, and hangouts happening right now.",
         image: "/events-all-3d.png",
         imagePosition: "left" as const,
     },
@@ -60,7 +60,7 @@ export function Features() {
                         transition={{ duration: 0.6, delay: 0.1 }}
                         className="text-lg text-[#6B6B6B] leading-relaxed"
                     >
-                        From study groups to soulmates, Campustry brings your campus community together. Safe, verified, and built for the modern student.
+                        From study groups to soulmates, we bring the campus together. Safe, verified, and strictly for students.
                     </motion.p>
                 </div>
 
@@ -123,6 +123,6 @@ export function Features() {
                     ))}
                 </div>
             </div>
-        </section>
+        </section >
     );
 }

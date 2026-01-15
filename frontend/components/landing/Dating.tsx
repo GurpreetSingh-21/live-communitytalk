@@ -61,9 +61,9 @@ export function Dating() {
                             transition={{ duration: 0.6, delay: 0.1 }}
                             className="text-4xl md:text-5xl font-black text-[#1A1A1A]"
                         >
-                            Find Real{" "}
+                            Date People Who Get{" "}
                             <span className="text-[#FF7F6E] relative">
-                                Chemistry
+                                Exam Stress
                                 <svg
                                     className="absolute -bottom-1 left-0 w-full h-2"
                                     viewBox="0 0 200 8"
@@ -78,7 +78,6 @@ export function Dating() {
                                     />
                                 </svg>
                             </span>
-                            {" "}On Campus
                         </motion.h2>
 
                         <motion.p
@@ -88,7 +87,7 @@ export function Dating() {
                             transition={{ duration: 0.6, delay: 0.2 }}
                             className="text-lg text-[#6B6B6B] leading-relaxed"
                         >
-                            Why swipe endlessly when you can meet verified students who actually go to your school? Campustry's dating feature helps you discover genuine connections with people you might pass every day on campus.
+                            Dating apps suck. Try meeting people you actually see on campus. Skip the awkward "where do you go to school" chat and find real chemistry.
                         </motion.p>
 
                         <motion.div

@@ -83,11 +83,11 @@ export default function AdminLoginPage() {
           <div className="flex justify-center mb-4">
             <div className="relative w-16 h-16">
               <Image
-                src="/logo.png"
+                src="/logo-new.png"
                 alt="Campustry"
-                fill
-                sizes="64px"
-                className="object-contain"
+                width={64}
+                height={64}
+                className="w-full h-full object-contain mix-blend-multiply"
               />
             </div>
           </div>
