@@ -41,7 +41,10 @@ router.get("/colleges", async (req, res) => {
 
     return res.json(items);
   } catch (e) {
-    console.error("GET /api/public/colleges error", e);
+    console.error("❌ GET /api/public/colleges ERROR:");
+    console.error("Error name:", e.name);
+    console.error("Error message:", e.message);
+    console.error("Full error:", e);
     res.status(500).json({ error: "Server error" });
   }
 });
