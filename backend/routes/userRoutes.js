@@ -47,6 +47,19 @@ router.post("/avatar", async (req, res) => {
       console.warn("Avatar sync warning:", syncErr);
     }
 
+    // 5. CACHE INVALIDATION: Clear bootstrap and profile cache so next fetch gets fresh avatar
+    if (req.redisClient) {
+      const bootstrapKey = `bootstrap:${userId}`;
+      const profileKey = `user:profile:${userId}`;
+      try {
+        await req.redisClient.del(bootstrapKey);
+        await req.redisClient.del(profileKey);
+        console.log(`🧹 [Cache] Invalidated ${bootstrapKey} & ${profileKey}`);
+      } catch (err) {
+        console.warn("Failed to invalidate cache:", err);
+      }
+    }
+
     // Return user info excluding sensitive data
     const safeUser = {
       id: updatedUser.id,
