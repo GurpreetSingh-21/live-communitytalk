@@ -51,6 +51,12 @@
           }
         }
       ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone for voice messages."
+        }
+      ],
       "expo-font",
       "expo-notifications",
       "expo-secure-store",
