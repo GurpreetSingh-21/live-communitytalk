@@ -21,6 +21,7 @@ import {
   Image,
   ActionSheetIOS,
   Linking,
+  Keyboard,
 } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -138,11 +139,38 @@ function upsertMessages(
     };
 
     const sid = asId(inc._id);
-    const cid = asId(inc.clientMessageId);
+    const cid = asId(inc.clientMessageId); // Client ID is critical for matching optimistic writes
+
+    // 🛡️ E2EE PROTECTION: Check if this update would overwrite valid local text with an encrypted blob/error
+    let protectedContent: string | undefined;
+
+    // Check if incoming is "broken"
+    const isIncomingBad = inc.content && (
+      inc.content.startsWith('🔒 ') ||
+      inc.content.includes('[Decryption Failed]') ||
+      (inc.content.length > 50 && !inc.content.includes(' ') && /^[A-Za-z0-9+/=]+$/.test(inc.content)) // Raw ciphertext
+    );
+
+    if (isIncomingBad) {
+      // Look for existing good copy
+      let prev: DMMessage | undefined;
+      if (sid && byId.has(sid)) prev = byId.get(sid);
+      else if (cid && byClient.has(cid)) prev = byClient.get(cid);
+
+      if (prev && prev.content && !prev.content.startsWith('🔒 ') && !prev.content.includes('[Decryption Failed]')) {
+        // PRESERVE LOCAL PLAINTEXT
+        // console.log('🛡️ [E2EE] Preserving local plaintext for:', sid || cid);
+        protectedContent = prev.content;
+      }
+    }
 
     if (sid && byId.has(sid)) {
       const prev = byId.get(sid)!;
-      const merged = preferServer ? { ...prev, ...inc } : { ...inc, ...prev };
+      let merged = preferServer ? { ...prev, ...inc } : { ...inc, ...prev };
+
+      // Apply protection
+      if (protectedContent) merged.content = protectedContent;
+
       byId.set(sid, merged);
       if (cid && byClient.has(cid)) byClient.set(cid, merged);
       continue;
@@ -150,8 +178,11 @@ function upsertMessages(
 
     if (cid && byClient.has(cid)) {
       const prev = byClient.get(cid)!;
-      const merged: DMMessage =
+      let merged: DMMessage =
         preferServer ? { ...prev, ...inc } : { ...inc, ...prev };
+
+      // Apply protection
+      if (protectedContent) merged.content = protectedContent;
 
       if (sid) {
         merged._id = sid;
@@ -1106,10 +1137,40 @@ export default function DMThreadScreen() {
 
   const data = useMemo(() => finalizeUnique(messages), [messages]);
 
+  /* ─────── Keyboard Listener for Spacing Fix ─────── */
+  /* ─────── Keyboard Listener for Spacing Fix ─────── */
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    // FIX: Platform-specific event binding for optimal performance
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showListener = Keyboard.addListener(showEvent, () => setIsKeyboardVisible(true));
+    const hideListener = Keyboard.addListener(hideEvent, () => setIsKeyboardVisible(false));
+
+    return () => {
+      showListener.remove();
+      hideListener.remove();
+    };
+  }, []);
+
   /* ─────── Render ─────── */
   const headerName = meta?.partnerName || meta?.fullName || meta?.name || paramName || "Direct Message";
   const headerAvatar = meta?.avatar || paramAvatar || undefined;
   const status = meta?.online ? "online" : "";
+
+  // 📐 Layout Logic:
+  // Android: behavior="height" handles keyboard resize. Offset should be 0.
+  // iOS: behavior="padding". Offset 0.
+  const keyboardOffset = 0;
+
+  // Padding Logic:
+  // When keyboard is open -> 0 padding (input touches keyboard).
+  // When closed -> Safe Area bottom (or min 12px for aesthetics).
+  // Note: On Android "height" mode, the view height shrinks, so paddingBottom is still visible at the bottom of the *shrunken* view.
+  // We want to remove that padding when keyboard is visible so it looks flush.
+  const bottomPadding = isKeyboardVisible ? 0 : Math.max(insets.bottom, 8);
 
   return (
     <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -1134,7 +1195,7 @@ export default function DMThreadScreen() {
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.bg }}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 20}
+        keyboardVerticalOffset={keyboardOffset}
       >
         {loading ? (
           <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
@@ -1169,7 +1230,7 @@ export default function DMThreadScreen() {
               style={{
                 paddingHorizontal: 12,
                 paddingTop: 8,
-                paddingBottom: Math.max(insets.bottom, 8),
+                paddingBottom: bottomPadding,
                 borderTopWidth: 0.5,
                 borderTopColor: colors.border,
                 backgroundColor: colors.bg,

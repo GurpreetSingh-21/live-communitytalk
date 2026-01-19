@@ -148,8 +148,8 @@ export async function decryptMessage(
     // Decrypt with precomputed shared key
     const decrypted = nacl.box.open.after(ciphertext, nonce, sharedKey);
     if (!decrypted) {
-      logger.error('FAILED - nacl.box.open.after returned null');
-      logger.error('This usually means key mismatch or corrupted ciphertext');
+      logger.warn('FAILED - nacl.box.open.after returned null');
+      logger.warn('This usually means key mismatch (old message?) or corrupted ciphertext');
       return '[Decryption Failed]';
     }
 

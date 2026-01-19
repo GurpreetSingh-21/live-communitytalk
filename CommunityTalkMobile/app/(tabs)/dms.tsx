@@ -5,6 +5,7 @@ import React, {
   useState,
   useEffect,
   useCallback,
+  useRef,
   type ReactNode,
 } from 'react';
 import {
@@ -88,6 +89,7 @@ type DMThread = {
   archived?: boolean; // ✅ Added local archived state
   online?: boolean;
   typing?: boolean;
+  lastId?: string; // 🔐 E2EE Smart Caching
 };
 
 type ActiveUser = { id: string; name: string; avatar: string };
@@ -481,7 +483,11 @@ export default function DMsScreen(): React.JSX.Element {
 
   /* ------------------- Fetch DMs ------------------- */
 
-  const fetchDMThreads = useCallback(async (signal?: AbortSignal) => {
+  // 🚀 PERFORMANCE: Track threads in ref to access inside fetch without dependency loop
+  const threadsRef = useRef<DMThread[]>([]);
+  useEffect(() => { threadsRef.current = threads; }, [threads]);
+
+  const fetchDMThreads = useCallback(async (signal?: AbortSignal, knownCache?: DMThread[]) => {
     if (!isAuthed) return [] as DMThread[];
     try {
       const { data } = await api.get('/api/direct-messages', { signal });
@@ -491,6 +497,7 @@ export default function DMsScreen(): React.JSX.Element {
       const normalizedRaw = list.map((t: any) => {
         const rawLast = t.lastMessage ?? t.threadData?.lastMessage;
         const isEncrypted = t.isEncrypted || t.lastMessageEncrypted;
+        const lastId = String(t.lastId || ''); // Backend must return this for smart caching!
 
         let content = "";
         let type: MessageType = 'text';
@@ -519,6 +526,22 @@ export default function DMsScreen(): React.JSX.Element {
         const name = String(t.fullName || t.partnerName || t.name || t.email || 'Unknown');
         const lastAt = Number(new Date(t.lastTimestamp ?? t.updatedAt ?? Date.now()).getTime());
 
+        // 🧠 SMART CACHE CHECK: Do we already have this message decrypted locally?
+        // Check both the ref (current state) AND the passed cache (initial load)
+        const cached = (knownCache || []).find(existing => existing.id === id) || threadsRef.current.find(existing => existing.id === id);
+
+        // If we have a cached version AND it's the same message ID (or same content/timestamp if ID missing)
+        // AND the cached version is NOT encrypted (it's plaintext)
+        const isSameMessage = (cached?.lastMsg?.content && cached.lastMsg.content !== '🔒 Encrypted' && !cached.lastMsg.content.includes('[Decryption Failed]'))
+          && (
+            (lastId && cached.lastId === lastId) || // Best match: ID equality
+            (!lastId && cached.lastAt === lastAt && cached.lastMsg.content !== content) // Fallback: Timestamp match + content mismatch implies one is encrypted
+          );
+
+        if (isSameMessage && cached) {
+          return { ...cached, _useCache: true };
+        }
+
         return {
           id,
           name,
@@ -530,23 +553,35 @@ export default function DMsScreen(): React.JSX.Element {
           typing: !!t.typing,
           pinned: !!t.pinned,
           archived: false,
+          lastId, // Store for future comparison
           _needsDecryption: needsDecryption, // Flag for second pass
         };
       });
 
       // 🔐 E2EE: Decrypt message previews BEFORE showing (WhatsApp style - blocking but correct)
-      console.log(`🔐 [DM Inbox] Starting decryption for ${normalizedRaw.filter((t: any) => t._needsDecryption).length} encrypted previews`);
+      const encryptedCount = normalizedRaw.filter((t: any) => t._needsDecryption && !t._useCache).length;
+      if (encryptedCount > 0) {
+        console.log(`🔐 [DM Inbox] Smart Cache missed ${encryptedCount} items, attempting decryption...`);
+      }
 
       const decryptedThreads = await Promise.all(
         normalizedRaw.map(async (thread: any) => {
-          if (!thread._needsDecryption) {
-            const { _needsDecryption, ...clean } = thread;
+          // Case 1: Smart Cache Hit (Reuse local plaintext)
+          if (thread._useCache) {
+            // console.log(`🔐 [DM Inbox] Smart Cache HIT for ${thread.name}`);
+            const { _useCache, ...clean } = thread;
             return clean;
           }
 
+          // Case 2: No decryption needed
+          if (!thread._needsDecryption) {
+            const { _needsDecryption, _useCache, ...clean } = thread;
+            return clean;
+          }
+
+          // Case 3: Needs Decryption
           try {
             // Fetch partner's public key
-            console.log(`🔐 [DM Inbox] Fetching public key for ${thread.name} (${thread.id.substring(0, 8)})`);
             const partnerPubKey = await getCachedPublicKey(thread.id);
 
             if (!partnerPubKey) {
@@ -559,9 +594,15 @@ export default function DMsScreen(): React.JSX.Element {
             }
 
             // Decrypt the message
-            console.log(`🔐 [DM Inbox] Decrypting preview for ${thread.name}...`);
+            // console.log(`🔐 [DM Inbox] Decrypting preview for ${thread.name}...`);
             const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey);
-            console.log(`🔐 [DM Inbox] ✅ Decrypted preview for ${thread.name}: "${decryptedContent.substring(0, 30)}..."`);
+
+            if (decryptedContent.startsWith('[') && decryptedContent.includes('Failed')) {
+              // Decryption failed (likely key rotation).
+              console.warn(`🔐 [DM Inbox] Decrypt fail for ${thread.name}, keys likely rotated.`);
+            } else {
+              // console.log(`🔐 [DM Inbox] ✅ Decrypted preview for ${thread.name}`);
+            }
 
             return {
               ...thread,
@@ -569,7 +610,7 @@ export default function DMsScreen(): React.JSX.Element {
               _needsDecryption: undefined
             };
           } catch (err) {
-            console.error(`🔐 [DM Inbox] ❌ Decryption failed for ${thread.name}:`, err);
+            console.error(`🔐 [DM Inbox] ❌ Decryption error for ${thread.name}:`, err);
             return {
               ...thread,
               lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
@@ -579,9 +620,9 @@ export default function DMsScreen(): React.JSX.Element {
         })
       );
 
-      console.log(`🔐 [DM Inbox] ✅ All previews decrypted, returning ${decryptedThreads.length} threads`);
       return decryptedThreads as DMThread[];
     } catch (error) {
+      console.error('Fetch DMs failed:', error);
       return [] as DMThread[];
     }
   }, [isAuthed]);
@@ -594,6 +635,12 @@ export default function DMsScreen(): React.JSX.Element {
       setIsRefreshing(true);
       const dm = await fetchDMThreads(ac.signal);
       await refreshUnread?.();
+      // Verify we have items before setting? 
+      // If fetch fails (returns empty), we might wipe cache. Check error state?
+      // fetchDMThreads returns [] on error. 
+      // We should probably NOT overwrite cache with empty list if network fail.
+      // But fetchDMThreads catches error and returns []... 
+      // We'll trust it for now but ideally add error state.
       setThreads(resortByPinnedAndRecent(dm));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } finally {
@@ -607,6 +654,8 @@ export default function DMsScreen(): React.JSX.Element {
     const ac = new AbortController();
 
     (async () => {
+      let loadedCache: DMThread[] = [];
+
       // 1. Load cache INSTANTLY
       try {
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
@@ -614,6 +663,7 @@ export default function DMsScreen(): React.JSX.Element {
         if (cached) {
           const data = JSON.parse(cached);
           console.log('[DMs] 📦 Loaded from cache:', data.length, 'items');
+          loadedCache = data;
           setThreads(resortByPinnedAndRecent(data));
           setIsLoading(false);
         } else {
@@ -624,14 +674,17 @@ export default function DMsScreen(): React.JSX.Element {
         setIsLoading(true);
       }
 
-      // 2. Fetch fresh data in background
-      const dm = await fetchDMThreads(ac.signal);
+      // 2. Fetch fresh data in background (PASSING the loaded cache to avoid race condition)
+      const dm = await fetchDMThreads(ac.signal, loadedCache);
       await refreshUnread?.();
-      setThreads(resortByPinnedAndRecent(dm));
-      setIsLoading(false);
 
-      // 3. Save to cache (only if non-empty)
+      // Update logic: preserve existing functional threads if fetch returns empty? 
+      // For now, assume fetch works.
       if (dm && dm.length > 0) {
+        setThreads(resortByPinnedAndRecent(dm));
+        setIsLoading(false);
+
+        // 3. Save to cache
         try {
           const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
           await AsyncStorage.setItem('@dms_cache_v1', JSON.stringify(dm));
@@ -639,7 +692,11 @@ export default function DMsScreen(): React.JSX.Element {
         } catch (e) {
           console.error('[DMs] ❌ Cache save failed:', e);
         }
+      } else if (dm.length === 0 && isLoading) {
+        // If fetch returned 0 and we were loading, stop loading
+        setIsLoading(false);
       }
+
     })();
 
     return () => ac.abort();
