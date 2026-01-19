@@ -14,6 +14,7 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
+  Pressable,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -290,6 +291,7 @@ export default function DMThreadScreen() {
 
   const resolvedClientIdsRef = useRef<Set<string>>(new Set());
   const listRef = useRef<FlatList<DMMessage>>(null);
+  const inputRef = useRef<TextInput>(null);
 
   // Adapter for existing code to work with new theme
   const colors = {
@@ -1264,7 +1266,8 @@ export default function DMThreadScreen() {
                     <Ionicons name="add-circle" size={34} color={colors.primaryEnd} />
                   </TouchableOpacity>
 
-                  <View
+                  <Pressable
+                    onPress={() => inputRef.current?.focus()}
                     style={{
                       flex: 1,
                       backgroundColor: theme.surface,
@@ -1278,6 +1281,7 @@ export default function DMThreadScreen() {
                     }}
                   >
                     <TextInput
+                      ref={inputRef}
                       value={input}
                       onChangeText={handleTextChange}
                       placeholder="Message"
@@ -1293,7 +1297,7 @@ export default function DMThreadScreen() {
                       multiline
                       editable={!sending}
                     />
-                  </View>
+                  </Pressable>
 
                   {input.trim().length > 0 && (
                     <TouchableOpacity
