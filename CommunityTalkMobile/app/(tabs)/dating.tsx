@@ -61,7 +61,10 @@ export default function DatingScreen() {
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={[theme.accent, theme.primary]} // Warm Coral -> Forest Green
+                colors={isDark
+                    ? ['#1A1416', '#1F1315'] // Warm dark charcoal with subtle red undertones
+                    : ['#FFF5F5', '#FFE8E8'] // Soft peach/blush gradient
+                }
                 style={styles.gradient}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -76,7 +79,7 @@ export default function DatingScreen() {
                             <IconSymbol
                                 name="gearshape.fill"
                                 size={26}
-                                color="#FFF"
+                                color={theme.text}
                             />
                         </TouchableOpacity>
 
@@ -84,7 +87,7 @@ export default function DatingScreen() {
                             onPress={() => setView('stack')}
                             activeOpacity={0.8}
                         >
-                            <Text style={styles.headerTitle}>Dating</Text>
+                            <Text style={[styles.headerTitle, { color: theme.text }]}>Dating</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -94,7 +97,7 @@ export default function DatingScreen() {
                             <IconSymbol
                                 name="bubble.left.and.bubble.right.fill"
                                 size={26}
-                                color={view === 'matches' ? '#FFF' : 'rgba(255,255,255,0.8)'}
+                                color={view === 'matches' ? theme.text : theme.textMuted}
                             />
                         </TouchableOpacity>
                     </View>

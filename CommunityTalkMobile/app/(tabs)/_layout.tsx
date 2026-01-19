@@ -88,20 +88,20 @@ const Fab = ({ isDark }: { isDark: boolean }) => {
             width: 52,
             height: 52,
             borderRadius: 18,
-            // 🎨 FAB uses Accent color (Coral) for "Pop"
-            backgroundColor: theme.accent,
+            // Warm peach/coral FAB for dating vibe
+            backgroundColor: '#FF8B7B',
             alignItems: 'center',
             justifyContent: 'center',
-            shadowColor: theme.accent,
-            shadowOpacity: 0.4,
-            shadowRadius: 10,
+            shadowColor: '#FF8B7B',
+            shadowOpacity: 0.35,
+            shadowRadius: 12,
             shadowOffset: { width: 0, height: 4 },
           },
           animatedStyle,
         ]}
       >
         <Animated.View style={animatedIconStyle}>
-          {/* Always white icon on colorful FAB */}
+          {/* White icon on warm peach FAB */}
           <IconSymbol name="plus" size={26} color="#FFFFFF" weight="bold" />
         </Animated.View>
       </Animated.View>
@@ -286,8 +286,8 @@ const CustomTabBar = ({ state, descriptors, navigation, isDark, insets, unreadCo
                 key={route.name}
                 item={route}
                 isFocused={isFocused}
-                // 🎨 Active = Primary (Forest Green), Inactive = Muted Gray
-                color={isFocused ? theme.tint : theme.tabIconDefault}
+                // High contrast colors for visibility
+                color={isFocused ? theme.text : theme.textMuted}
                 badgeCount={badge}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
