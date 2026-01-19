@@ -8,7 +8,7 @@ const expo = new Expo();
  * If you ever want to read allowed experience from env, use this.
  * For now your project is: @debugdragons4/community-talk
  */
-const ALLOWED_EXPERIENCE = process.env.EXPO_ALLOWED_EXPERIENCE || "@debugdragons4/community-talk";
+const ALLOWED_EXPERIENCE = process.env.EXPO_ALLOWED_EXPERIENCE || "@debugdragons4/campustry-debugdragons";
 
 /**
  * Tokens we already saw in the logs that belong to ANOTHER Expo project
