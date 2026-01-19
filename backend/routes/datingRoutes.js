@@ -326,13 +326,14 @@ router.post("/swipe", async (req, res) => {
     if (!myProfile) return res.status(400).json({ error: "No profile" });
 
     // 0. CHECK SINGLE DAY SWIPE LIMIT (Spam prevention & Monetization)
-    // Only limit LIKES. Passes are unlimited.
+    // Rolling 24h Window
     const DAILY_LIMIT = 5;
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
+    const rollingWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
 
     // Debug: Log incoming type
     console.log(`[SWIPE REQUEST] User: ${userId} Type: ${type}`);
+
+    let debugInfo = {};
 
     if (type === 'LIKE' || type === 'SUPERLIKE') {
       const todayLikes = await prisma.datingSwipe.count({
@@ -340,24 +341,33 @@ router.post("/swipe", async (req, res) => {
           swiperId: myProfile.id,
           type: { in: ['LIKE', 'SUPERLIKE'] }, // Only count likes
           createdAt: {
-            gte: startOfDay
+            gte: rollingWindowStart
           }
         }
       });
 
+      debugInfo = {
+        count: todayLikes,
+        limit: DAILY_LIMIT,
+        windowStart: rollingWindowStart.toISOString(),
+        isReached: todayLikes >= DAILY_LIMIT
+      };
+
       // Add Debug Header so user sees it in frontend logs
       res.set('X-Debug-Swipe-Limit', `${todayLikes}/${DAILY_LIMIT}`);
-      console.log(`[LIKE CHECK] Count: ${todayLikes}/${DAILY_LIMIT}`);
+      console.log(`[LIKE CHECK] Count: ${todayLikes}/${DAILY_LIMIT} (Window: ${rollingWindowStart.toISOString()})`);
 
       if (todayLikes >= DAILY_LIMIT) {
         console.log(`[LIKE LIMIT REACHED] Blocked`);
         return res.status(429).json({
           error: "Daily like limit reached",
-          message: "You've liked 5 people today. Save some love for tomorrow or upgrade!"
+          message: "You've liked 5 people today. Save some love for tomorrow or upgrade!",
+          debug: debugInfo
         });
       }
     } else {
       res.set('X-Debug-Swipe-Limit', `UNLIMITED (Pass)`);
+      debugInfo = { status: 'UNLIMITED_PASS' };
     }
 
     // 1. Prevent duplicate swipe
@@ -371,80 +381,86 @@ router.post("/swipe", async (req, res) => {
       }
     });
 
-    if (existing) return res.json({ message: "Already swiped" });
+    if (existing) return res.json({ message: "Already swiped", debug: debugInfo });
 
     // 2. Create Swipe Record
+    let match = null;
     try {
-      await prisma.datingSwipe.create({
+      const swipe = await prisma.datingSwipe.create({
         data: {
           swiperId: myProfile.id,
           targetId,
           type
         }
       });
+
+      // 3. If PASS, simple return
+      if (type === 'DISLIKE') {
+        return res.json({ message: "Swiped left", isMatch: false, debug: debugInfo });
+      }
+
+      // 4. CHECK MATCH (If LIKE/SUPERLIKE)
+      // Does target already like me?
+      const mutualSwipe = await prisma.datingSwipe.findUnique({
+        where: {
+          swiperId_targetId: {
+            swiperId: targetId,
+            targetId: myProfile.id
+          }
+        }
+      });
+
+      if (mutualSwipe && (mutualSwipe.type === 'LIKE' || mutualSwipe.type === 'SUPERLIKE')) {
+        // IT'S A MATCH! 🎉
+        // Sort IDs to ensure unique constraint on relations (profile1Id < profile2Id)
+        const [p1, p2] = [myProfile.id, targetId].sort();
+
+        // Create Match Record
+        match = await prisma.datingMatch.create({
+          data: {
+            profile1Id: p1,
+            profile2Id: p2,
+            isActive: true
+          }
+        });
+
+        // Fetch partner info
+        const partnerProfile = await prisma.datingProfile.findUnique({
+          where: { id: targetId },
+          select: { firstName: true, photos: { take: 1 }, user: { select: { avatar: true } } }
+        });
+
+        // Emit Socket Event (if IO available)
+        if (req.io) {
+          // Need Target's userId to send socket (datingProfile doesn't have it directly in select above? wait I need to fetch it)
+          const targetUser = await prisma.datingProfile.findUnique({ where: { id: targetId }, select: { userId: true } });
+          if (targetUser) {
+            req.io.to(targetUser.userId).emit("match:new", {
+              matchId: match.id,
+              partnerName: myProfile.firstName,
+              partnerId: myProfile.id
+            });
+          }
+          // Notify Me (Client handles the immediate response, but socket ensures consistency)
+        }
+
+        return res.json({
+          message: "It's a Match!",
+          isMatch: true,
+          matchDetails: { ...match, partner: partnerProfile },
+          debug: debugInfo
+        });
+      }
+
     } catch (createErr) {
       if (createErr.code === 'P2002') {
         console.warn("Race condition: Swipe already exists");
-        return res.json({ message: "Already swiped" });
+        return res.json({ message: "Already swiped", debug: debugInfo });
       }
       throw createErr;
     }
 
-    // 3. If PASS, simple return
-    if (type === 'DISLIKE') {
-      return res.json({ isMatch: false });
-    }
-
-    // 4. If LIKE, check for MATCH
-    // Look for a swipe where swiper=Target AND target=Me AND type=LIKE/SUPERLIKE
-    const otherSwipe = await prisma.datingSwipe.findFirst({
-      where: {
-        swiperId: targetId,
-        targetId: myProfile.id,
-        type: { in: ['LIKE', 'SUPERLIKE'] }
-      }
-    });
-
-    if (otherSwipe) {
-      // IT'S A MATCH! 🎉
-
-      // Sort IDs to ensure unique constraint on relations (profile1Id < profile2Id)
-      // Actually my schema has MatchProfile1 and MatchProfile2 relation names
-      // Usually best to sort IDs to prevent duplicates A-B vs B-A
-      const [p1, p2] = [myProfile.id, targetId].sort();
-
-      const match = await prisma.datingMatch.create({
-        data: {
-          profile1Id: p1,
-          profile2Id: p2,
-          isActive: true
-        }
-      });
-
-      // Fetch target info to return
-      const matchedProfile = await prisma.datingProfile.findUnique({
-        where: { id: targetId },
-        select: { firstName: true, photos: { take: 1 } }
-      });
-
-      // Emit Socket Event (if IO available)
-      if (req.io) {
-        // Need Target's userId to send socket (datingProfile doesn't have it directly in select above? wait I need to fetch it)
-        const targetUser = await prisma.datingProfile.findUnique({ where: { id: targetId }, select: { userId: true } });
-        if (targetUser) {
-          req.io.to(targetUser.userId).emit("match:new", {
-            matchId: match.id,
-            partnerName: myProfile.firstName,
-            partnerId: myProfile.id
-          });
-        }
-        // Notify Me (Client handles the immediate response, but socket ensures consistency)
-      }
-
-      return res.json({ isMatch: true, matchDetails: { ...match, partner: matchedProfile } });
-    }
-
-    return res.json({ isMatch: false });
+    return res.json({ message: "Swiped successfully", match: false, debug: debugInfo });
 
   } catch (err) {
     console.error("POST /api/dating/swipe error", err);
