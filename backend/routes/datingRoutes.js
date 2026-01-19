@@ -211,7 +211,7 @@ router.get("/pool", async (req, res) => {
         select: { blockerId: true }
       })
     ]);
-    
+
     const swipedIds = swipedRecords.map(r => r.targetId);
 
     const blockedIds = [
@@ -325,29 +325,40 @@ router.post("/swipe", async (req, res) => {
     const myProfile = await prisma.datingProfile.findUnique({ where: { userId } });
     if (!myProfile) return res.status(400).json({ error: "No profile" });
 
-    // 0. CHECK SINGLE DAY SWIPE LIMIT (Spam prevention)
-    // TEMP DISABLED FOR TESTING
-    /*
+    // 0. CHECK SINGLE DAY SWIPE LIMIT (Spam prevention & Monetization)
+    // Only limit LIKES. Passes are unlimited.
     const DAILY_LIMIT = 5;
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
-    const todaySwipes = await prisma.datingSwipe.count({
-      where: {
-        swiperId: myProfile.id,
-        createdAt: {
-          gte: startOfDay
-        }
-      }
-    });
+    // Debug: Log incoming type
+    console.log(`[SWIPE REQUEST] User: ${userId} Type: ${type}`);
 
-    if (todaySwipes >= DAILY_LIMIT) {
-      return res.status(429).json({
-        error: "Daily swipe limit reached",
-        message: "You've swiped 5 times today. Save some love for tomorrow! 🌙"
+    if (type === 'LIKE' || type === 'SUPERLIKE') {
+      const todayLikes = await prisma.datingSwipe.count({
+        where: {
+          swiperId: myProfile.id,
+          type: { in: ['LIKE', 'SUPERLIKE'] }, // Only count likes
+          createdAt: {
+            gte: startOfDay
+          }
+        }
       });
+
+      // Add Debug Header so user sees it in frontend logs
+      res.set('X-Debug-Swipe-Limit', `${todayLikes}/${DAILY_LIMIT}`);
+      console.log(`[LIKE CHECK] Count: ${todayLikes}/${DAILY_LIMIT}`);
+
+      if (todayLikes >= DAILY_LIMIT) {
+        console.log(`[LIKE LIMIT REACHED] Blocked`);
+        return res.status(429).json({
+          error: "Daily like limit reached",
+          message: "You've liked 5 people today. Save some love for tomorrow or upgrade!"
+        });
+      }
+    } else {
+      res.set('X-Debug-Swipe-Limit', `UNLIMITED (Pass)`);
     }
-    */
 
     // 1. Prevent duplicate swipe
     // (Prisma unique constraint on swiperId_targetId handles this, but custom check details nice error)
@@ -363,13 +374,21 @@ router.post("/swipe", async (req, res) => {
     if (existing) return res.json({ message: "Already swiped" });
 
     // 2. Create Swipe Record
-    await prisma.datingSwipe.create({
-      data: {
-        swiperId: myProfile.id,
-        targetId,
-        type
+    try {
+      await prisma.datingSwipe.create({
+        data: {
+          swiperId: myProfile.id,
+          targetId,
+          type
+        }
+      });
+    } catch (createErr) {
+      if (createErr.code === 'P2002') {
+        console.warn("Race condition: Swipe already exists");
+        return res.json({ message: "Already swiped" });
       }
-    });
+      throw createErr;
+    }
 
     // 3. If PASS, simple return
     if (type === 'DISLIKE') {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Dimensions, Text, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Dimensions, Text, ActivityIndicator, Alert, TouchableOpacity, Image } from 'react-native';
 import { GestureDetector, Gesture } from 'react-native-gesture-handler';
 import Animated, {
     useSharedValue,
@@ -20,9 +20,11 @@ const SWIPE_THRESHOLD = width * 0.25;
 
 export default function SwipingDeck() {
     const [pool, setPool] = useState<any[]>([]);
+    const [activeIndex, setActiveIndex] = useState(0); // Add active index pointer
     const [loading, setLoading] = useState(true);
     const [matchModalVisible, setMatchModalVisible] = useState(false);
     const [lastMatch, setLastMatch] = useState<any>(null);
+    const [limitReached, setLimitReached] = useState(false); // Toast state
 
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
@@ -36,6 +38,7 @@ export default function SwipingDeck() {
             setLoading(true);
             const { data } = await api.get('/api/dating/pool');
             setPool(Array.isArray(data) ? data : []);
+            setActiveIndex(0); // Reset index on fresh fetch
         } catch (err) {
             console.error("Fetch pool error:", err);
             Alert.alert("Error", "Failed to load profiles.");
@@ -44,13 +47,29 @@ export default function SwipingDeck() {
         }
     };
 
+    // Prefetch images for smooth swiping
+    useEffect(() => {
+        if (pool.length > 0) {
+            const profilesToPrefetch = pool.slice(activeIndex, activeIndex + 5);
+            profilesToPrefetch.forEach(p => {
+                if (p.photos?.[0]) {
+                    Image.prefetch(p.photos[0]).catch(e => console.log("Prefetch failed", e));
+                }
+            });
+        }
+    }, [pool, activeIndex]);
+
     const handleSwipeComplete = async (direction: 'left' | 'right' | 'up') => {
-        const currentProfile = pool[0];
+        const currentProfile = pool[activeIndex];
         if (!currentProfile) return;
 
-        // Optimistic UI: Remove card immediately
-        const nextPool = pool.slice(1);
-        setPool(nextPool);
+        const previousIndex = activeIndex;
+
+        // Optimistic UI: Update POINTER
+        // Keyed rendering will handle the transition
+        setActiveIndex(prev => prev + 1);
+
+        // Reset animation values for the NEW top card (which was previously the Next Card)
         translateX.value = 0;
         translateY.value = 0;
 
@@ -58,20 +77,25 @@ export default function SwipingDeck() {
         try {
             const type = direction === 'right' ? 'LIKE' : direction === 'left' ? 'DISLIKE' : 'SUPERLIKE';
             const { data } = await api.post('/api/dating/swipe', {
-                targetId: currentProfile.id, // Send profile ID, not user ID
+                targetId: currentProfile.id,
                 type
             });
 
             if (data.match) {
-                // It's a match!
-                setLastMatch(data.match); // Contains partner profile info
+                setLastMatch(data.match);
                 setMatchModalVisible(true);
                 Alert.alert("It's a Match!", `You matched with ${currentProfile.firstName}!`);
-                // TODO: Show nice modal
             }
-        } catch (err) {
+        } catch (err: any) {
             console.error("Swipe error:", err);
-            // If error, maybe put card back? For now, ignore.
+
+            // Revert state on error (especially Limit Reached)
+            if (err.response?.status === 429) {
+                // Show custom toast instead of alert
+                setLimitReached(true);
+                // Put card back
+                setActiveIndex(previousIndex);
+            }
         }
     };
 
@@ -85,13 +109,10 @@ export default function SwipingDeck() {
         })
         .onEnd((event) => {
             if (Math.abs(event.translationX) > SWIPE_THRESHOLD) {
-                // Swipe detected
                 const direction = event.translationX > 0 ? 'right' : 'left';
-                // Animate off screen
                 translateX.value = withSpring(direction === 'right' ? width * 1.5 : -width * 1.5);
                 runOnJS(handleSwipeComplete)(direction);
             } else {
-                // Return to center
                 translateX.value = withSpring(0);
                 translateY.value = withSpring(0);
             }
@@ -112,18 +133,14 @@ export default function SwipingDeck() {
             transform: [
                 { translateX: translateX.value },
                 { translateY: translateY.value },
-                { rotate: `${rotate}deg` }
-            ]
+                { rotate: `${rotate}deg` },
+                { scale: 1 } // Ensure full scale
+            ],
+            zIndex: 2 // Top card
         };
     });
 
     const nextCardOpacity = useAnimatedStyle(() => {
-        const opacity = interpolate(
-            Math.abs(translateX.value),
-            [0, width / 2],
-            [0.5, 1],
-            Extrapolation.CLAMP
-        );
         const scale = interpolate(
             Math.abs(translateX.value),
             [0, width / 2],
@@ -131,8 +148,9 @@ export default function SwipingDeck() {
             Extrapolation.CLAMP
         );
         return {
-            opacity,
-            transform: [{ scale }]
+            transform: [{ scale }],
+            opacity: 1, // Keep visible
+            zIndex: 1 // Bottom card
         };
     });
 
@@ -148,7 +166,7 @@ export default function SwipingDeck() {
         );
     }
 
-    if (pool.length === 0) {
+    if (pool.length === 0 || activeIndex >= pool.length) {
         return (
             <View style={styles.center}>
                 <View style={styles.circle}>
@@ -163,7 +181,9 @@ export default function SwipingDeck() {
         );
     }
 
-
+    // Current pointers
+    const currentProfile = pool[activeIndex];
+    const nextProfile = pool[activeIndex + 1];
 
     /* ──────────────────────────────────────────────────────────────────────────
        BUTTON HANDLERS
@@ -185,20 +205,30 @@ export default function SwipingDeck() {
 
     return (
         <View style={styles.container}>
-            {/* Next Card (Underneath) */}
-            {pool.length > 1 && (
-                <Animated.View style={[styles.cardWrapper, styles.nextCard, nextCardOpacity]}>
-                    <DatingCard profile={pool[1]} />
-                </Animated.View>
-            )}
+            {/* KEYED RENDER: Only render Top 2 Cards. Reverse order so Top is last (highest z-index) */}
+            {pool.slice(activeIndex, activeIndex + 2).reverse().map((profile, index) => {
+                const isTop = profile.id === pool[activeIndex].id;
 
-            {/* Top Card */}
-            <GestureDetector gesture={panGesture}>
-                <Animated.View style={[styles.cardWrapper, animatedCardStyle]}>
-                    <DatingCard profile={pool[0]} />
-                    <SwipeOverlay translateX={translateX} translateY={translateY} />
-                </Animated.View>
-            </GestureDetector>
+                if (isTop) {
+                    return (
+                        <GestureDetector key={profile.id} gesture={panGesture}>
+                            <Animated.View style={[styles.cardWrapper, animatedCardStyle]}>
+                                <DatingCard profile={profile} />
+                                <SwipeOverlay translateX={translateX} translateY={translateY} />
+                            </Animated.View>
+                        </GestureDetector>
+                    );
+                } else {
+                    return (
+                        <Animated.View
+                            key={profile.id}
+                            style={[styles.cardWrapper, styles.nextCard, nextCardOpacity]}
+                        >
+                            <DatingCard profile={profile} />
+                        </Animated.View>
+                    );
+                }
+            })}
 
             {/* Action Buttons */}
             <ActionButtons
@@ -207,9 +237,113 @@ export default function SwipingDeck() {
                 onSuperLike={() => triggerSwipe('up')}
                 onBoost={() => Alert.alert("Boost", "Feature coming soon!")}
             />
+
+            {/* Premium Toast Overlay */}
+            <LimitToast visible={limitReached} onClose={() => setLimitReached(false)} />
         </View>
     );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRE-DEFINED TOAST COMPONENT (Normally in separate file)
+// ─────────────────────────────────────────────────────────────────────────────
+function LimitToast({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+    if (!visible) return null;
+
+    return (
+        <View style={toastStyles.overlay}>
+            <View style={toastStyles.container}>
+                <View style={toastStyles.iconCircle}>
+                    <Ionicons name="time" size={32} color="#FF6B6B" />
+                </View>
+                <Text style={toastStyles.title}>Daily Limit Reached</Text>
+                <Text style={toastStyles.message}>
+                    You've swiped 5 times today. Wait for tomorrow or upgrade for unlimited swipes!
+                </Text>
+
+                <TouchableOpacity style={toastStyles.primaryButton} onPress={() => Alert.alert("Premium", "Upgrade flow coming soon!")}>
+                    <Text style={toastStyles.primaryButtonText}>Go Premium ✨</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={toastStyles.secondaryButton} onPress={onClose}>
+                    <Text style={toastStyles.secondaryButtonText}>I'll wait</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+}
+
+const toastStyles = StyleSheet.create({
+    overlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1000,
+        padding: 20
+    },
+    container: {
+        backgroundColor: '#FFF',
+        width: '100%',
+        maxWidth: 340,
+        borderRadius: 24,
+        padding: 24,
+        alignItems: 'center',
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 10
+    },
+    iconCircle: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#FFF0F0',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16
+    },
+    title: {
+        fontSize: 22,
+        fontWeight: '800',
+        color: '#1A1A1A',
+        marginBottom: 8,
+        textAlign: 'center'
+    },
+    message: {
+        fontSize: 15,
+        color: '#666',
+        textAlign: 'center',
+        lineHeight: 22,
+        marginBottom: 24
+    },
+    primaryButton: {
+        backgroundColor: '#FF6B6B',
+        paddingVertical: 14,
+        width: '100%',
+        borderRadius: 16,
+        alignItems: 'center',
+        marginBottom: 12,
+        shadowColor: "#FF6B6B",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+    },
+    primaryButtonText: {
+        color: '#FFF',
+        fontSize: 16,
+        fontWeight: '700'
+    },
+    secondaryButton: {
+        paddingVertical: 10,
+    },
+    secondaryButtonText: {
+        color: '#999',
+        fontSize: 15,
+        fontWeight: '600'
+    }
+});
 
 const styles = StyleSheet.create({
     container: {
