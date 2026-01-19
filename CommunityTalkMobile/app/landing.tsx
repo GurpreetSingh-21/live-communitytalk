@@ -311,14 +311,15 @@ export default function Landing() {
               borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
             }}
           >
-            <Image
+            {/* Temporarily disabled - regenerate hero_collage.png */}
+            {/* <Image
               source={require('../assets/images/hero_collage.png')}
               style={{
                 width: '100%',
                 height: '100%',
                 resizeMode: 'cover',
               }}
-            />
+            /> */}
 
             {/* Gradient Overlay */}
             <LinearGradient
