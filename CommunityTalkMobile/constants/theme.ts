@@ -24,58 +24,60 @@ const info = "#3B82F6";
 export const Colors = {
   light: {
     // Core surfaces
-    background: "#FAF9F7", // Warm Off-white
-    surface: "#FFFFFF",     // Pure white for cards
-    muted: "#F5F4F2",       // Warm gray for inputs/backgrounds
-    border: "#E5E5E5",
+    background: "#FAFAFA",     // Soft white
+    surface: "#FFFFFF",        // Pure white
+    muted: "#F5F5F5",          // Light gray cards
+    border: "rgba(0,0,0,0.06)", // Subtle border
     
     // Text
-    text: "#1A1A1A",        // Soft Black
-    textMuted: "#6B6B6B",   // Warm Dark Gray
+    text: "#0A0A0A",           // Deep black
+    textMuted: "#525252",      // Medium gray
+    textSecondary: "#A3A3A3",  // Light gray
     
     // Icons
     icon: "#6B6B6B",
     
-    // Brand / semantic
-    primary: brandPrimary,
-    accent: brandAccent,
-    success,
+    // Brand / semantic - Darker emerald for light mode contrast
+    primary: "#16A34A",        // Darker emerald
+    accent: "#22C55E",         // Bright emerald
+    success:  "#16A34A",
     danger,
     warning,
     info,
     
     // Navigation
     tabIconDefault: "#A3A3A3",
-    tabIconSelected: brandPrimary,
-    tint: brandPrimary,
+    tabIconSelected: "#16A34A",
+    tint: "#16A34A",
   },
 
   dark: {
     // Core surfaces
-    background: "#111110",  // Warm Black
-    surface: "#1A1917",     // Dark Warm Gray
-    muted: "#252422",       // Lighter Warm Gray
-    border: "#2C2C2C",
+    background: "#0A0A0A",  // Deep charcoal
+    surface: "#111111",     //Elevated surfaces
+    muted: "#1A1A1A",       // Card backgrounds
+    border: "rgba(255,255,255,0.08)", // Glass border
     
     // Text
-    text: "#F5F4F2",        // Off-white
-    textMuted: "#A3A3A3",   // Light Gray
+    text: "#FAFAFA",        // Off-white
+    textMuted: "#A0A0A0",   // Medium gray
+    textSecondary: "#707070",   // Light gray
     
     // Icons
     icon: "#A1A1AA",
     
-    // Brand / semantic
-    primary: brandPrimaryDark, // Lighter green for dark mode visibility
-    accent: brandAccent,
-    success,
-    danger,
-    warning,
-    info,
+    // Brand / semantic - Single emerald accent
+    primary: "#22C55E",     // Modern emerald
+    accent: "#22C55E",      // Match primary for consistency
+    success: "#22C55E",     // Use same emerald
+    danger: "#EF4444",
+    warning: "#F59E0B",
+    info: "#3B82F6",
     
     // Navigation
     tabIconDefault: "#525252",
-    tabIconSelected: brandPrimaryDark,
-    tint: brandPrimaryDark,
+    tabIconSelected: "#22C55E",
+    tint: "#22C55E",
   },
 };
 
