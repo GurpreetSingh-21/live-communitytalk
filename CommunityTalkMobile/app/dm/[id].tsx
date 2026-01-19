@@ -602,9 +602,14 @@ export default function DMThreadScreen() {
 
       if (clientMessageId) resolvedClientIdsRef.current.add(clientMessageId);
 
-    } catch (err) {
-      console.error("Send failed", err);
-      Alert.alert("Upload Failed", "Could not send file.");
+    } catch (err: any) {
+      console.error("❌ [Upload] Send failed:", err);
+      console.error("❌ [Upload] Error message:", err?.message);
+      console.error("❌ [Upload] Error response:", err?.response?.data);
+      console.error("❌ [Upload] File URI:", fileUri);
+      console.error("❌ [Upload] File name:", fileName);
+      console.error("❌ [Upload] File type:", fileType);
+      Alert.alert("Upload Failed", `Could not send file: ${err?.message || 'Unknown error'}`);
       setMessages((prev) =>
         prev.map((m) =>
           m.clientMessageId === clientMessageId
