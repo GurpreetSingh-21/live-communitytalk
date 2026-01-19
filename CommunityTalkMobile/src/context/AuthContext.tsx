@@ -46,7 +46,7 @@ type AuthState = {
   signIn: (email: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<RegisterResponse>;
   signOut: () => Promise<void>;
-  refreshBootstrap: () => Promise<void>;
+  refreshBootstrap: () => Promise<any>;
   setToken?: (token: string) => Promise<void>;
   bootstrap?: () => Promise<void>;
   updateAvatar?: (newUrl: string) => void;
@@ -227,7 +227,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         // 1. Try the safe, current API endpoint.
         const data = await apiBootstrap(); // This will also check the token internally
         applyAuthState(data?.user || null, data?.communities || []);
-        return;
+        return data?.user;
       } catch (err: any) {
         if (err?._early401) return;
 
@@ -332,13 +332,18 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
     async (token: string) => {
       await setAccessToken(token);
       await refreshSocketAuth(token);
-      await refreshBootstrap();
+      const userObj = await refreshBootstrap();
       await registerForPushNotificationsAsync(); // SAFE
 
       // 🔐 E2EE: Generate keypair and upload public key on login
       try {
-        const { publicKey } = await getOrCreateKeyPair();
-        await uploadPublicKey(publicKey);
+        const userId = (userObj as any)?.id || (userObj as any)?._id;
+        if (userId) {
+          const { publicKey } = await getOrCreateKeyPair(String(userId));
+          await uploadPublicKey(publicKey);
+        } else {
+          console.warn('[E2EE] Skipping key generation - no user ID found');
+        }
       } catch (err) {
         console.warn('[E2EE] Key initialization failed (non-fatal):', err);
       }

@@ -355,7 +355,7 @@ export default function DMThreadScreen() {
     try {
       // 🔐 E2EE: Ensure we have a keypair (regenerates if missing)
       try {
-        const { publicKey } = await ensureKeyPair();
+        const { publicKey } = await ensureKeyPair(myId);
         // Upload the public key to ensure server is in sync
         await uploadPublicKey(publicKey);
       } catch (keyErr) {
@@ -410,7 +410,7 @@ export default function DMThreadScreen() {
           // Only decrypt if explicitly marked as encrypted
           if (m.isEncrypted && m.content && partnerPubKey) {
             try {
-              const decrypted = await decryptMessage(m.content, partnerPubKey);
+              const decrypted = await decryptMessage(m.content, partnerPubKey, myId);
               // Check if decryption returned an error code
               if (decrypted.startsWith('[') && decrypted.endsWith(']')) {
                 console.warn('🔐 [E2EE] Decryption returned error:', decrypted, 'for msg:', m._id?.substring(0, 8));
@@ -495,7 +495,7 @@ export default function DMThreadScreen() {
       // NaCl shared key is symmetric - always use partner's public key
       if (p.isEncrypted && content && recipientPublicKey) {
         try {
-          const decrypted = await decryptMessage(content, recipientPublicKey);
+          const decrypted = await decryptMessage(content, recipientPublicKey, myId);
           if (!decrypted.startsWith('[')) {
             content = decrypted;
             console.log('🔐 [E2EE] Real-time decrypted ok');
@@ -766,7 +766,7 @@ export default function DMThreadScreen() {
 
       if (recipientPublicKey) {
         try {
-          const encrypted = await encryptMessage(text, recipientPublicKey);
+          const encrypted = await encryptMessage(text, recipientPublicKey, myId);
           if (encrypted) {
             contentToSend = encrypted;
             isEncrypted = true;

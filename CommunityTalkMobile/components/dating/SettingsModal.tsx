@@ -22,6 +22,7 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
     const [ageMin, setAgeMin] = useState(18);
     const [ageMax, setAgeMax] = useState(30);
     const [maxDistance, setMaxDistance] = useState(50);
+    const [interestedInGender, setInterestedInGender] = useState<string[]>([]);
     const [showOnCampus, setShowOnCampus] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
 
@@ -44,6 +45,7 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
                 setAgeMin(data.preference.ageMin);
                 setAgeMax(data.preference.ageMax);
                 setMaxDistance(data.preference.maxDistance);
+                setInterestedInGender(data.preference.interestedInGender || []);
                 setShowOnCampus(data.preference.showToPeopleOnCampusOnly);
             }
         }
@@ -64,6 +66,7 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
                     ageMin,
                     ageMax,
                     maxDistance,
+                    interestedInGender,
                     showToPeopleOnCampusOnly: showOnCampus
                 },
                 pauseProfile: isPaused
@@ -234,6 +237,37 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
                             <TouchableOpacity onPress={() => setMaxDistance(Math.max(5, maxDistance - 5))} style={styles.stepper}><Text style={styles.stepperText}>-</Text></TouchableOpacity>
                             <View style={styles.sliderTrack}><View style={[styles.sliderFill, { width: `${(maxDistance / 100) * 100}%` }]} /></View>
                             <TouchableOpacity onPress={() => setMaxDistance(Math.min(100, maxDistance + 5))} style={styles.stepper}><Text style={styles.stepperText}>+</Text></TouchableOpacity>
+                        </View>
+
+                        <View style={styles.divider} />
+
+                        {/* Show Me (Gender) */}
+                        <View style={styles.row}>
+                            <Text style={styles.label}>Show Me</Text>
+                        </View>
+                        <View style={styles.segmentContainer}>
+                            {['Men', 'Women', 'Everyone'].map((opt) => {
+                                let val: string[] = [];
+                                if (opt === 'Men') val = ['MALE'];
+                                if (opt === 'Women') val = ['FEMALE'];
+                                // Everyone = [] (Empty array implies all in backend logic)
+
+                                const isSelected = opt === 'Everyone'
+                                    ? interestedInGender.length === 0
+                                    : interestedInGender.includes(val[0]) && interestedInGender.length === 1;
+
+                                return (
+                                    <TouchableOpacity
+                                        key={opt}
+                                        style={[styles.segmentBtn, isSelected && styles.segmentBtnActive]}
+                                        onPress={() => setInterestedInGender(val)}
+                                    >
+                                        <Text style={[styles.segmentText, isSelected && styles.segmentTextActive]}>
+                                            {opt}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
                         </View>
 
                         <View style={styles.divider} />
@@ -490,5 +524,37 @@ const styles = StyleSheet.create({
     stepperText: { fontSize: 18, fontWeight: '600', color: '#333' },
     sliderTrack: { flex: 1, height: 4, backgroundColor: '#E5E5EA', borderRadius: 2, overflow: 'hidden' },
     sliderFill: { height: '100%', backgroundColor: '#FF6B6B' },
-    rangeVal: { fontSize: 14, fontWeight: '600', color: '#555' }
+    rangeVal: { fontSize: 14, fontWeight: '600', color: '#555' },
+
+    // Segment Control
+    segmentContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#F2F2F7',
+        borderRadius: 8,
+        padding: 2,
+        marginBottom: 12
+    },
+    segmentBtn: {
+        flex: 1,
+        paddingVertical: 8,
+        alignItems: 'center',
+        borderRadius: 6
+    },
+    segmentBtnActive: {
+        backgroundColor: '#FFF',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.15,
+        shadowRadius: 2,
+        elevation: 2
+    },
+    segmentText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#666'
+    },
+    segmentTextActive: {
+        color: '#000',
+        fontWeight: '600'
+    }
 });

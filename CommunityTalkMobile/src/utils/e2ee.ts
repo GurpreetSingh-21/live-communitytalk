@@ -9,45 +9,76 @@ import { encodeBase64, decodeBase64 } from 'tweetnacl-util';
 import * as SecureStore from 'expo-secure-store';
 import { e2eeLogger as logger } from './logger';
 
-const PUB_KEY = 'e2ee_public_key';
-const SEC_KEY = 'e2ee_secret_key';
+const LEGACY_PUB_KEY = 'e2ee_public_key';
+const LEGACY_SEC_KEY = 'e2ee_secret_key';
+
+const getKeyKeys = (userId: string) => ({
+  PUB: `e2ee_pub_${userId}`,
+  SEC: `e2ee_sec_${userId}`
+});
 
 /**
  * Get or create the user's X25519 keypair.
  * Public key is safe to share. Private key NEVER leaves the device.
+ * Scoped by userId to allow multiple accounts on same device.
  */
-export async function getOrCreateKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
-  const existingPub = await SecureStore.getItemAsync(PUB_KEY);
-  const existingSec = await SecureStore.getItemAsync(SEC_KEY);
+export async function getOrCreateKeyPair(userId: string): Promise<{ publicKey: string; secretKey: string }> {
+  if (!userId) throw new Error('getOrCreateKeyPair requires userId');
+  
+  const { PUB, SEC } = getKeyKeys(userId);
+
+  // 1. Check specific keys
+  const existingPub = await SecureStore.getItemAsync(PUB);
+  const existingSec = await SecureStore.getItemAsync(SEC);
 
   if (existingPub && existingSec) {
     return { publicKey: existingPub, secretKey: existingSec };
   }
 
-  // Generate new keypair
+  // 2. Check legacy keys (Migration)
+  const legacyPub = await SecureStore.getItemAsync(LEGACY_PUB_KEY);
+  const legacySec = await SecureStore.getItemAsync(LEGACY_SEC_KEY);
+
+  if (legacyPub && legacySec) {
+    logger.info(`Migrating legacy keys to user ${userId}...`);
+    await SecureStore.setItemAsync(PUB, legacyPub);
+    await SecureStore.setItemAsync(SEC, legacySec);
+    
+    // Clean up legacy (safe because we copied them)
+    await SecureStore.deleteItemAsync(LEGACY_PUB_KEY);
+    await SecureStore.deleteItemAsync(LEGACY_SEC_KEY);
+    
+    return { publicKey: legacyPub, secretKey: legacySec };
+  }
+
+  // 3. Generate new keypair
   const kp = nacl.box.keyPair();
   const publicKey = encodeBase64(kp.publicKey);
   const secretKey = encodeBase64(kp.secretKey);
 
-  await SecureStore.setItemAsync(PUB_KEY, publicKey);
-  await SecureStore.setItemAsync(SEC_KEY, secretKey);
+  await SecureStore.setItemAsync(PUB, publicKey);
+  await SecureStore.setItemAsync(SEC, secretKey);
 
-  logger.info('New keypair generated');
+  logger.info(`New keypair generated for user ${userId}`);
   return { publicKey, secretKey };
 }
 
 /**
  * Get the current user's public key (for uploading to server)
  */
-export async function getPublicKey(): Promise<string | null> {
-  return await SecureStore.getItemAsync(PUB_KEY);
+export async function getPublicKey(userId: string): Promise<string | null> {
+  if (!userId) return null;
+  const { PUB } = getKeyKeys(userId);
+  return await SecureStore.getItemAsync(PUB);
 }
 
 /**
  * Get the current user's private key (for decryption, never share)
  */
-async function getSecretKey(): Promise<string | null> {
-  return await SecureStore.getItemAsync(SEC_KEY);
+async function getSecretKey(userId: string): Promise<string | null> {
+  if (!userId) return null;
+  const { SEC } = getKeyKeys(userId);
+  return await SecureStore.getItemAsync(SEC);
 }
 
 /**
@@ -56,17 +87,19 @@ async function getSecretKey(): Promise<string | null> {
  * 
  * @param plainText - The message to encrypt
  * @param recipientPublicKeyB64 - Recipient's public key (base64)
+ * @param senderUserId - ID of the sender (to retrieve private key)
  * @returns Base64-encoded ciphertext (nonce + encrypted), or null on failure
  */
 export async function encryptMessage(
   plainText: string,
-  recipientPublicKeyB64: string
+  recipientPublicKeyB64: string,
+  senderUserId: string
 ): Promise<string | null> {
-  if (!plainText || !recipientPublicKeyB64) return null;
+  if (!plainText || !recipientPublicKeyB64 || !senderUserId) return null;
 
   try {
-    const secretKey = await getSecretKey();
-    if (!secretKey) throw new Error('No private key found');
+    const secretKey = await getSecretKey(senderUserId);
+    if (!secretKey) throw new Error(`No private key found for user ${senderUserId}`);
 
     // Compute shared key using Diffie-Hellman
     const sharedKey = nacl.box.before(
@@ -101,33 +134,31 @@ export async function encryptMessage(
  * 
  * @param cipherTextB64 - Base64-encoded ciphertext (nonce + encrypted)
  * @param senderPublicKeyB64 - Sender's public key (base64)
+ * @param recipientUserId - ID of the recipient (current user trying to decrypt)
  * @returns Decrypted plaintext, or fallback string on failure
  */
 export async function decryptMessage(
   cipherTextB64: string,
-  senderPublicKeyB64: string
+  senderPublicKeyB64: string,
+  recipientUserId: string
 ): Promise<string> {
-  if (!cipherTextB64 || !senderPublicKeyB64) {
-    logger.warn('Missing input - cipher:', !!cipherTextB64, 'publicKey:', !!senderPublicKeyB64);
-    return '[Locked]';
+  if (!cipherTextB64 || !senderPublicKeyB64 || !recipientUserId) {
+    // logger.warn('Missing input for decrypt');
+    return '[Locked]'; // Using specific code? or just Locked.
   }
 
   try {
-    const secretKey = await getSecretKey();
+    const secretKey = await getSecretKey(recipientUserId);
     if (!secretKey) {
-      logger.warn('No secret key found in SecureStore');
+      logger.warn(`No secret key found for user ${recipientUserId}`);
       return '[No Key]';
     }
 
     // 🚀 PERFORMANCE: Only log in dev mode
-    logger.debug('Input:', {
-      cipherLen: cipherTextB64.length,
-      pubKeyLen: senderPublicKeyB64.length
-    });
+    // logger.debug('Decrypting...');
 
     const messageWithNonce = decodeBase64(cipherTextB64);
     if (messageWithNonce.length < nacl.box.nonceLength) {
-      logger.error('Corrupt - message too short:', messageWithNonce.length, 'bytes');
       return '[Corrupt]';
     }
 
@@ -135,29 +166,24 @@ export async function decryptMessage(
     const nonce = messageWithNonce.slice(0, nacl.box.nonceLength);
     const ciphertext = messageWithNonce.slice(nacl.box.nonceLength);
 
-    logger.debug('Extracted - nonce:', nonce.length, 'bytes, cipher:', ciphertext.length, 'bytes');
-
     // Compute shared key
     const sharedKey = nacl.box.before(
       decodeBase64(senderPublicKeyB64),
       decodeBase64(secretKey)
     );
 
-    logger.debug('Shared key computed, attempting decryption...');
-
     // Decrypt with precomputed shared key
     const decrypted = nacl.box.open.after(ciphertext, nonce, sharedKey);
     if (!decrypted) {
-      logger.warn('FAILED - nacl.box.open.after returned null');
-      logger.warn('This usually means key mismatch (old message?) or corrupted ciphertext');
+      // Don't spam "FAILED" logs for expected old keys
+      // logger.warn('Decryption failed (key mismatch)'); 
       return '[Decryption Failed]';
     }
 
     const result = new TextDecoder().decode(decrypted);
-    logger.debug('SUCCESS');
     return result;
   } catch (err) {
-    logger.error('Exception:', err);
+    logger.error('Decrypt Exception:', err);
     return '[Error]';
   }
 }
@@ -165,57 +191,43 @@ export async function decryptMessage(
 /**
  * Check if we have a valid keypair stored
  */
-export async function hasKeyPair(): Promise<boolean> {
-  const pub = await SecureStore.getItemAsync(PUB_KEY);
-  const sec = await SecureStore.getItemAsync(SEC_KEY);
+export async function hasKeyPair(userId: string): Promise<boolean> {
+  if (!userId) return false;
+  const { PUB, SEC } = getKeyKeys(userId);
+  const pub = await SecureStore.getItemAsync(PUB);
+  const sec = await SecureStore.getItemAsync(SEC);
   return !!(pub && sec);
 }
 
 /**
- * Clear all E2EE keys (use with caution - all encrypted messages become unreadable!)
+ * Clear all E2EE keys for specific user
  */
-export async function clearKeys(): Promise<void> {
-  await SecureStore.deleteItemAsync(PUB_KEY);
-  await SecureStore.deleteItemAsync(SEC_KEY);
-  logger.info('Keys cleared');
+export async function clearKeys(userId: string): Promise<void> {
+  if (!userId) return;
+  const { PUB, SEC } = getKeyKeys(userId);
+  await SecureStore.deleteItemAsync(PUB);
+  await SecureStore.deleteItemAsync(SEC);
+  logger.info(`Keys cleared for user ${userId}`);
 }
 
 /**
- * Force regenerate keypair (useful when device was reset or keys are out of sync)
- * This will create new keys even if old ones exist
+ * Force regenerate keypair for user
  */
-export async function forceRegenerateKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
-  logger.info('Force regenerating keypair...');
-
-  // Clear old keys
-  await SecureStore.deleteItemAsync(PUB_KEY);
-  await SecureStore.deleteItemAsync(SEC_KEY);
-
-  // Generate new keypair
-  const kp = nacl.box.keyPair();
-  const publicKey = encodeBase64(kp.publicKey);
-  const secretKey = encodeBase64(kp.secretKey);
-
-  await SecureStore.setItemAsync(PUB_KEY, publicKey);
-  await SecureStore.setItemAsync(SEC_KEY, secretKey);
-
-  logger.info('New keypair generated and stored');
-  return { publicKey, secretKey };
+export async function forceRegenerateKeyPair(userId: string): Promise<{ publicKey: string; secretKey: string }> {
+  logger.info(`Force regenerating keypair for ${userId}...`);
+  await clearKeys(userId);
+  return await getOrCreateKeyPair(userId);
 }
 
 /**
  * Ensure keys exist - regenerate if missing
- * Returns the keypair, regenerating if necessary
  */
-export async function ensureKeyPair(): Promise<{ publicKey: string; secretKey: string }> {
-  const existingPub = await SecureStore.getItemAsync(PUB_KEY);
-  const existingSec = await SecureStore.getItemAsync(SEC_KEY);
-
-  if (existingPub && existingSec) {
-    logger.debug('Keys verified in SecureStore');
-    return { publicKey: existingPub, secretKey: existingSec };
+export async function ensureKeyPair(userId: string): Promise<{ publicKey: string; secretKey: string }> {
+  if (await hasKeyPair(userId)) {
+    const { PUB, SEC } = getKeyKeys(userId);
+    const publicKey = (await SecureStore.getItemAsync(PUB))!;
+    const secretKey = (await SecureStore.getItemAsync(SEC))!;
+    return { publicKey, secretKey };
   }
-
-  logger.warn('Keys missing! Regenerating...');
-  return await forceRegenerateKeyPair();
+  return await forceRegenerateKeyPair(userId);
 }

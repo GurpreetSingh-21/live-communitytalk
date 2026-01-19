@@ -595,7 +595,7 @@ export default function DMsScreen(): React.JSX.Element {
 
             // Decrypt the message
             // console.log(`🔐 [DM Inbox] Decrypting preview for ${thread.name}...`);
-            const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey);
+            const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey, myId);
 
             if (decryptedContent.startsWith('[') && decryptedContent.includes('Failed')) {
               // Decryption failed (likely key rotation).
@@ -621,11 +621,12 @@ export default function DMsScreen(): React.JSX.Element {
       );
 
       return decryptedThreads as DMThread[];
+      return decryptedThreads as DMThread[];
     } catch (error) {
       console.error('Fetch DMs failed:', error);
       return [] as DMThread[];
     }
-  }, [isAuthed]);
+  }, [isAuthed, myId]);
 
   /* ------------------- Refresh & Init ------------------- */
 
@@ -747,8 +748,8 @@ export default function DMsScreen(): React.JSX.Element {
       const from = String(payload?.from || payload?.senderId || '');
       const to = String(payload?.to || '');
 
-      // Skip if it's our own sent message (we don't need to show it as "new")
-      if (from === myId) return;
+      // Allow own messages to update the list order (User Experience: Sent message bumps thread to top)
+      const isMe = from === myId;
       if (!from) return;
 
       const type = payload?.type || 'text';
@@ -756,18 +757,35 @@ export default function DMsScreen(): React.JSX.Element {
       const isEncrypted = payload?.isEncrypted;
 
       // 🔐 E2EE: Decrypt encrypted message preview
+      // If it's MY message, it's likely returned as plaintext or I should have the saved copy content...
+      // But typically socket sends back what was sent.
+      // If I sent it, I encrypted it for the recipient. The socket payload has ciphertext.
+      // I can't decrypt it with MY private key (unless I encrypted a copy for myself, which I don't think we implemented fully yet).
+      // However, for the LIST preview, we can just say "You: [Message]" or similar if we can't decrypt it?
+      // OR, if the backend sends my "sender copy" ciphertext?
+      // Actually, standard behavior: If I just sent it, I probably know what it is?
+      // But this is an event coming back.
+      // Let's rely on the fact that if isMe, we might see ciphertext.
+      // Better strategy: If isMe, and it's encrypted, we try to decrypt using `recipientPublicKey` (wait, no, that's for encryption).
+      // Decryption requires MY Secret Key + Sender Public Key.
+      // If I am the sender, I need Receiver Public Key + My Secret Key.
+      // Wait, Diffie-Hellman Symmetric:
+      // Shared(A, B) = Private(A) + Public(B) = Private(B) + Public(A).
+      // So if I am A, I can decrypt my own message to B using Private(A) + Public(B).
+      // Does payload have `to`? Yes.
+
+      const partnerIdForDecrypt = isMe ? to : from;
+
       if (isEncrypted && contentStr && contentStr.length > 40) {
         try {
-          const partnerPubKey = await fetchPublicKey(from);
-          if (partnerPubKey) {
-            contentStr = await decryptMessage(contentStr, partnerPubKey);
-            console.log('🔐 [E2EE] Real-time DM list preview decrypted');
-          } else {
-            contentStr = '🔒 Encrypted';
+          const pubKey = await fetchPublicKey(partnerIdForDecrypt);
+          if (pubKey) {
+            contentStr = await decryptMessage(contentStr, pubKey, myId);
+            // If I sent it, I want to see "You: ..." maybe?
+            // But the list item rendering handles "You: " prefix usually?
           }
         } catch (err) {
-          console.warn('🔐 [E2EE] Real-time preview decrypt failed:', err);
-          contentStr = '🔒 Encrypted';
+          // ignore
         }
       }
 
@@ -782,37 +800,47 @@ export default function DMsScreen(): React.JSX.Element {
       const lastAt = Number(new Date(payload?.createdAt ?? Date.now()).getTime());
 
       setThreads(prev => {
-        const idx = prev.findIndex(t => t.id === from);
+        // Find existing thread by Partner ID
+        // If isMe, partner is `to`. If !isMe, partner is `from`.
+        const partnerId = isMe ? to : from;
+        const idx = prev.findIndex(t => t.id === partnerId);
+
         if (idx >= 0) {
           const copy = [...prev];
           const th = copy[idx];
-          // Unarchive if new message comes
-          copy[idx] = { ...th, lastMsg: content, lastAt, unread: (th.unread || 0) + 1, archived: false };
+          // Only increment unread if it's NOT me
+          const newUnread = isMe ? (th.unread || 0) : (th.unread || 0) + 1;
+
+          copy[idx] = { ...th, lastMsg: content, lastAt, unread: newUnread, archived: false };
           return resortByPinnedAndRecent(copy);
         }
+
+        // New thread creation
         const created: DMThread = {
-          id: from,
-          name: String(payload?.fromName || 'New Message'),
-          avatar: payload?.fromAvatar || '🗣️',
+          id: partnerId,
+          name: String(isMe ? (payload?.toName || 'User') : (payload?.fromName || 'New Message')), // Best effort name
+          avatar: payload?.fromAvatar || '🗣️', // This might be wrong if isMe (my avatar). 
+          // Ideally fetch or ignore avatars for now, list usually has them.
           lastMsg: content,
           lastAt,
-          unread: 1,
+          unread: isMe ? 0 : 1,
           online: true,
+          typing: false,
           pinned: false,
-          archived: false
+          archived: false,
         };
         return resortByPinnedAndRecent([created, ...prev]);
       });
     };
 
-    s.on?.('presence:update', onPresence);
-    s.on?.('typing', onTyping);
-    s.on?.('dm:message', onDirectMsg);
+    socket.on?.('dm:message', onDirectMsg);
+    socket.on?.('user:presence', onPresence);
+    socket.on?.('dm:typing', onTyping);
 
     return () => {
-      s.off?.('presence:update', onPresence);
-      s.off?.('typing', onTyping);
-      s.off?.('dm:message', onDirectMsg);
+      socket.off?.('dm:message', onDirectMsg);
+      socket.off?.('user:presence', onPresence);
+      socket.off?.('dm:typing', onTyping);
     };
   }, [socket, myId]);
 

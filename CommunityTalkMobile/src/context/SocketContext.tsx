@@ -281,7 +281,9 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
         const to = String(payload?.to || "");
         const from = String(payload?.from || "");
 
-        if (myId && to === myId) {
+        // Fix: Don't check `to === myId` strictly. If we received it via socket, it's for us.
+        // Just ensure it's not from ourselves (sync from another device/tab).
+        if (myId && from !== myId) {
           setUnreadThreads((prev) => ({
             ...prev,
             [from]: (prev[from] || 0) + 1,
