@@ -1196,7 +1196,8 @@ export default function DMThreadScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.bg }}
-        behavior="padding"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        enabled={Platform.OS === "ios"}
         keyboardVerticalOffset={keyboardOffset}
       >
         {loading ? (
