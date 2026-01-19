@@ -1233,7 +1233,8 @@ export default function DMThreadScreen() {
                 paddingBottom: bottomPadding,
                 borderTopWidth: 0.5,
                 borderTopColor: colors.border,
-                backgroundColor: colors.bg,
+                backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5',
+                minHeight: 64,
               }}
             >
               {isRecording ? (
