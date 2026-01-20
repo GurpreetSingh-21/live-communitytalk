@@ -390,7 +390,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
         fileName: fileName,
         folder: 'community_talk_uploads'
       }, {
-        timeout: 300000,
+        timeout: 90000, // 90 seconds - handles Render free tier cold starts
       });
 
       console.log("✅ [BG-UPLOAD] Uploaded:", uploadRes.data.url);

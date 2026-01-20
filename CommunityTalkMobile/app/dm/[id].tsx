@@ -580,6 +580,7 @@ export default function DMThreadScreen() {
 
       const uploadRes = await api.post(`/api/upload?context=${context}`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 90000, // 90 seconds - handles Render free tier cold starts
       });
 
       const secureUrl = uploadRes.data?.url || fileUri;
