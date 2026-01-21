@@ -44,7 +44,7 @@ export async function fetchPublicKey(userId: string): Promise<string | null> {
 }
 
 // ───────────────────────── Bundle APIs ─────────────────────────
-export async function uploadBundle(input: { signedPrekey: string; signedPrekeySig: string; oneTimePrekeys: string[] }) {
+export async function uploadBundle(input: { signedPrekey: string; signedPrekeySig?: string | null; oneTimePrekeys: string[] }) {
   try {
     console.log(`🔐 [E2EE API] 📤 PUT /api/user/e2ee/bundle (${input.oneTimePrekeys.length} one-time keys)`);
     await api.put('/api/user/e2ee/bundle', input);

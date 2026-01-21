@@ -108,29 +108,19 @@ export async function ensureSession(me: string, partnerId: string): Promise<Sess
 
 /**
  * Encrypt using session; returns packed payload string SR1:<msgNum>:<nonce>:<cipher>
+ * 
+ * ⚠️ DISABLED: The X3DH session protocol is incomplete. The recipient cannot derive
+ * the same session keys because the sender's ephemeral public key is not transmitted.
+ * Use legacy nacl.box encryption instead (encryptMessage in e2ee.ts), which uses
+ * symmetric shared secrets and works correctly.
+ * 
+ * TODO: To re-enable, we need to include the sender's ephemeral public key in the
+ * message payload so the recipient can perform the same X3DH derivation.
  */
 export async function sessionEncrypt(me: string, partnerId: string, plaintext: string): Promise<string | null> {
-  let session = await ensureSession(me, partnerId);
-  if (!session) {
-    console.log(`🔐 [E2EE Session] ❌ Cannot encrypt - no session with ${partnerId.substring(0, 8)}...`);
-    return null;
-  }
-
-  console.log(`🔐 [E2EE Session] 🔒 Encrypting message (sendCount: ${session.sendCount})...`);
-  const sendChain = decodeBase64(session.sendChain);
-  const msgKey = deriveMsgKey(sendChain, session.sendCount);
-  const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
-  const cipher = nacl.secretbox(new TextEncoder().encode(plaintext), nonce, msgKey);
-
-  // advance chain
-  const next = nextChain(sendChain);
-  session.sendChain = encodeBase64(next);
-  session.sendCount += 1;
-  await saveSession(me, partnerId, session);
-
-  const packed = `SR1:${session.sendCount - 1}:${encodeBase64(nonce)}:${encodeBase64(cipher)}`;
-  console.log(`🔐 [E2EE Session] ✅ Message encrypted (SR1 format, msgNum: ${session.sendCount - 1})`);
-  return packed;
+  // Session encryption is disabled - always return null to force fallback to legacy encryption
+  console.log(`🔐 [E2EE Session] ⚠️ Session encryption disabled (incomplete X3DH protocol), using legacy encryption`);
+  return null;
 }
 
 /**
