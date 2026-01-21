@@ -33,6 +33,7 @@ import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context"
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
+import * as FileSystem from 'expo-file-system';
 
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
@@ -651,17 +652,23 @@ export default function DMThreadScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
 
     try {
-      const formData = new FormData();
-      formData.append('file', {
-        uri: fileUri,
-        name: fileName,
-        type: fileType,
-      } as any);
+      console.log('📤 [Upload] Starting Base64 upload for:', fileName);
 
-      const uploadRes = await api.post(`/api/upload?context=${context}`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 90000, // 90 seconds - handles Render free tier cold starts
+      // Read file as Base64 (more reliable than FormData on React Native)
+      const base64 = await FileSystem.readAsStringAsync(fileUri, {
+        encoding: 'base64',
       });
+
+      // Upload to /base64 endpoint (same as group chat)
+      const uploadRes = await api.post('/api/upload/base64', {
+        image: `data:${fileType};base64,${base64}`,
+        fileName: fileName,
+        folder: 'dm_uploads'
+      }, {
+        timeout: 90000, // 90 seconds for Render cold starts
+      });
+
+      console.log('✅ [Upload] Success:', uploadRes.data?.url);
 
       const secureUrl = uploadRes.data?.url || fileUri;
 
@@ -1250,7 +1257,8 @@ export default function DMThreadScreen() {
     );
   };
 
-  const data = useMemo(() => finalizeUnique(messages), [messages]);
+  // Reverse for inverted FlatList: newest messages need to be first in array
+  const data = useMemo(() => [...finalizeUnique(messages)].reverse(), [messages]);
 
   /* ─────── Render ─────── */
   const headerName = meta?.partnerName || meta?.fullName || meta?.name || paramName || "Direct Message";
@@ -1271,10 +1279,10 @@ export default function DMThreadScreen() {
         data={data}
         keyExtractor={msgKey}
         renderItem={renderItem}
+        inverted
         onEndReachedThreshold={0.2}
         onEndReached={loadOlder}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-        contentContainerStyle={{ paddingBottom: 8, flexGrow: 1 }}
+        contentContainerStyle={{ paddingTop: 8, flexGrow: 1 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
@@ -1400,7 +1408,7 @@ export default function DMThreadScreen() {
   );
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Header */}
