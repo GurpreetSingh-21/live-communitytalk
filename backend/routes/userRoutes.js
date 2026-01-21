@@ -284,7 +284,8 @@ router.get("/:id/e2ee/bundle", async (req, res) => {
     });
 
     if (!user) return res.status(404).json({ error: "User not found" });
-    if (!user.publicKey || !user.e2eeSignedPrekey || !user.e2eeSignedPrekeySig) {
+    // Bundle requires publicKey + signedPrekey (signature is optional, we removed it)
+    if (!user.publicKey || !user.e2eeSignedPrekey) {
       return res.status(404).json({ error: "No bundle available" });
     }
 
