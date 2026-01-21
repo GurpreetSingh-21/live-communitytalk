@@ -73,11 +73,13 @@ router.get("/", async (req, res) => {
     const context = (req.query.context || "community").trim();
 
     // 🚀 PERFORMANCE: Fetch last 100 messages (was 1000!) with only needed fields
+    // ✅ Filter out deleted messages
     const recentMessages = await prisma.directMessage.findMany({
       where: {
         AND: [
           { OR: [{ fromId: me }, { toId: me }] },
-          { context: context }
+          { context: context },
+          { isDeleted: false } // ✅ Only show non-deleted messages
         ]
       },
       orderBy: { createdAt: 'desc' },
@@ -141,7 +143,8 @@ router.get("/", async (req, res) => {
         where: {
           toId: me,
           fromId: { in: partnerIds },
-          status: { in: ['sent', 'edited'] }
+          status: { in: ['sent', 'edited'] },
+          isDeleted: false // ✅ Only count non-deleted messages
         },
         _count: true
       })
@@ -227,7 +230,8 @@ router.get("/:memberId", async (req, res) => {
               { fromId: them, toId: me }
             ]
           },
-          { context: context }
+          { context: context },
+          { isDeleted: false } // ✅ Only show non-deleted messages
         ]
       },
       orderBy: { createdAt: 'desc' },
@@ -402,6 +406,70 @@ router.patch("/:memberId/read", async (req, res) => {
   } catch (err) {
     console.error("[DM Routes] READ error:", err);
     return res.status(500).json({ error: "Failed to mark as read" });
+  }
+});
+
+// ───────────────────────── DELETE conversation ─────────────────────────
+// ───────────────────────── DELETE conversation ─────────────────────────
+/**
+ * DELETE /api/direct-messages/:partnerId
+ * Deletes all messages in a conversation between the current user and a partner.
+ * Soft delete: marks messages as deleted (isDeleted = true, deletedAt = now)
+ */
+router.delete("/:partnerId", async (req, res) => {
+  try {
+    const me = req.user.id;
+    const partnerId = req.params.partnerId;
+
+    if (!partnerId) {
+      return res.status(400).json({ error: "Partner ID is required" });
+    }
+
+    // Soft delete all messages in the conversation (both directions)
+    // Delete messages where:
+    // - (fromId = me AND toId = partnerId) OR (fromId = partnerId AND toId = me)
+    const result = await prisma.directMessage.updateMany({
+      where: {
+        OR: [
+          { fromId: me, toId: partnerId },
+          { fromId: partnerId, toId: me }
+        ],
+        isDeleted: false // Only delete messages that aren't already deleted
+      },
+      data: {
+        isDeleted: true,
+        deletedAt: new Date(),
+        status: "deleted"
+      }
+    });
+
+    // 🧹 CACHE INVALIDATION: Clear inbox cache for both users
+    if (req.redisClient) {
+      const cacheKey1 = `dm_inbox:${me}`;
+      const cacheKey2 = `dm_inbox:${partnerId}`;
+      try {
+        await req.redisClient.del(cacheKey1);
+        await req.redisClient.del(cacheKey2);
+        console.log(`[DM Routes] 🧹 Invalidated inbox cache for both users`);
+      } catch (cacheErr) {
+        console.warn('[DM Routes] Cache invalidation failed:', cacheErr);
+      }
+    }
+
+    // Emit socket event to notify both users
+    req.io?.to(String(me)).emit("dm:conversation_deleted", { partnerId });
+    req.io?.to(String(partnerId)).emit("dm:conversation_deleted", { partnerId: me });
+
+    console.log(`[DM Routes] ✅ Deleted conversation between ${me} and ${partnerId} (${result.count} messages)`);
+    
+    return res.json({ 
+      success: true,
+      deletedCount: result.count,
+      message: "Conversation deleted successfully"
+    });
+  } catch (err) {
+    console.error("[DM Routes] DELETE conversation error:", err);
+    return res.status(500).json({ error: "Failed to delete conversation" });
   }
 });
 

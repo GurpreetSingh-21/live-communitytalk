@@ -845,14 +845,24 @@ export default function DMsScreen(): React.JSX.Element {
       });
     };
 
+    const onConversationDeleted = (payload: any) => {
+      const deletedPartnerId = String(payload?.partnerId || '');
+      if (deletedPartnerId) {
+        console.log(`[DMs] 💬 Conversation deleted event received for partner: ${deletedPartnerId}`);
+        setThreads(cur => cur.filter(t => t.id !== deletedPartnerId));
+      }
+    };
+
     socket.on?.('dm:message', onDirectMsg);
     socket.on?.('user:presence', onPresence);
     socket.on?.('dm:typing', onTyping);
+    socket.on?.('dm:conversation_deleted', onConversationDeleted);
 
     return () => {
       socket.off?.('dm:message', onDirectMsg);
       socket.off?.('user:presence', onPresence);
       socket.off?.('dm:typing', onTyping);
+      socket.off?.('dm:conversation_deleted', onConversationDeleted);
     };
   }, [socket, myId]);
 
@@ -870,7 +880,7 @@ export default function DMsScreen(): React.JSX.Element {
     setTimeout(() => setSnackbarMsg(null), 4000);
   }, []);
 
-  const handleDelete = useCallback((id: string) => {
+  const handleDelete = useCallback(async (id: string) => {
     Alert.alert(
       "Delete Conversation",
       "Are you sure you want to delete this chat? This cannot be undone.",
@@ -879,15 +889,31 @@ export default function DMsScreen(): React.JSX.Element {
         {
           text: "Delete",
           style: "destructive",
-          onPress: () => {
-            setThreads(cur => cur.filter(t => t.id !== id));
-            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            // Note: Ideally you call an API here to delete on backend
+          onPress: async () => {
+            try {
+              // Optimistically remove from UI
+              setThreads(cur => cur.filter(t => t.id !== id));
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              
+              // Delete on backend
+              await api.delete(`/api/direct-messages/${id}`);
+              console.log(`[DMs] ✅ Conversation deleted: ${id}`);
+            } catch (err: any) {
+              console.error("[DMs] ❌ Failed to delete conversation:", err);
+              // Re-fetch threads to restore the deleted thread
+              try {
+                const dm = await fetchDMThreads();
+                setThreads(resortByPinnedAndRecent(dm));
+              } catch (fetchErr) {
+                console.error("[DMs] Failed to restore threads:", fetchErr);
+              }
+              Alert.alert("Error", "Failed to delete conversation. Please try again.");
+            }
           }
         }
       ]
     );
-  }, []);
+  }, [fetchDMThreads]);
 
   const handleUndo = () => {
     if (lastDeletedItem) {
