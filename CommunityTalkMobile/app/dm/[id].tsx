@@ -23,6 +23,7 @@ import {
   ActionSheetIOS,
   Linking,
   Keyboard,
+  StyleSheet,
 } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -1274,28 +1275,149 @@ export default function DMThreadScreen() {
   const headerAvatar = meta?.avatar || paramAvatar || undefined;
   const status = meta?.online ? "online" : "";
 
-  // 📐 Layout Logic:
-  // Android: behavior="height" handles keyboard resize. Offset should account for header.
-  // iOS: behavior="padding". Offset should account for header + safe area.
-  const keyboardOffset = Platform.OS === "ios" ? insets.top + 56 : 56; // Header height is ~56px
-
-  // Padding Logic:
-  // When keyboard is open -> 0 padding (input touches keyboard).
-  // When closed -> small fixed padding for aesthetics.
-  // NOTE: Since SafeAreaView edges={[]} ignores safe areas, we don't need insets.bottom here.
-  // The content extends edge-to-edge, we just add a small visual buffer.
-  const bottomPadding = isKeyboardVisible ? 0 : 12;
-
   const handleBackPress = useCallback(() => {
     console.log('[DM] Back button pressed - navigating back');
     router.back();
   }, []);
 
+  // 📐 Layout Logic:
+  // iOS: Use KeyboardAvoidingView with behavior="padding"
+  // Android: Don't use KeyboardAvoidingView at all - Android handles keyboard avoidance 
+  //          via android:windowSoftInputMode="adjustResize" in AndroidManifest.xml
+  const keyboardOffset = Platform.OS === "ios" ? insets.top + 56 : 0;
+
+  // Composer wrapper - handles the input area at the bottom
+  const ComposerSection = (
+    <View
+      style={{
+        paddingHorizontal: 12,
+        paddingTop: 8,
+        paddingBottom: Math.max(insets.bottom, 8), // Use safe area for home indicator
+        borderTopWidth: StyleSheet.hairlineWidth,
+        borderTopColor: colors.border,
+        backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5',
+      }}
+    >
+      {isRecording ? (
+        // 🔴 Recording UI
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: 'red', marginRight: 8 }} />
+            <Text style={{ color: 'red', fontWeight: '600' }}>Recording Audio...</Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 16 }}>
+            <TouchableOpacity onPress={cancelRecording}>
+              <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={stopRecordingAndSend}>
+              <Ionicons name="send" size={24} color={colors.primaryEnd} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        // 🔵 Standard UI with Plus Button
+        <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
+          <TouchableOpacity
+            onPress={showAttachmentOptions}
+            disabled={sending}
+            style={{ height: 44, width: 44, alignItems: "center", justifyContent: "center", opacity: sending ? 0.5 : 1 }}
+          >
+            <Ionicons name="add-circle" size={34} color={colors.primaryEnd} />
+          </TouchableOpacity>
+
+          <Pressable
+            onPress={() => inputRef.current?.focus()}
+            style={{
+              flex: 1,
+              backgroundColor: theme.surface,
+              borderRadius: 22,
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              minHeight: 44,
+              justifyContent: 'center',
+              borderWidth: 1,
+              borderColor: theme.border
+            }}
+          >
+            <TextInput
+              ref={inputRef}
+              value={input}
+              onChangeText={handleTextChange}
+              placeholder="Message"
+              placeholderTextColor={theme.textMuted}
+              style={{
+                color: theme.text,
+                fontSize: 17,
+                maxHeight: 120,
+                fontFamily: Fonts.regular
+              }}
+              multiline
+              editable={!sending}
+            />
+          </Pressable>
+
+          {input.trim().length > 0 && (
+            <TouchableOpacity
+              onPress={sendText}
+              disabled={sending}
+              style={{ marginLeft: 8, width: 44, height: 44, borderRadius: 22, overflow: "hidden", opacity: sending ? 0.4 : 1 }}
+            >
+              <LinearGradient
+                colors={[theme.primary, theme.primary]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
+              >
+                {sending ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Ionicons name="arrow-up" size={24} color="#fff" />
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </View>
+  );
+
+  // Content section (messages list + typing indicator + composer)
+  const ContentSection = (
+    <>
+      <FlatList
+        ref={listRef}
+        data={data}
+        keyExtractor={msgKey}
+        renderItem={renderItem}
+        ListHeaderComponent={undefined}
+        onEndReachedThreshold={0.2}
+        onEndReached={loadOlder}
+        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        contentContainerStyle={{ paddingBottom: 8, flexGrow: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        style={{ flex: 1 }}
+      />
+
+      {/* Typing Indicator */}
+      {partnerTyping && (
+        <View style={{ paddingHorizontal: 20, paddingVertical: 6 }}>
+          <Text style={{ color: colors.textSecondary, fontSize: 14, fontStyle: 'italic' }}>
+            {headerName} is typing...
+          </Text>
+        </View>
+      )}
+
+      {ComposerSection}
+    </>
+  );
+
   return (
-    <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* ✅ WhatsApp-style: Full-bleed header that extends behind Dynamic Island */}
+      {/* ✅ WhatsApp-style: Full-bleed header */}
       <View style={{ zIndex: 10 }}>
         <DMHeader
           name={headerName}
@@ -1308,140 +1430,25 @@ export default function DMThreadScreen() {
         />
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1, backgroundColor: colors.bg }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={keyboardOffset}
-      >
-        {loading ? (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <ActivityIndicator size="large" color={colors.primaryEnd} />
-          </View>
-        ) : (
-          <>
-            <FlatList
-              ref={listRef}
-              data={data}
-              keyExtractor={msgKey}
-              renderItem={renderItem}
-              ListHeaderComponent={undefined}
-              onEndReachedThreshold={0.2}
-              onEndReached={loadOlder}
-              onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-              contentContainerStyle={{ paddingBottom: 16, flexGrow: 1 }}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              style={{ flex: 1 }}
-            />
-
-            {/* Typing Indicator */}
-            {partnerTyping && (
-              <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
-                <Text style={{ color: colors.textSecondary, fontSize: 14, fontStyle: 'italic' }}>
-                  {headerName} is typing...
-                </Text>
-              </View>
-            )}
-
-            {/* Composer - Toggle between Recording and Normal */}
-            <View
-              style={{
-                paddingHorizontal: 12,
-                paddingTop: 8,
-                paddingBottom: bottomPadding,
-                borderTopWidth: 0.5,
-                borderTopColor: colors.border,
-                backgroundColor: isDark ? '#1a1a1a' : '#f5f5f5',
-                minHeight: 64,
-              }}
-            >
-              {isRecording ? (
-                // 🔴 Recording UI
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 40 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: 'red', marginRight: 8 }} />
-                    <Text style={{ color: 'red', fontWeight: '600' }}>Recording Audio...</Text>
-                  </View>
-                  <View style={{ flexDirection: 'row', gap: 16 }}>
-                    <TouchableOpacity onPress={cancelRecording}>
-                      <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={stopRecordingAndSend}>
-                      <Ionicons name="send" size={24} color={colors.primaryEnd} />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                // 🔵 Standard UI with Plus Button
-                <View style={{ flexDirection: "row", alignItems: "flex-end" }}>
-                  <TouchableOpacity
-                    onPress={showAttachmentOptions}
-                    disabled={sending}
-                    style={{ height: 40, width: 40, alignItems: "center", justifyContent: "center", marginRight: 8, marginBottom: 2, opacity: sending ? 0.5 : 1 }}
-                  >
-                    <Ionicons name="add-circle" size={34} color={colors.primaryEnd} />
-                  </TouchableOpacity>
-
-                  <Pressable
-                    onPress={() => inputRef.current?.focus()}
-                    style={{
-                      flex: 1,
-                      backgroundColor: theme.surface,
-                      borderRadius: 24,
-                      paddingHorizontal: 12,
-                      paddingVertical: 4,
-                      minHeight: 40,
-                      justifyContent: 'center',
-                      borderWidth: 1,
-                      borderColor: theme.border
-                    }}
-                  >
-                    <TextInput
-                      ref={inputRef}
-                      value={input}
-                      onChangeText={handleTextChange}
-                      placeholder="Message"
-                      placeholderTextColor={theme.textMuted}
-                      style={{
-                        color: theme.text,
-                        fontSize: 17,
-                        maxHeight: 120,
-                        paddingTop: 8,
-                        paddingBottom: 8,
-                        fontFamily: Fonts.regular
-                      }}
-                      multiline
-                      editable={!sending}
-                    />
-                  </Pressable>
-
-                  {input.trim().length > 0 && (
-                    <TouchableOpacity
-                      onPress={sendText}
-                      disabled={sending}
-                      style={{ marginLeft: 8, width: 40, height: 40, borderRadius: 20, overflow: "hidden", opacity: sending ? 0.4 : 1, marginBottom: 2 }}
-                    >
-                      <LinearGradient
-                        colors={[theme.primary, theme.primary]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={{ flex: 1, alignItems: "center", justifyContent: "center" }}
-                      >
-                        {sending ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <Ionicons name="arrow-up" size={24} color="#fff" />
-                        )}
-                      </LinearGradient>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-            </View>
-          </>
-        )}
-      </KeyboardAvoidingView>
+      {loading ? (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+          <ActivityIndicator size="large" color={colors.primaryEnd} />
+        </View>
+      ) : Platform.OS === 'ios' ? (
+        // iOS: Use KeyboardAvoidingView
+        <KeyboardAvoidingView
+          style={{ flex: 1, backgroundColor: colors.bg }}
+          behavior="padding"
+          keyboardVerticalOffset={keyboardOffset}
+        >
+          {ContentSection}
+        </KeyboardAvoidingView>
+      ) : (
+        // Android: No KeyboardAvoidingView needed - system handles it
+        <View style={{ flex: 1, backgroundColor: colors.bg }}>
+          {ContentSection}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
