@@ -1281,10 +1281,10 @@ export default function DMThreadScreen() {
 
   // Padding Logic:
   // When keyboard is open -> 0 padding (input touches keyboard).
-  // When closed -> Safe Area bottom (or min 12px for aesthetics).
-  // Note: On Android "height" mode, the view height shrinks, so paddingBottom is still visible at the bottom of the *shrunken* view.
-  // We want to remove that padding when keyboard is visible so it looks flush.
-  const bottomPadding = isKeyboardVisible ? 0 : Math.max(insets.bottom, 8);
+  // When closed -> small fixed padding for aesthetics.
+  // NOTE: Since SafeAreaView edges={[]} ignores safe areas, we don't need insets.bottom here.
+  // The content extends edge-to-edge, we just add a small visual buffer.
+  const bottomPadding = isKeyboardVisible ? 0 : 12;
 
   const handleBackPress = useCallback(() => {
     console.log('[DM] Back button pressed - navigating back');
