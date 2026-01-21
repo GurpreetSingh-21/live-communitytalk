@@ -354,12 +354,34 @@ export default function DMThreadScreen() {
   /* ─────── Initial load ─────── */
   const loadInitial = useCallback(async () => {
     if (!partnerId) return;
-    setLoading(true);
+
+    const CACHE_KEY = `@dm_messages_${partnerId}`;
+    const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+
+    // 🚀 INSTANT LOAD: Show cached messages immediately while server loads
+    try {
+      const cached = await AsyncStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const cachedMsgs = JSON.parse(cached);
+        if (Array.isArray(cachedMsgs) && cachedMsgs.length > 0) {
+          console.log(`[DM ${partnerId}] ⚡ Instant load from cache (${cachedMsgs.length} messages)`);
+          // Show cached messages instantly (already decrypted from last session)
+          setMessages(finalizeUnique(cachedMsgs));
+          setLoading(false); // Don't show loading spinner if we have cached data
+        }
+      }
+    } catch (cacheErr) {
+      console.warn('[DM] Cache read failed:', cacheErr);
+    }
+
+    // If no cache, show loading
+    if (messages.length === 0) setLoading(true);
+
     // Safety timeout to ensure loading always clears
     const timeout = setTimeout(() => {
       setLoading(false);
     }, 15000); // 15 second max
-    
+
     try {
       // 🔐 E2EE: Ensure we have a keypair (regenerates if missing)
       // Run in background to avoid blocking message load
@@ -374,7 +396,6 @@ export default function DMThreadScreen() {
       })();
 
       // 🚀 OPTIMIZATION: Fetch metadata, public key, AND messages in parallel!
-      const CACHE_KEY = `@dm_messages_${partnerId}`;
       const [metaData, partnerPubKey, messagesResponse] = await Promise.all([
         fetchPartnerMeta(),
         getCachedPublicKey(partnerId), // ← Using cache!
@@ -399,19 +420,9 @@ export default function DMThreadScreen() {
       try {
         const data = messagesResponse?.data;
         msgs = Array.isArray(data) ? data : data?.items ?? [];
-
-        // Save to cache for next time
-        try {
-          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-          await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(msgs));
-          console.log(`[DM ${partnerId}] 💾 Saved ${msgs.length} messages to cache`);
-        } catch (cacheError) {
-          console.warn('[DM] Cache save failed:', cacheError);
-        }
       } catch (e: any) {
         if (e?.response?.status !== 404) throw e;
       }
-
 
       // 🔐 Decrypt encrypted messages
       // NaCl box shared key is SYMMETRIC: always use partner's public key + my secret key
@@ -466,11 +477,20 @@ export default function DMThreadScreen() {
         })
       );
 
+      // Update messages with server data (merges with any real-time messages)
       setMessages((prev) =>
         finalizeUnique(upsertMessages(prev, decryptedMsgs, { prefer: "server" }))
       );
       setHasMore((msgs?.length ?? 0) >= 50);
       setLoading(false);
+
+      // 💾 Save decrypted messages to cache for instant load next time
+      try {
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(decryptedMsgs));
+        console.log(`[DM ${partnerId}] 💾 Cached ${decryptedMsgs.length} decrypted messages`);
+      } catch (cacheError) {
+        console.warn('[DM] Cache save failed:', cacheError);
+      }
 
       try {
         await api.patch(`/api/direct-messages/${partnerId}/read`);
