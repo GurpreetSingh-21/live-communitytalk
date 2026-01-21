@@ -508,19 +508,25 @@ export default function DMsScreen(): React.JSX.Element {
         }
         else if (typeof rawLast === 'string') {
           content = rawLast;
-          if (content.match(/\.(jpeg|jpg|gif|png)/i)) type = 'photo';
+          // Detect image URLs
+          if (content.match(/\.(jpeg|jpg|gif|png|webp)/i) || content.includes('cloudinary.com')) {
+            type = 'photo';
+          }
+          // Detect video URLs
+          else if (content.match(/\.(mp4|mov|avi|webm)/i)) {
+            type = 'video';
+          }
         }
 
         // Detect if content looks like Base64 cipher text
         const looksLikeCipherText = content.length > 40 && /^[A-Za-z0-9+/=]+$/.test(content);
         const needsDecryption = isEncrypted || looksLikeCipherText;
 
-        if (!content || content === '[Photo]') {
-          if (type === 'photo') content = 'Photo';
-          else if (type === 'video') content = 'Video';
-          else if (type === 'audio') content = 'Voice Note';
-          else if (type === 'file') content = 'Attachment';
-        }
+        // Show friendly labels for media types instead of raw URLs
+        if (type === 'photo') content = 'Photo';
+        else if (type === 'video') content = 'Video';
+        else if (type === 'audio') content = 'Voice Note';
+        else if (type === 'file') content = 'Attachment';
 
         const id = String(t.partnerId ?? t.id ?? '');
         const name = String(t.fullName || t.partnerName || t.name || t.email || 'Unknown');
@@ -597,11 +603,14 @@ export default function DMsScreen(): React.JSX.Element {
             // console.log(`🔐 [DM Inbox] Decrypting preview for ${thread.name}...`);
             const decryptedContent = await decryptMessage(thread.lastMsg.content, partnerPubKey, myId);
 
+            // If decryption returns an error message, show friendly encrypted indicator
             if (decryptedContent.startsWith('[') && decryptedContent.includes('Failed')) {
-              // Decryption failed (likely key rotation).
-              console.warn(`🔐 [DM Inbox] Decrypt fail for ${thread.name}, keys likely rotated.`);
-            } else {
-              // console.log(`🔐 [DM Inbox] ✅ Decrypted preview for ${thread.name}`);
+              console.warn(`🔐 [DM Inbox] Decrypt fail for ${thread.name}, showing encrypted indicator`);
+              return {
+                ...thread,
+                lastMsg: { ...thread.lastMsg, content: '🔒 Encrypted' },
+                _needsDecryption: undefined
+              };
             }
 
             return {
@@ -621,7 +630,6 @@ export default function DMsScreen(): React.JSX.Element {
       );
 
       return decryptedThreads as DMThread[];
-      return decryptedThreads as DMThread[];
     } catch (error) {
       console.error('Fetch DMs failed:', error);
       return [] as DMThread[];
@@ -636,7 +644,7 @@ export default function DMsScreen(): React.JSX.Element {
     const timeout = setTimeout(() => {
       setIsRefreshing(false);
     }, 10000); // 10 second max
-    
+
     try {
       setIsRefreshing(true);
       const dm = await fetchDMThreads(ac.signal);
@@ -776,7 +784,7 @@ export default function DMsScreen(): React.JSX.Element {
       // So if I am A, I can decrypt my own message to B using Private(A) + Public(B).
       // Does payload have `to`? Yes.
 
-          const partnerIdForDecrypt = isMe ? to : from;
+      const partnerIdForDecrypt = isMe ? to : from;
 
       if (isEncrypted && contentStr && contentStr.length > 40) {
         try {
@@ -894,7 +902,7 @@ export default function DMsScreen(): React.JSX.Element {
               // Optimistically remove from UI
               setThreads(cur => cur.filter(t => t.id !== id));
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              
+
               // Delete on backend
               await api.delete(`/api/direct-messages/${id}`);
               console.log(`[DMs] ✅ Conversation deleted: ${id}`);

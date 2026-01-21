@@ -33,7 +33,7 @@ import { useSafeAreaInsets, SafeAreaView } from "react-native-safe-area-context"
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import { Audio } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
@@ -501,7 +501,7 @@ export default function DMThreadScreen() {
       }
 
       socket?.emit?.("room:join", { room: `dm:${partnerId}` });
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 300);
+      // Note: Inverted FlatList automatically starts at newest messages
     } catch (e: any) {
       console.error('[DM] Load initial error:', e);
       Alert.alert("Error", e?.response?.data?.error || "Failed to open chat");
@@ -606,9 +606,7 @@ export default function DMThreadScreen() {
       setMessages((prev) =>
         finalizeUnique(upsertMessages(prev, serverMsg, { prefer: "server" }))
       );
-      requestAnimationFrame(() =>
-        listRef.current?.scrollToEnd({ animated: true })
-      );
+      // Inverted list: new messages appear at index 0 automatically
     };
 
     const onTyping = (payload: any) => {
@@ -649,7 +647,9 @@ export default function DMThreadScreen() {
       finalizeUnique(upsertMessages(prev, optimistic, { prefer: "local" }))
     );
 
-    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+    // Inverted list: new message will appear at top (index 0) automatically
+    // Force scroll to newest (bottom)
+    requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
 
     try {
       console.log('📤 [Upload] Starting Base64 upload for:', fileName);
@@ -848,9 +848,9 @@ export default function DMThreadScreen() {
       finalizeUnique(upsertMessages(prev, optimistic, { prefer: "local" }))
     );
     setInput("");
-    requestAnimationFrame(() =>
-      listRef.current?.scrollToEnd({ animated: true })
-    );
+    // Inverted list: new message appears at index 0 automatically
+    // Force scroll to newest (bottom)
+    requestAnimationFrame(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
 
     try {
       let data: any;
@@ -1167,9 +1167,21 @@ export default function DMThreadScreen() {
   /* ─────── Render Item Update ─────── */
   const renderItem = ({ item, index }: { item: DMMessage; index: number }) => {
     const mine = String(item.from) === myId;
-    const prev = messages[index - 1];
-    const curD = asDate(item.createdAt);
-    const showDate = !prev || !isSameDay(curD, asDate(prev.createdAt));
+    const nextInData = data[index + 1];
+
+    // Improved date parsing
+    const tryDate = (d: any) => {
+      try {
+        const date = asDate(d);
+        return isNaN(date.getTime()) ? new Date() : date;
+      } catch {
+        return new Date();
+      }
+    };
+
+    const curD = tryDate(item.createdAt);
+    const prevD = nextInData ? tryDate(nextInData.createdAt) : null;
+    const showDate = !prevD || !isSameDay(curD, prevD);
 
     // ✅ FIX: Auto-detect old images (URL in Chat issue)
     const looksLikeImage = item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) || item.content?.includes('cloudinary.com');
