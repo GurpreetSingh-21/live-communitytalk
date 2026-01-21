@@ -75,14 +75,19 @@ export default function DMHeader({
         }}
       >
         {/* Back Button - WhatsApp Style */}
-        {onPressBack && (
+        {onPressBack ? (
           <TouchableOpacity
             onPress={onPressBack}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            activeOpacity={0.7}
+            hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
             style={{
               flexDirection: "row",
               alignItems: "center",
-              paddingHorizontal: 4,
+              justifyContent: "center",
+              paddingHorizontal: 12,
+              paddingVertical: 12,
+              minWidth: 48,
+              minHeight: 48,
             }}
           >
             <Ionicons
@@ -91,7 +96,7 @@ export default function DMHeader({
               color={theme.primary}
             />
           </TouchableOpacity>
-        )}
+        ) : null}
 
         {/* Avatar - Larger, Rounded Square like WhatsApp */}
         <TouchableOpacity

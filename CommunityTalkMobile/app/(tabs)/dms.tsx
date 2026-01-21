@@ -632,19 +632,21 @@ export default function DMsScreen(): React.JSX.Element {
 
   const onRefresh = useCallback(async () => {
     const ac = new AbortController();
+    // Safety timeout to ensure refreshing state always clears
+    const timeout = setTimeout(() => {
+      setIsRefreshing(false);
+    }, 10000); // 10 second max
+    
     try {
       setIsRefreshing(true);
       const dm = await fetchDMThreads(ac.signal);
       await refreshUnread?.();
-      // Verify we have items before setting? 
-      // If fetch fails (returns empty), we might wipe cache. Check error state?
-      // fetchDMThreads returns [] on error. 
-      // We should probably NOT overwrite cache with empty list if network fail.
-      // But fetchDMThreads catches error and returns []... 
-      // We'll trust it for now but ideally add error state.
       setThreads(resortByPinnedAndRecent(dm));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      console.error('[DMs] Refresh error:', err);
     } finally {
+      clearTimeout(timeout);
       setIsRefreshing(false);
       ac.abort();
     }

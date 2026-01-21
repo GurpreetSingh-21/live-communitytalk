@@ -83,6 +83,7 @@ function AppLayout() {
       />
       <Stack.Screen name="community/[id]" options={{ presentation: "card" }} />
       <Stack.Screen name="thread/[id]" options={{ presentation: "card" }} />
+      <Stack.Screen name="dm/[id]" options={{ presentation: "card" }} />
     </Stack>
   );
 }

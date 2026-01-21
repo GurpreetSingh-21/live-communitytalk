@@ -186,6 +186,7 @@ export default function CommunityScreen() {
     name: string;
     email?: string;
     status?: "online" | "offline";
+    avatar?: string;
   } | null>(null);
   const [showUserModal, setShowUserModal] = useState(false);
 
@@ -920,6 +921,7 @@ export default function CommunityScreen() {
       name: senderName,
       email: member?.email,
       status: member?.status || "offline",
+      avatar: member?.avatar || member?.personAvatar || undefined,
     });
     setShowUserModal(true);
   }, [members]);

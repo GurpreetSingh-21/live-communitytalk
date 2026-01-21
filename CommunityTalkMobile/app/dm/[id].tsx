@@ -355,17 +355,23 @@ export default function DMThreadScreen() {
   const loadInitial = useCallback(async () => {
     if (!partnerId) return;
     setLoading(true);
+    // Safety timeout to ensure loading always clears
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 15000); // 15 second max
+    
     try {
       // 🔐 E2EE: Ensure we have a keypair (regenerates if missing)
-      try {
-        const { publicKey } = await ensureKeyPair(myId);
-        // Upload the public key to ensure server is in sync
-        await uploadPublicKey(publicKey);
-        // Ensure bundle (signed prekey + one-time prekeys) is present
-        await ensureBundleUploaded(myId);
-      } catch (keyErr) {
-        console.warn('🔐 [E2EE] Key setup failed (non-fatal):', keyErr);
-      }
+      // Run in background to avoid blocking message load
+      (async () => {
+        try {
+          const { publicKey } = await ensureKeyPair(myId);
+          await uploadPublicKey(publicKey);
+          await ensureBundleUploaded(myId);
+        } catch (keyErr) {
+          console.warn('🔐 [E2EE] Key setup failed (non-fatal):', keyErr);
+        }
+      })();
 
       // 🚀 OPTIMIZATION: Fetch metadata, public key, AND messages in parallel!
       const CACHE_KEY = `@dm_messages_${partnerId}`;
@@ -475,8 +481,10 @@ export default function DMThreadScreen() {
       socket?.emit?.("room:join", { room: `dm:${partnerId}` });
       setTimeout(() => listRef.current?.scrollToEnd({ animated: false }), 300);
     } catch (e: any) {
+      console.error('[DM] Load initial error:', e);
       Alert.alert("Error", e?.response?.data?.error || "Failed to open chat");
     } finally {
+      clearTimeout(timeout);
       setLoading(false);
     }
   }, [partnerId, fetchPartnerMeta, socket, paramName, paramAvatar, myId]);
@@ -1247,9 +1255,9 @@ export default function DMThreadScreen() {
   const status = meta?.online ? "online" : "";
 
   // 📐 Layout Logic:
-  // Android: behavior="height" handles keyboard resize. Offset should be 0.
-  // iOS: behavior="padding". Offset 0.
-  const keyboardOffset = 0;
+  // Android: behavior="height" handles keyboard resize. Offset should account for header.
+  // iOS: behavior="padding". Offset should account for header + safe area.
+  const keyboardOffset = Platform.OS === "ios" ? insets.top + 56 : 56; // Header height is ~56px
 
   // Padding Logic:
   // When keyboard is open -> 0 padding (input touches keyboard).
@@ -1257,6 +1265,11 @@ export default function DMThreadScreen() {
   // Note: On Android "height" mode, the view height shrinks, so paddingBottom is still visible at the bottom of the *shrunken* view.
   // We want to remove that padding when keyboard is visible so it looks flush.
   const bottomPadding = isKeyboardVisible ? 0 : Math.max(insets.bottom, 8);
+
+  const handleBackPress = useCallback(() => {
+    console.log('[DM] Back button pressed - navigating back');
+    router.back();
+  }, []);
 
   return (
     <SafeAreaView edges={[]} style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -1268,10 +1281,7 @@ export default function DMThreadScreen() {
           name={headerName}
           avatar={headerAvatar}
           status={status}
-          onPressBack={() => {
-            // FIXED: Use replace to clear stack and go directly to DMs (single tap!)
-            router.replace('/(tabs)/dms');
-          }}
+          onPressBack={handleBackPress}
           onPressProfile={() => router.push({ pathname: "/profile/[id]", params: { id: partnerId } } as never)}
           onPressMore={() => { }}
           dark={isDark}
@@ -1280,8 +1290,7 @@ export default function DMThreadScreen() {
 
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: colors.bg }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        enabled={Platform.OS === "ios"}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={keyboardOffset}
       >
         {loading ? (
@@ -1299,8 +1308,11 @@ export default function DMThreadScreen() {
               onEndReachedThreshold={0.2}
               onEndReached={loadOlder}
               onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-              contentContainerStyle={{ paddingBottom: 16 }}
+              contentContainerStyle={{ paddingBottom: 16, flexGrow: 1 }}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              style={{ flex: 1 }}
             />
 
             {/* Typing Indicator */}

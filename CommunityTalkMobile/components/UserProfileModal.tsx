@@ -1,5 +1,5 @@
 // CommunityTalkMobile/components/UserProfileModal.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,14 +9,18 @@ import {
   ActivityIndicator,
   Alert,
   Platform,
-  StyleSheet,
+  Image,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { getOrCreateDMThread } from "@/src/api/dm";
 import { api } from "@/src/api/api";
-import { Colors } from "@/constants/theme";
+import { Colors, Fonts } from "@/constants/theme";
+import { API_BASE_URL } from "@/src/utils/config";
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // --- Component Types ---
 type UserProfileModalProps = {
@@ -61,13 +65,56 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
   currentUserId,
 }) => {
   const [loading, setLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
+  // Reset image error when user changes - MUST be before any conditional returns
+  useEffect(() => {
+    if (user) {
+      setImageError(false);
+    }
+  }, [user?.id, user?.avatar]);
+
+  // Early return AFTER all hooks
   if (!user) return null;
 
   const isCurrentUser = String(user.id) === String(currentUserId);
   const isOnline = user.status === "online";
   const userColor = hueFrom(user.name || user.email || "U");
+  
+  // Better avatar URL handling - check for valid URLs and handle relative paths
+  const getAvatarUrl = () => {
+    if (!user.avatar) {
+      if (__DEV__) console.log('[UserProfileModal] No avatar provided for user:', user.name);
+      return null;
+    }
+    
+    // Already a full URL
+    if (user.avatar.startsWith('http://') || user.avatar.startsWith('https://') || user.avatar.startsWith('file://')) {
+      if (__DEV__) console.log('[UserProfileModal] Using full URL avatar:', user.avatar.substring(0, 50));
+      return user.avatar;
+    }
+    
+    // Relative path - prepend API base URL
+    if (user.avatar.startsWith('/')) {
+      const baseUrl = API_BASE_URL?.replace(/\/+$/, '') || '';
+      const fullUrl = `${baseUrl}${user.avatar}`;
+      if (__DEV__) console.log('[UserProfileModal] Constructed avatar URL from relative path:', fullUrl.substring(0, 50));
+      return fullUrl;
+    }
+    
+    // If it doesn't start with /, it might be a Cloudinary URL or other format
+    // Try prepending API base URL anyway
+    if (user.avatar && user.avatar.length > 0) {
+      const baseUrl = API_BASE_URL?.replace(/\/+$/, '') || '';
+      const fullUrl = `${baseUrl}/${user.avatar}`;
+      if (__DEV__) console.log('[UserProfileModal] Constructed avatar URL:', fullUrl.substring(0, 50));
+      return fullUrl;
+    }
+    
+    return null;
+  };
 
+  const avatarUrl = getAvatarUrl();
 
   const handleSendDM = async () => {
     if (isCurrentUser) return;
@@ -86,11 +133,10 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
       onClose();
 
-      // ⭐ FIX APPLIED HERE: Use the correct dynamic route syntax
       router.push({
-        pathname: `/dm/[id]`,  // Use the bracketed slug name
+        pathname: `/dm/[id]`,
         params: {
-          id: partnerId,     // Pass the actual ID as a param
+          id: partnerId,
           name: user.name,
           avatar: user.avatar
         }
@@ -107,7 +153,6 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     }
   };
 
-  // ⭐ Handle Report/Block Action
   const handleReport = () => {
     Alert.alert(
       `Report & Block ${user.name}?`,
@@ -144,61 +189,74 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
     );
   };
 
-  // --- Reusable Button Component for Cleanliness ---
-  const ActionButton = ({
+  // Discord-style button component
+  const DiscordButton = ({
     label,
     iconName,
     onPress,
-    isPrimary = false,
-    isDestructive = false,
+    variant = "primary", // primary, secondary, danger
+    fullWidth = false,
   }: {
     label: string;
     iconName: keyof typeof Ionicons.glyphMap;
     onPress: () => void;
-    isPrimary?: boolean;
-    isDestructive?: boolean;
+    variant?: "primary" | "secondary" | "danger";
+    fullWidth?: boolean;
   }) => {
-    // Use theme-safe colors with fallbacks
-    const safeTheme = isDark ? Colors.dark : Colors.light;
-    const defaultTextColor = isDestructive ? (colors.danger || safeTheme.danger) : (colors.textSecondary || safeTheme.textMuted);
-    const defaultBgColor = isDestructive ? (colors.dangerBg || `${safeTheme.danger}15`) : (colors.surface || safeTheme.surface);
-    const defaultBorderColor = isDestructive ? (colors.dangerBorder || `${safeTheme.danger}30`) : (colors.border || safeTheme.border);
-    const primaryColor = safeTheme.primary;
+    const isPrimary = variant === "primary";
+    const isDanger = variant === "danger";
 
     return (
       <TouchableOpacity
         onPress={onPress}
         disabled={loading}
         style={{
-          borderRadius: 14,
-          paddingVertical: 14,
-          paddingHorizontal: 16,
-          backgroundColor: isPrimary ? primaryColor : defaultBgColor,
+          width: fullWidth ? '100%' : undefined,
           flexDirection: "row",
           alignItems: "center",
-          gap: 12,
-          borderWidth: isPrimary ? 0 : 1,
-          borderColor: isPrimary ? 'transparent' : defaultBorderColor,
-          overflow: 'hidden',
-          shadowColor: isPrimary ? primaryColor : 'transparent',
-          shadowOffset: isPrimary ? { width: 0, height: 4 } : { width: 0, height: 0 },
-          shadowOpacity: isPrimary ? 0.3 : 0,
-          shadowRadius: isPrimary ? 8 : 0,
-          elevation: isPrimary ? 8 : 0,
+          justifyContent: "center",
+          gap: 8,
+          paddingVertical: 12,
+          paddingHorizontal: 20,
+          borderRadius: 4,
+          backgroundColor: isPrimary 
+            ? '#5865F2' // Discord blurple
+            : isDanger
+            ? isDark ? 'rgba(237, 66, 69, 0.1)' : 'rgba(237, 66, 69, 0.08)'
+            : isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+          borderWidth: isDanger ? 1 : 0,
+          borderColor: isDanger ? 'rgba(237, 66, 69, 0.3)' : 'transparent',
         }}
+        activeOpacity={0.7}
       >
-        <Ionicons name={iconName} size={22} color={isPrimary ? '#fff' : defaultTextColor} />
+        <Ionicons 
+          name={iconName} 
+          size={18} 
+          color={
+            isPrimary 
+              ? '#FFFFFF' 
+              : isDanger 
+              ? '#ED4245' 
+              : (isDark ? colors.textMuted : colors.textSecondary)
+          } 
+        />
         <Text
           style={{
-            color: isPrimary ? '#fff' : defaultTextColor,
-            fontWeight: isPrimary ? '800' : '600',
-            fontSize: 16,
-            flex: 1,
+            color: isPrimary 
+              ? '#FFFFFF' 
+              : isDanger 
+              ? '#ED4245' 
+              : (isDark ? colors.textMuted : colors.textSecondary),
+            fontFamily: Fonts.medium,
+            fontSize: 14,
+            letterSpacing: -0.2,
           }}
         >
           {label}
         </Text>
-        {loading && <ActivityIndicator color={isPrimary ? '#fff' : defaultTextColor} />}
+        {loading && isPrimary && (
+          <ActivityIndicator color="#FFFFFF" size="small" style={{ marginLeft: 4 }} />
+        )}
       </TouchableOpacity>
     );
   };
@@ -209,11 +267,12 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       transparent
       animationType="fade"
       onRequestClose={onClose}
+      statusBarTranslucent
     >
       <Pressable
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.8)",
+          backgroundColor: "rgba(0,0,0,0.85)",
           justifyContent: "center",
           alignItems: "center",
         }}
@@ -221,153 +280,229 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
       >
         <Pressable
           style={{
-            width: "85%",
-            maxWidth: 400,
+            width: SCREEN_WIDTH * 0.9,
+            maxWidth: 420,
           }}
           onPress={(e) => e.stopPropagation()}
         >
-          <BlurView
-            intensity={isDark ? 80 : 95}
-            tint={isDark ? "dark" : "light"}
+          <View
             style={{
-              borderRadius: 24,
+              borderRadius: 8,
               overflow: "hidden",
+              backgroundColor: isDark ? '#2F3136' : '#FFFFFF',
               borderWidth: 1,
-              borderColor: isDark ? "rgba(255,255,255,0.15)" : "rgba(0,0,0,0.1)",
+              borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
             }}
           >
-            {/* 1. DISCORD-STYLE BANNER & AVATAR BLOCK */}
-            <View style={{ position: 'relative' }}>
-              {/* Banner Area */}
+            {/* Discord-style Banner */}
+            <View 
+              style={{
+                height: 100,
+                backgroundColor: userColor,
+                position: 'relative',
+              }}
+            >
+              {/* Subtle overlay for depth */}
               <View
                 style={{
-                  height: 70,
-                  backgroundColor: userColor,
-                  borderBottomWidth: 1,
-                  borderBottomColor: colors.border
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: 'rgba(0,0,0,0.2)',
                 }}
               />
+            </View>
 
-              {/* Main Content Area (Below Banner) */}
+            {/* Content Area - Discord Style */}
+            <View
+              style={{
+                paddingTop: 72, // Space for floating avatar
+                paddingBottom: 20,
+                paddingHorizontal: 16,
+                backgroundColor: 'transparent',
+              }}
+            >
+              {/* Floating Avatar - Discord Style */}
               <View
                 style={{
-                  padding: 24,
-                  paddingTop: 64, // Space for the floating avatar
-                  backgroundColor: isDark ? colors.surface : colors.surfaceElevated,
-                  minHeight: 180,
+                  position: 'absolute',
+                  top: -44, // Half overlaps banner
+                  left: 16,
+                  width: 88,
+                  height: 88,
+                  borderRadius: 44,
+                  borderWidth: 6,
+                  borderColor: isDark ? '#2F3136' : '#FFFFFF',
+                  backgroundColor: isDark ? '#2F3136' : '#FFFFFF',
+                  alignItems: "center",
+                  justifyContent: "center",
+                  overflow: 'hidden',
                 }}
               >
-                {/* Name, Email & Status */}
+                {avatarUrl && !imageError ? (
+                  <Image
+                    source={{ uri: avatarUrl }}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                    }}
+                    resizeMode="cover"
+                    onError={() => setImageError(true)}
+                  />
+                ) : (
+                  <View
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      backgroundColor: userColor,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text 
+                      style={{ 
+                        color: "#fff", 
+                        fontFamily: Fonts.bold, 
+                        fontSize: 36,
+                        letterSpacing: -1,
+                      }}
+                    >
+                      {initials(user.name, user.email)}
+                    </Text>
+                  </View>
+                )}
+
+                {/* Online Status Ring - Discord Style */}
+                {isOnline && (
+                  <View
+                    style={{
+                      position: "absolute",
+                      bottom: 2,
+                      right: 2,
+                      width: 24,
+                      height: 24,
+                      borderRadius: 12,
+                      backgroundColor: isDark ? '#2F3136' : '#FFFFFF',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <View
+                      style={{
+                        width: 20,
+                        height: 20,
+                        borderRadius: 10,
+                        backgroundColor: "#23A55A", // Discord green
+                        borderWidth: 3,
+                        borderColor: isDark ? '#2F3136' : '#FFFFFF',
+                      }}
+                    />
+                  </View>
+                )}
+              </View>
+
+              {/* Username - Discord Style */}
+              <View style={{ marginBottom: 20 }}>
                 <Text
                   style={{
-                    color: colors.text,
-                    fontSize: 22,
-                    fontWeight: "800",
+                    color: isDark ? '#FFFFFF' : '#000000',
+                    fontSize: 20,
+                    fontFamily: Fonts.bold,
+                    letterSpacing: -0.3,
                     marginBottom: 4,
                   }}
                 >
                   {user.name}
                 </Text>
 
-                {user.email && (
-                  <Text
+                {/* Status Badge - Discord Style */}
+                {isOnline && (
+                  <View
                     style={{
-                      color: colors.textSecondary,
-                      fontSize: 14,
-                      marginBottom: 16,
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      marginTop: 4,
                     }}
                   >
-                    {user.email}
-                  </Text>
-                )}
-
-                {/* Placeholder for Profile Info (optional - can be added here) */}
-                <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 16 }}>
-                  Joined: November 20, 2025
-                </Text>
-
-
-                {/* Action Buttons */}
-                <View style={{ paddingTop: 16, borderTopWidth: 1, borderTopColor: colors.border, gap: 10 }}>
-                  {!isCurrentUser && (
-                    <>
-                      {/* Primary Action: Send Message */}
-                      <ActionButton
-                        label="Send Message"
-                        iconName="chatbubble-outline"
-                        onPress={handleSendDM}
-                        isPrimary={true}
-                      />
-
-                      {/* Secondary Action: View Full Profile */}
-                      <ActionButton
-                        label="View Full Profile"
-                        iconName="person-outline"
-                        onPress={() => Alert.alert("Coming Soon", "Full profile view will be available soon!")}
-                      />
-                    </>
-                  )}
-
-                  {/* Tertiary Actions (Destructive/Utility) */}
-                  <View style={{ marginTop: 8, gap: 10 }}>
-                    {/* Report & Block Button */}
-                    {!isCurrentUser && (
-                      <ActionButton
-                        label="Report & Block User"
-                        iconName="flag-outline"
-                        onPress={handleReport}
-                        isDestructive={true}
-                      />
-                    )}
-
-                    {/* Cancel Button */}
-                    <ActionButton
-                      label={isCurrentUser ? "Close" : "Cancel"}
-                      iconName="close-circle-outline"
-                      onPress={onClose}
+                    <View
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: "#23A55A",
+                      }}
                     />
+                    <Text
+                      style={{
+                        color: isDark ? '#B9BBBE' : '#4F5660',
+                        fontSize: 14,
+                        fontFamily: Fonts.regular,
+                      }}
+                    >
+                      Online
+                    </Text>
                   </View>
-                </View>
+                )}
               </View>
 
-              {/* Floating Avatar (positioned absolutely over the banner/content break) */}
+              {/* Divider - Discord Style */}
               <View
                 style={{
-                  position: 'absolute',
-                  top: 24,
-                  left: 24,
-                  width: 80,
-                  height: 80,
-                  borderRadius: 40,
-                  borderWidth: 6,
-                  borderColor: isDark ? colors.surface : colors.surfaceElevated,
-                  backgroundColor: userColor,
-                  alignItems: "center",
-                  justifyContent: "center",
-                  zIndex: 10,
+                  height: 1,
+                  backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)',
+                  marginBottom: 20,
                 }}
-              >
-                <Text style={{ color: "#fff", fontWeight: "800", fontSize: 36 }}>
-                  {initials(user.name, user.email)}
-                </Text>
+              />
 
-                {/* Status Indicator */}
-                <View
-                  style={{
-                    position: "absolute",
-                    bottom: 0,
-                    right: 0,
-                    width: 20,
-                    height: 20,
-                    borderRadius: 10,
-                    backgroundColor: isOnline ? colors.success : colors.offlineText, // Using offlineText for offline status color
-                    borderWidth: 4,
-                    borderColor: isDark ? colors.surface : colors.surfaceElevated,
-                  }}
+              {/* Action Buttons - Discord Style */}
+              <View style={{ gap: 12 }}>
+                {!isCurrentUser && (
+                  <>
+                    {/* Primary CTA - Discord Blurple */}
+                    <DiscordButton
+                      label="Send Message"
+                      iconName="chatbubble-ellipses"
+                      onPress={handleSendDM}
+                      variant="primary"
+                      fullWidth
+                    />
+
+                    {/* Secondary Actions Row */}
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <DiscordButton
+                          label="Profile"
+                          iconName="person"
+                          onPress={() => router.push({ pathname: "/profile/[id]", params: { id: user.id } } as never)}
+                          variant="secondary"
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <DiscordButton
+                          label="Block"
+                          iconName="ban"
+                          onPress={handleReport}
+                          variant="danger"
+                        />
+                      </View>
+                    </View>
+                  </>
+                )}
+
+                {/* Close Button */}
+                <DiscordButton
+                  label="Close"
+                  iconName="close"
+                  onPress={onClose}
+                  variant="secondary"
+                  fullWidth
                 />
               </View>
             </View>
-          </BlurView>
+          </View>
         </Pressable>
       </Pressable>
     </Modal>

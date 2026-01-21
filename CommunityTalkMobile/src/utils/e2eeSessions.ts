@@ -206,6 +206,14 @@ export async function ensureBundleUploaded(me: string): Promise<void> {
   
   if (success) {
     console.log(`🔐 [E2EE Bundle] ✅ Bundle uploaded successfully`);
+    // Wait a moment for DB to sync, then verify bundle exists
+    await new Promise(resolve => setTimeout(resolve, 100));
+    const verified = await fetchBundle(me);
+    if (verified) {
+      console.log(`🔐 [E2EE Bundle] ✅ Bundle verified on server`);
+    } else {
+      console.log(`🔐 [E2EE Bundle] ⚠️ Bundle upload succeeded but verification failed (may be race condition)`);
+    }
   } else {
     console.log(`🔐 [E2EE Bundle] ⚠️ Bundle upload failed (non-fatal)`);
   }
