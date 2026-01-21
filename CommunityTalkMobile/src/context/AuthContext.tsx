@@ -132,39 +132,62 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       const pendingUri = await AsyncStorage.getItem(key);
 
       if (pendingUri) {
-        console.log("[AuthContext] Found pending avatar upload:", pendingUri);
+        console.log("[AuthContext] 🔄 Found pending avatar upload, processing...", pendingUri.substring(0, 50));
 
-        // Construct form data
-        const formData = new FormData();
-        // @ts-ignore
-        formData.append('profilePicture', {
-          uri: pendingUri,
-          name: 'profile.jpg',
-          type: 'image/jpeg',
-        });
+        // Convert URI to base64
+        let base64Data: string;
+        let fileExtension = 'jpg';
+        
+        if (pendingUri.startsWith('data:')) {
+          // Already a data URI - extract base64
+          const parts = pendingUri.split(',');
+          base64Data = parts[1] || pendingUri;
+          const mimeMatch = parts[0]?.match(/data:image\/(\w+)/);
+          if (mimeMatch) fileExtension = mimeMatch[1];
+        } else {
+          // Local file URI - read as base64 using FileSystem
+          const FileSystem = require('expo-file-system/legacy');
+          base64Data = await FileSystem.readAsStringAsync(pendingUri, {
+            encoding: 'base64',
+          });
+          // Extract extension from URI
+          const extMatch = pendingUri.match(/\.(\w+)$/);
+          if (extMatch) fileExtension = extMatch[1];
+        }
 
-        // Upload
-        const res = await api.put('/api/user/profile-picture', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
+        console.log("[AuthContext] 📤 Uploading avatar to server...");
+        
+        // Upload to correct endpoint
+        const res = await api.post('/api/user/avatar', {
+          imageData: base64Data,
+          fileExtension: fileExtension,
         });
 
         // Update state if successful
-        const newUrl = res.data?.user?.profilePicture || res.data?.user?.avatar;
+        const newUrl = res.data?.avatar || res.data?.user?.avatar;
         if (newUrl) {
-          console.log("[AuthContext] Avatar auto-uploaded successfully!");
+          console.log("[AuthContext] ✅ Avatar auto-uploaded successfully!", newUrl);
           setUser((prev: any) => prev ? ({ ...prev, avatar: newUrl }) : null);
           await AsyncStorage.removeItem(key);
+          console.log("[AuthContext] 🧹 Cleaned up pending avatar from storage");
+        } else {
+          console.warn("[AuthContext] ⚠️ Upload succeeded but no avatar URL returned");
         }
       }
-    } catch (err) {
-      console.warn("[AuthContext] Auto-upload avatar failed:", err);
+    } catch (err: any) {
+      console.error("[AuthContext] ❌ Auto-upload avatar failed:", err?.response?.data || err?.message || err);
+      // Don't remove from storage on error - user can retry
     }
   }, []);
 
   /* --------------------- Auto-Upload Watcher --------------------- */
   useEffect(() => {
     if (user?.email) {
-      checkPendingAvatar(user.email);
+      // Small delay to ensure user state is fully set
+      const timer = setTimeout(() => {
+        checkPendingAvatar(user.email);
+      }, 500);
+      return () => clearTimeout(timer);
     }
   }, [user?.email, checkPendingAvatar]);
 
@@ -336,6 +359,13 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       await refreshSocketAuth(token);
       const userObj = await refreshBootstrap();
       await registerForPushNotificationsAsync(); // SAFE
+
+      // 🔄 Upload pending avatar immediately after login
+      if (userObj?.email) {
+        checkPendingAvatar(userObj.email).catch(err => {
+          console.warn("[AuthContext] Avatar upload failed on login:", err);
+        });
+      }
 
       // 🔐 E2EE: Generate keypair and upload public key on login
       console.log(`\n🔐 [E2EE Auth] ==========================================`);
