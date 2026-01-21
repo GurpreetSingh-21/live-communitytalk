@@ -34,3 +34,48 @@ export async function fetchPublicKey(userId: string): Promise<string | null> {
     return null;
   }
 }
+
+// ───────────────────────── Bundle APIs ─────────────────────────
+export async function uploadBundle(input: { signedPrekey: string; signedPrekeySig: string; oneTimePrekeys: string[] }) {
+  try {
+    await api.put('/api/user/e2ee/bundle', input);
+    return true;
+  } catch (err) {
+    console.error('🔐 [E2EE] Failed to upload bundle:', err);
+    return false;
+  }
+}
+
+export async function fetchBundle(userId: string) {
+  try {
+    const { data } = await api.get(`/api/user/${userId}/e2ee/bundle`);
+    return data || null;
+  } catch (err: any) {
+    if (err?.response?.status === 404) return null;
+    console.error('🔐 [E2EE] Failed to fetch bundle:', err);
+    return null;
+  }
+}
+
+// ───────────────────────── Identity Backup APIs ─────────────────────────
+
+export async function uploadIdentityBackup(backup: any): Promise<boolean> {
+  try {
+    await api.put('/api/user/e2ee/backup', { backup });
+    return true;
+  } catch (err) {
+    console.error('🔐 [E2EE] Failed to upload identity backup:', err);
+    return false;
+  }
+}
+
+export async function fetchIdentityBackup(): Promise<any | null> {
+  try {
+    const { data } = await api.get('/api/user/e2ee/backup');
+    return data?.backup || null;
+  } catch (err: any) {
+    if (err?.response?.status === 404) return null;
+    console.error('🔐 [E2EE] Failed to fetch identity backup:', err);
+    return null;
+  }
+}

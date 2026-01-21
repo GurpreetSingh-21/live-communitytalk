@@ -33,7 +33,7 @@ export function Hero() {
                         >
                             Your Campus.{" "}
                             <span className="text-[#2D5A47] relative inline-block">
-                                Unfiltered.
+                                Your Chemistry.
                                 <svg
                                     className="absolute -bottom-2 left-0 w-full h-3 text-[#FF7F6E]"
                                     viewBox="0 0 200 12"
@@ -56,7 +56,7 @@ export function Hero() {
                             transition={{ duration: 0.7, delay: 0.3 }}
                             className="text-xl text-[#6B6B6B] leading-relaxed max-w-xl"
                         >
-                            The only app your Dean probably hates. Connect with verified students, anonymously or not.
+                            The exclusive platform where verified students connect, collaborate, and build lasting friendships across campuses.
                         </motion.p>
 
                         <motion.div
@@ -66,7 +66,7 @@ export function Hero() {
                             className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-4"
                         >
                             <button className="group px-8 py-4 bg-[#2D5A47] text-white rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl hover:scale-105 transition-all flex items-center gap-2">
-                                Get the Tea
+                                Download for iOS
                                 <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                                 </svg>

@@ -34,11 +34,11 @@ export function Header() {
                 <Link href="/" className="flex items-center gap-3 group">
                     <div className="relative w-10 h-10 flex items-center justify-center">
                         <Image
-                            src="/logo-new.png"
+                            src="/logo.png"
                             alt="Campustry"
                             fill
                             sizes="40px"
-                            className="object-contain mix-blend-multiply"
+                            className="object-contain"
                             priority
                         />
                     </div>

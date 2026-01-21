@@ -162,6 +162,17 @@ router.put("/publicKey", async (req, res) => {
       data: { publicKey }
     });
 
+    // Invalidate cached public key so other users don't encrypt with stale keys for up to 1 hour
+    // (stale encryption = guaranteed decrypt failures)
+    if (req.redisClient) {
+      try {
+        const cacheKey = `user:publicKey:${userId}`;
+        await req.redisClient.del(cacheKey);
+      } catch (e) {
+        // non-fatal
+      }
+    }
+
     console.log(`🔐 [E2EE] User ${userId} uploaded public key`);
     return res.json({ success: true, message: "Public key saved" });
   } catch (err) {
@@ -212,6 +223,140 @@ router.get("/:id/publicKey", async (req, res) => {
   } catch (err) {
     console.error("[User Routes] GET publicKey error:", err);
     return res.status(500).json({ error: "Failed to fetch public key" });
+  }
+});
+
+// ───────────────────────── E2EE Bundle (Signed + One-Time Prekeys) ─────────────────────────
+/**
+ * PUT /api/user/e2ee/bundle
+ * Save prekey bundle: signedPrekey (currently just a prekey) and one-time prekeys.
+ * NOTE: We don't verify signatures yet; signedPrekeySig is optional and reserved for future use.
+ */
+router.put("/e2ee/bundle", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { signedPrekey, signedPrekeySig = null, oneTimePrekeys = [] } = req.body || {};
+
+    if (!signedPrekey || !Array.isArray(oneTimePrekeys)) {
+      return res.status(400).json({ error: "signedPrekey and oneTimePrekeys[] are required" });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        e2eeSignedPrekey: signedPrekey,
+        e2eeSignedPrekeySig: signedPrekeySig,
+        e2eeOneTimePrekeys: oneTimePrekeys,
+        e2eeBundleVersion: { increment: 1 },
+        e2eeBundleUpdatedAt: new Date()
+      }
+    });
+
+    // Invalidate cached public key as bundle implies new key material usage
+    if (req.redisClient) {
+      try { await req.redisClient.del(`user:publicKey:${userId}`); } catch {}
+    }
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("[User Routes] PUT e2ee/bundle error:", err);
+    return res.status(500).json({ error: "Failed to save bundle" });
+  }
+});
+
+/**
+ * GET /api/user/:id/e2ee/bundle
+ * Fetch a user's bundle; consumes one one-time-prekey (first) if available.
+ */
+router.get("/:id/e2ee/bundle", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        publicKey: true,
+        e2eeSignedPrekey: true,
+        e2eeSignedPrekeySig: true,
+        e2eeOneTimePrekeys: true,
+        e2eeBundleVersion: true
+      }
+    });
+
+    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!user.publicKey || !user.e2eeSignedPrekey || !user.e2eeSignedPrekeySig) {
+      return res.status(404).json({ error: "No bundle available" });
+    }
+
+    const prekeys = Array.isArray(user.e2eeOneTimePrekeys) ? [...user.e2eeOneTimePrekeys] : [];
+    const oneTimePrekey = prekeys.shift() || null; // consume first
+
+    // Save back the truncated list (do not block response on errors)
+    prisma.user.update({
+      where: { id },
+      data: { e2eeOneTimePrekeys: prekeys }
+    }).catch(() => {});
+
+    return res.json({
+      publicKey: user.publicKey,
+      signedPrekey: user.e2eeSignedPrekey,
+      signedPrekeySig: user.e2eeSignedPrekeySig,
+      oneTimePrekey,
+      bundleVersion: user.e2eeBundleVersion || 1
+    });
+  } catch (err) {
+    console.error("[User Routes] GET e2ee/bundle error:", err);
+    return res.status(500).json({ error: "Failed to fetch bundle" });
+  }
+});
+
+// ───────────────────────── E2EE Identity Backup Endpoints ─────────────────────────
+/**
+ * PUT /api/user/e2ee/backup
+ * Store/update the user's encrypted E2EE identity backup blob.
+ * The blob MUST already be encrypted on the client; server treats it as opaque.
+ */
+router.put("/e2ee/backup", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { backup } = req.body;
+
+    if (!backup || typeof backup !== 'object') {
+      return res.status(400).json({ error: "backup (object) is required" });
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { e2eeBackup: backup }
+    });
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("[User Routes] PUT e2ee/backup error:", err);
+    return res.status(500).json({ error: "Failed to save backup" });
+  }
+});
+
+/**
+ * GET /api/user/e2ee/backup
+ * Fetch the caller's encrypted E2EE identity backup blob.
+ */
+router.get("/e2ee/backup", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { e2eeBackup: true }
+    });
+
+    if (!user || !user.e2eeBackup) {
+      return res.status(404).json({ error: "No backup found" });
+    }
+
+    return res.json({ backup: user.e2eeBackup });
+  } catch (err) {
+    console.error("[User Routes] GET e2ee/backup error:", err);
+    return res.status(500).json({ error: "Failed to fetch backup" });
   }
 });
 

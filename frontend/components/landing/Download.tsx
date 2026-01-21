@@ -18,10 +18,10 @@ export function Download() {
                     className="max-w-4xl mx-auto"
                 >
                     <h2 className="text-4xl md:text-6xl font-black text-white mb-6 tracking-tight">
-                        FOMO is Real. Don't Miss Out.
+                        Where Every Connection Matters
                     </h2>
                     <p className="text-xl text-white/80 mb-12 max-w-2xl mx-auto leading-relaxed">
-                        The group chat you can't get kicked out of. Join 10,000+ students and get the tea.
+                        Join 1,000+ verified students across 25+ universities. Download Campustry and discover your campus community—and maybe your chemistry.
                     </p>
 
                     <div className="flex flex-col sm:flex-row items-center justify-center gap-6">

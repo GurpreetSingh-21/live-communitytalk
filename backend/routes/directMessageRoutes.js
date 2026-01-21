@@ -246,6 +246,8 @@ router.get("/:memberId", async (req, res) => {
       status: m.status,
       attachments: m.attachments,
       isEncrypted: m.isEncrypted || false,  // E2EE flag
+      senderPublicKey: m.senderPublicKey || undefined,
+      recipientPublicKey: m.recipientPublicKey || undefined,
       // Legacy MongoDB field names for frontend compatibility
       _id: m.id,
       from: m.fromId,
@@ -292,7 +294,15 @@ const handleSend = async (req, res) => {
     if (String(to) === String(from))
       return res.status(400).json({ error: "Cannot message yourself" });
 
-    let { content = "", attachments = [], type = "text", clientMessageId, isEncrypted = false } = req.body;
+    let {
+      content = "",
+      attachments = [],
+      type = "text",
+      clientMessageId,
+      isEncrypted = false,
+      senderPublicKey,
+      recipientPublicKey
+    } = req.body;
 
     // Attachments check
     if (typeof attachments === 'string') {
@@ -329,7 +339,10 @@ const handleSend = async (req, res) => {
         status: "sent",
         type: type,
         context: req.body.context || "community",
-        isEncrypted: !!isEncrypted  // E2EE flag
+        isEncrypted: !!isEncrypted,  // E2EE flag
+        // Persist key metadata ONLY when encrypted (keeps DB cleaner)
+        senderPublicKey: !!isEncrypted ? (typeof senderPublicKey === "string" ? senderPublicKey : null) : null,
+        recipientPublicKey: !!isEncrypted ? (typeof recipientPublicKey === "string" ? recipientPublicKey : null) : null
       }
     });
 
@@ -344,6 +357,8 @@ const handleSend = async (req, res) => {
       status: dm.status,
       type: dm.type,
       isEncrypted: dm.isEncrypted,  // E2EE flag
+      senderPublicKey: dm.senderPublicKey || undefined,
+      recipientPublicKey: dm.recipientPublicKey || undefined,
       clientMessageId
     };
 

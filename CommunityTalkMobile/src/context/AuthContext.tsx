@@ -22,7 +22,9 @@ import {
 } from "../utils/storage";
 import { refreshSocketAuth, disconnectSocket } from "../api/socket";
 import { registerForPushNotificationsAsync } from "../utils/notifications";
-import { getOrCreateKeyPair } from "../utils/e2ee";
+import { getOrCreateKeyPair, createAutoIdentityBackup, restoreIdentityFromAutoBackup } from "../utils/e2ee";
+import { uploadIdentityBackup, fetchIdentityBackup } from "../api/e2eeApi";
+import { ensureBundleUploaded } from "../utils/e2eeSessions";
 import { uploadPublicKey } from "../api/e2eeApi";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -339,8 +341,26 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       try {
         const userId = (userObj as any)?.id || (userObj as any)?._id;
         if (userId) {
-          const { publicKey } = await getOrCreateKeyPair(String(userId));
-          await uploadPublicKey(publicKey);
+          const uid = String(userId);
+
+          // 1) If server has an identity backup, try restoring that FIRST (new device / reinstall)
+          const remoteBackup = await fetchIdentityBackup();
+          if (remoteBackup && remoteBackup.version === 2 && remoteBackup.secretKeyB64) {
+            const restored = await restoreIdentityFromAutoBackup(uid, remoteBackup);
+            if (restored) {
+              await uploadPublicKey(restored.publicKey);
+            }
+          } else {
+            const { publicKey } = await getOrCreateKeyPair(uid);
+            await uploadPublicKey(publicKey);
+
+            // Create automatic backup on first login for this device
+            const blob = await createAutoIdentityBackup(uid);
+            if (blob) await uploadIdentityBackup(blob);
+          }
+
+          // Ensure prekey bundle exists for session establishment
+          await ensureBundleUploaded(uid);
         } else {
           console.warn('[E2EE] Skipping key generation - no user ID found');
         }

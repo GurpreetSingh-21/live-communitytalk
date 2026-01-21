@@ -21,6 +21,14 @@ model User {
   avatar   String  @default("/default-avatar.png")
   bio      String?
   publicKey String? // E2EE
+  // Encrypted backup blob for E2EE identity (private key), stored client-side encrypted
+  e2eeBackup Json?
+  // Signal-style bundle fields (signed prekey + one-time prekeys)
+  e2eeSignedPrekey       String?
+  e2eeSignedPrekeySig    String?
+  e2eeOneTimePrekeys     Json?
+  e2eeBundleVersion      Int       @default(1)
+  e2eeBundleUpdatedAt    DateTime?
 
   // Account Status
   emailVerified    Boolean @default(false)
@@ -273,6 +281,11 @@ model DirectMessage {
   context     String  @default("community") // "community" or "dating"
   attachments Json?
   isEncrypted Boolean @default(false)  // E2EE flag - true if content is encrypted
+
+  // E2EE metadata: store which keys were used at encrypt time to avoid decrypt failures
+  // when users rotate keys (new device / reinstall / restore).
+  senderPublicKey    String?
+  recipientPublicKey String?
 
   status      MessageStatus @default(sent)
   isDeleted   Boolean       @default(false)

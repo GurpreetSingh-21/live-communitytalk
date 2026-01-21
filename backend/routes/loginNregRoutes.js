@@ -692,6 +692,15 @@ router.patch("/profile", authenticate, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    // Invalidate cached public key if it was updated here as well (same cache key as userRoutes)
+    if (updates.publicKey && req.redisClient) {
+      try {
+        await req.redisClient.del(`user:publicKey:${userId}`);
+      } catch {
+        // non-fatal
+      }
+    }
+
     // Propagate name change to memberships
     if (updates.fullName) {
       await prisma.member.updateMany({

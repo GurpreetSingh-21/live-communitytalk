@@ -774,15 +774,25 @@ export default function DMsScreen(): React.JSX.Element {
       // So if I am A, I can decrypt my own message to B using Private(A) + Public(B).
       // Does payload have `to`? Yes.
 
-      const partnerIdForDecrypt = isMe ? to : from;
+          const partnerIdForDecrypt = isMe ? to : from;
 
       if (isEncrypted && contentStr && contentStr.length > 40) {
         try {
-          const pubKey = await fetchPublicKey(partnerIdForDecrypt);
-          if (pubKey) {
-            contentStr = await decryptMessage(contentStr, pubKey, myId);
-            // If I sent it, I want to see "You: ..." maybe?
-            // But the list item rendering handles "You: " prefix usually?
+          // Prefer message-stored key metadata to avoid stale-key decrypt failures
+          const senderKey = (payload?.senderPublicKey || payload?.senderPubKey || null) as string | null;
+          const recipientKey = (payload?.recipientPublicKey || payload?.recipientPubKey || null) as string | null;
+
+          let keyToUse: string | null = null;
+          if (isMe) keyToUse = recipientKey;
+          else keyToUse = senderKey;
+
+          if (!keyToUse) {
+            const pubKey = await fetchPublicKey(partnerIdForDecrypt);
+            keyToUse = pubKey;
+          }
+
+          if (keyToUse) {
+            contentStr = await decryptMessage(contentStr, keyToUse, myId);
           }
         } catch (err) {
           // ignore

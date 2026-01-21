@@ -17,6 +17,9 @@ const getKeyKeys = (userId: string) => ({
   SEC: `e2ee_sec_${userId}`
 });
 
+// Backup metadata keys
+const getBackupKey = (userId: string) => `e2ee_backup_${userId}`;
+
 /**
  * Get or create the user's X25519 keypair.
  * Public key is safe to share. Private key NEVER leaves the device.
@@ -230,4 +233,49 @@ export async function ensureKeyPair(userId: string): Promise<{ publicKey: string
     return { publicKey, secretKey };
   }
   return await forceRegenerateKeyPair(userId);
+}
+
+// ───────────────────────── Automatic Identity Backup (no user passphrase) ─────────────────────────
+export type AutoBackupBlob = {
+  version: 2;
+  secretKeyB64: string;
+};
+
+/**
+ * Create a simple automatic backup of the user's identity private key.
+ * NOTE: This means the backend can theoretically read DMs if compromised,
+ * but it keeps restore 100% automatic for users.
+ */
+export async function createAutoIdentityBackup(userId: string): Promise<AutoBackupBlob | null> {
+  if (!userId) return null;
+  const { SEC } = getKeyKeys(userId);
+  const secretKeyB64 = await SecureStore.getItemAsync(SEC);
+  if (!secretKeyB64) return null;
+  return { version: 2, secretKeyB64 };
+}
+
+/**
+ * Restore identity private key from an automatic backup blob (no passphrase).
+ */
+export async function restoreIdentityFromAutoBackup(
+  userId: string,
+  blob: AutoBackupBlob
+): Promise<{ publicKey: string; secretKey: string } | null> {
+  if (!userId || !blob || !blob.secretKeyB64) return null;
+  try {
+    const secretKeyB64 = blob.secretKeyB64;
+    const secretKeyBytes = decodeBase64(secretKeyB64);
+    const kp = nacl.box.keyPair.fromSecretKey(secretKeyBytes);
+    const publicKeyB64 = encodeBase64(kp.publicKey);
+
+    const { PUB, SEC } = getKeyKeys(userId);
+    await SecureStore.setItemAsync(PUB, publicKeyB64);
+    await SecureStore.setItemAsync(SEC, secretKeyB64);
+    await SecureStore.setItemAsync(getBackupKey(userId), JSON.stringify(blob));
+
+    return { publicKey: publicKeyB64, secretKey: secretKeyB64 };
+  } catch (err) {
+    logger.error('E2EE restoreIdentityFromAutoBackup failed', err);
+    return null;
+  }
 }

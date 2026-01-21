@@ -43,6 +43,7 @@ import { useColorScheme as useAppColorScheme } from '@/hooks/use-color-scheme';
 
 // 🔐 E2EE imports
 import { encryptMessage, decryptMessage, getPublicKey, ensureKeyPair } from "@/src/utils/e2ee";
+import { sessionEncrypt, sessionDecrypt, ensureBundleUploaded } from "@/src/utils/e2eeSessions";
 import { fetchPublicKey, uploadPublicKey } from "@/src/api/e2eeApi";
 
 // 🚀 PERFORMANCE: In-memory cache for public keys (saves ~100ms per DM open)
@@ -360,6 +361,8 @@ export default function DMThreadScreen() {
         const { publicKey } = await ensureKeyPair(myId);
         // Upload the public key to ensure server is in sync
         await uploadPublicKey(publicKey);
+        // Ensure bundle (signed prekey + one-time prekeys) is present
+        await ensureBundleUploaded(myId);
       } catch (keyErr) {
         console.warn('🔐 [E2EE] Key setup failed (non-fatal):', keyErr);
       }
@@ -410,9 +413,26 @@ export default function DMThreadScreen() {
       const decryptedMsgs = await Promise.all(
         msgs.map(async (m: any) => {
           // Only decrypt if explicitly marked as encrypted
-          if (m.isEncrypted && m.content && partnerPubKey) {
+          if (m.isEncrypted && m.content) {
             try {
-              const decrypted = await decryptMessage(m.content, partnerPubKey, myId);
+              if (m.content.startsWith('SR1:')) {
+                const sessPlain = await sessionDecrypt(myId, partnerId, m.content);
+                if (sessPlain) return { ...m, content: sessPlain, _decrypted: true };
+                return { ...m, content: '🔒 Encrypted', _decrypted: false };
+              }
+
+              // Prefer message-stored key metadata (prevents failures after key rotation / reinstall)
+              const senderKey = (m.senderPublicKey || m.senderPubKey || null) as string | null;
+              const recipientKey = (m.recipientPublicKey || m.recipientPubKey || null) as string | null;
+              const fromId = String(m.from || m.fromId || "");
+              const keyToUse =
+                fromId === String(myId)
+                  ? (recipientKey || partnerPubKey)
+                  : (senderKey || partnerPubKey);
+
+              if (!keyToUse) return { ...m, content: '🔒 Encrypted', _decrypted: false };
+
+              const decrypted = await decryptMessage(m.content, keyToUse, myId);
               // Check if decryption returned an error code
               if (decrypted.startsWith('[') && decrypted.endsWith(']')) {
                 console.warn('🔐 [E2EE] Decryption returned error:', decrypted, 'for msg:', m._id?.substring(0, 8));
@@ -495,15 +515,36 @@ export default function DMThreadScreen() {
 
       // 🔐 E2EE: Decrypt incoming encrypted messages
       // NaCl shared key is symmetric - always use partner's public key
-      if (p.isEncrypted && content && recipientPublicKey) {
+      if (p.isEncrypted && content) {
         try {
-          const decrypted = await decryptMessage(content, recipientPublicKey, myId);
-          if (!decrypted.startsWith('[')) {
-            content = decrypted;
-            console.log('🔐 [E2EE] Real-time decrypted ok');
+          if (content.startsWith('SR1:')) {
+            const sessPlain = await sessionDecrypt(myId, partnerId, content);
+            if (sessPlain) {
+              content = sessPlain;
+            } else {
+              content = '🔒 Encrypted';
+            }
           } else {
-            console.warn('🔐 [E2EE] Real-time:', decrypted);
-            content = '🔒 ' + decrypted.slice(1, -1);
+            const senderKey = (p.senderPublicKey || p.senderPubKey || null) as string | null;
+            const recipientKey = (p.recipientPublicKey || p.recipientPubKey || null) as string | null;
+            const fromId = String(p?.from || p?.senderId || "");
+            const keyToUse =
+              fromId === String(myId)
+                ? (recipientKey || recipientPublicKey)
+                : (senderKey || recipientPublicKey);
+
+            if (!keyToUse) {
+              content = '🔒 Encrypted';
+            } else {
+              const decrypted = await decryptMessage(content, keyToUse, myId);
+              if (!decrypted.startsWith('[')) {
+                content = decrypted;
+                console.log('🔐 [E2EE] Real-time decrypted ok');
+              } else {
+                console.warn('🔐 [E2EE] Real-time:', decrypted);
+                content = '🔒 ' + decrypted.slice(1, -1);
+              }
+            }
           }
         } catch (err) {
           console.warn('🔐 [E2EE] Real-time failed:', err);
@@ -768,30 +809,47 @@ export default function DMThreadScreen() {
     try {
       let data: any;
 
-      // 🔐 E2EE: Encrypt message if recipient has a public key
+      // 🔐 E2EE: Prefer session-based encryption (SR1); fall back to static box
       let contentToSend = text;
       let isEncrypted = false;
+      const payload: any = {
+        content: contentToSend,
+        type: 'text',
+        clientMessageId,
+        context,
+        isEncrypted,
+      };
 
-      if (recipientPublicKey) {
+      // Try session encrypt first
+      let sessionCipher: string | null = null;
+      try {
+        sessionCipher = await sessionEncrypt(myId, partnerId, text);
+      } catch (e) {
+        sessionCipher = null;
+      }
+
+      if (sessionCipher) {
+        contentToSend = sessionCipher;
+        isEncrypted = true;
+        payload.content = contentToSend;
+        payload.isEncrypted = true;
+        payload.sessionVersion = 'sr1';
+      } else if (recipientPublicKey) {
         try {
+          const myPub = await getPublicKey(myId);
           const encrypted = await encryptMessage(text, recipientPublicKey, myId);
           if (encrypted) {
             contentToSend = encrypted;
             isEncrypted = true;
-            console.log('🔐 [E2EE] Message encrypted successfully');
+            payload.content = contentToSend;
+            payload.isEncrypted = true;
+            payload.senderPublicKey = myPub || undefined;
+            payload.recipientPublicKey = recipientPublicKey || undefined;
           }
         } catch (encErr) {
           console.warn('🔐 [E2EE] Encryption failed, sending unencrypted:', encErr);
         }
       }
-
-      const payload = {
-        content: contentToSend,
-        type: 'text',
-        clientMessageId,
-        context,
-        isEncrypted, // 🔐 Tell server this is encrypted
-      };
 
       try {
         ({ data } = await api.post(`/api/direct-messages/${partnerId}`, payload));
