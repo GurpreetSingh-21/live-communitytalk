@@ -59,13 +59,22 @@ export async function clearSession(me: string, them: string) {
  * Ensure we have a session with partner. If none, establish using partner bundle (X3DH-like minimal).
  */
 export async function ensureSession(me: string, partnerId: string): Promise<Session | null> {
+  console.log(`🔐 [E2EE Session] 🔍 Checking session with ${partnerId.substring(0, 8)}...`);
   const existing = await loadSession(me, partnerId);
-  if (existing) return existing;
+  if (existing) {
+    console.log(`🔐 [E2EE Session] ✅ Found existing session (sendCount: ${existing.sendCount}, recvCount: ${existing.recvCount})`);
+    return existing;
+  }
 
+  console.log(`🔐 [E2EE Session] 🆕 No session found, establishing new session...`);
   const myKeys = await getOrCreateKeyPair(me);
   const theirBundle = await fetchBundle(partnerId);
-  if (!theirBundle) return null;
+  if (!theirBundle) {
+    console.log(`🔐 [E2EE Session] ❌ Partner has no bundle, cannot establish session`);
+    return null;
+  }
 
+  console.log(`🔐 [E2EE Session] 🔑 Deriving shared root key (X3DH-like)...`);
   const ikA_sec = decodeBase64(myKeys.secretKey);
   const ikB_pub = decodeBase64(theirBundle.publicKey);
   const spkB_pub = decodeBase64(theirBundle.signedPrekey);
@@ -93,6 +102,7 @@ export async function ensureSession(me: string, partnerId: string): Promise<Sess
     version: 1
   };
   await saveSession(me, partnerId, session);
+  console.log(`🔐 [E2EE Session] ✅ Session established and saved`);
   return session;
 }
 
@@ -101,8 +111,12 @@ export async function ensureSession(me: string, partnerId: string): Promise<Sess
  */
 export async function sessionEncrypt(me: string, partnerId: string, plaintext: string): Promise<string | null> {
   let session = await ensureSession(me, partnerId);
-  if (!session) return null;
+  if (!session) {
+    console.log(`🔐 [E2EE Session] ❌ Cannot encrypt - no session with ${partnerId.substring(0, 8)}...`);
+    return null;
+  }
 
+  console.log(`🔐 [E2EE Session] 🔒 Encrypting message (sendCount: ${session.sendCount})...`);
   const sendChain = decodeBase64(session.sendChain);
   const msgKey = deriveMsgKey(sendChain, session.sendCount);
   const nonce = nacl.randomBytes(nacl.secretbox.nonceLength);
@@ -114,7 +128,9 @@ export async function sessionEncrypt(me: string, partnerId: string, plaintext: s
   session.sendCount += 1;
   await saveSession(me, partnerId, session);
 
-  return `SR1:${session.sendCount - 1}:${encodeBase64(nonce)}:${encodeBase64(cipher)}`;
+  const packed = `SR1:${session.sendCount - 1}:${encodeBase64(nonce)}:${encodeBase64(cipher)}`;
+  console.log(`🔐 [E2EE Session] ✅ Message encrypted (SR1 format, msgNum: ${session.sendCount - 1})`);
+  return packed;
 }
 
 /**
@@ -122,18 +138,28 @@ export async function sessionEncrypt(me: string, partnerId: string, plaintext: s
  */
 export async function sessionDecrypt(me: string, partnerId: string, payload: string): Promise<string | null> {
   const parts = payload.split(':');
-  if (parts.length !== 4 || parts[0] !== 'SR1') return null;
+  if (parts.length !== 4 || parts[0] !== 'SR1') {
+    console.log(`🔐 [E2EE Session] ⚠️ Invalid SR1 payload format`);
+    return null;
+  }
   const msgNum = Number(parts[1]);
   const nonce = decodeBase64(parts[2]);
   const cipher = decodeBase64(parts[3]);
 
+  console.log(`🔐 [E2EE Session] 🔓 Decrypting SR1 message (msgNum: ${msgNum})...`);
   let session = await loadSession(me, partnerId);
-  if (!session) return null;
+  if (!session) {
+    console.log(`🔐 [E2EE Session] ❌ No session found for decryption`);
+    return null;
+  }
 
   const recvChain = decodeBase64(session.recvChain);
   const msgKey = deriveMsgKey(recvChain, msgNum);
   const plain = nacl.secretbox.open(cipher, nonce, msgKey);
-  if (!plain) return null;
+  if (!plain) {
+    console.log(`🔐 [E2EE Session] ❌ Decryption failed (bad MAC or key)`);
+    return null;
+  }
 
   // advance recv chain to at least msgNum+1
   let current = recvChain;
@@ -146,6 +172,7 @@ export async function sessionDecrypt(me: string, partnerId: string, payload: str
   session.recvCount = count;
   await saveSession(me, partnerId, session);
 
+  console.log(`🔐 [E2EE Session] ✅ Message decrypted successfully (recvCount: ${count})`);
   return new TextDecoder().decode(plain);
 }
 
@@ -153,6 +180,14 @@ export async function sessionDecrypt(me: string, partnerId: string, payload: str
  * Upload a fresh bundle if missing. Generates signed prekey + prekey pool.
  */
 export async function ensureBundleUploaded(me: string): Promise<void> {
+  console.log(`🔐 [E2EE Bundle] 🔍 Checking if bundle needs upload for user ${me.substring(0, 8)}...`);
+  const existing = await fetchBundle(me);
+  if (existing) {
+    console.log(`🔐 [E2EE Bundle] ✅ Bundle already exists on server, skipping upload`);
+    return;
+  }
+
+  console.log(`🔐 [E2EE Bundle] 🆕 No bundle found, generating and uploading...`);
   const kp = nacl.box.keyPair(); // prekey we expose in bundle
 
   // small pool of one-time prekeys
@@ -162,9 +197,16 @@ export async function ensureBundleUploaded(me: string): Promise<void> {
     prekeys.push(encodeBase64(pk.publicKey));
   }
 
-  await uploadBundle({
+  console.log(`🔐 [E2EE Bundle] 📦 Generated bundle (signed prekey + ${prekeys.length} one-time keys)`);
+  const success = await uploadBundle({
     signedPrekey: encodeBase64(kp.publicKey),
     signedPrekeySig: null,
     oneTimePrekeys: prekeys
   });
+  
+  if (success) {
+    console.log(`🔐 [E2EE Bundle] ✅ Bundle uploaded successfully`);
+  } else {
+    console.log(`🔐 [E2EE Bundle] ⚠️ Bundle upload failed (non-fatal)`);
+  }
 }

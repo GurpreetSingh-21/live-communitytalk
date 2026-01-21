@@ -35,6 +35,7 @@ export async function getOrCreateKeyPair(userId: string): Promise<{ publicKey: s
   const existingSec = await SecureStore.getItemAsync(SEC);
 
   if (existingPub && existingSec) {
+    console.log(`🔐 [E2EE] ✅ Found existing keypair for user ${userId.substring(0, 8)}...`);
     return { publicKey: existingPub, secretKey: existingSec };
   }
 
@@ -43,6 +44,7 @@ export async function getOrCreateKeyPair(userId: string): Promise<{ publicKey: s
   const legacySec = await SecureStore.getItemAsync(LEGACY_SEC_KEY);
 
   if (legacyPub && legacySec) {
+    console.log(`🔐 [E2EE] 🔄 Migrating legacy keys to user ${userId.substring(0, 8)}...`);
     logger.info(`Migrating legacy keys to user ${userId}...`);
     await SecureStore.setItemAsync(PUB, legacyPub);
     await SecureStore.setItemAsync(SEC, legacySec);
@@ -51,10 +53,12 @@ export async function getOrCreateKeyPair(userId: string): Promise<{ publicKey: s
     await SecureStore.deleteItemAsync(LEGACY_PUB_KEY);
     await SecureStore.deleteItemAsync(LEGACY_SEC_KEY);
     
+    console.log(`🔐 [E2EE] ✅ Legacy keys migrated successfully`);
     return { publicKey: legacyPub, secretKey: legacySec };
   }
 
   // 3. Generate new keypair
+  console.log(`🔐 [E2EE] 🆕 Generating NEW keypair for user ${userId.substring(0, 8)}...`);
   const kp = nacl.box.keyPair();
   const publicKey = encodeBase64(kp.publicKey);
   const secretKey = encodeBase64(kp.secretKey);
@@ -62,6 +66,8 @@ export async function getOrCreateKeyPair(userId: string): Promise<{ publicKey: s
   await SecureStore.setItemAsync(PUB, publicKey);
   await SecureStore.setItemAsync(SEC, secretKey);
 
+  console.log(`🔐 [E2EE] ✅ Keypair generated and stored locally`);
+  console.log(`🔐 [E2EE] 📤 Public key: ${publicKey.substring(0, 20)}...`);
   logger.info(`New keypair generated for user ${userId}`);
   return { publicKey, secretKey };
 }
@@ -247,11 +253,20 @@ export type AutoBackupBlob = {
  * but it keeps restore 100% automatic for users.
  */
 export async function createAutoIdentityBackup(userId: string): Promise<AutoBackupBlob | null> {
-  if (!userId) return null;
+  if (!userId) {
+    console.log(`🔐 [E2EE Backup] ❌ No userId provided`);
+    return null;
+  }
   const { SEC } = getKeyKeys(userId);
   const secretKeyB64 = await SecureStore.getItemAsync(SEC);
-  if (!secretKeyB64) return null;
-  return { version: 2, secretKeyB64 };
+  if (!secretKeyB64) {
+    console.log(`🔐 [E2EE Backup] ❌ No secret key found for user ${userId.substring(0, 8)}`);
+    return null;
+  }
+  console.log(`🔐 [E2EE Backup] 📦 Creating automatic backup for user ${userId.substring(0, 8)}...`);
+  const backup = { version: 2, secretKeyB64 };
+  console.log(`🔐 [E2EE Backup] ✅ Backup blob created (version 2, auto)`);
+  return backup;
 }
 
 /**
@@ -261,8 +276,12 @@ export async function restoreIdentityFromAutoBackup(
   userId: string,
   blob: AutoBackupBlob
 ): Promise<{ publicKey: string; secretKey: string } | null> {
-  if (!userId || !blob || !blob.secretKeyB64) return null;
+  if (!userId || !blob || !blob.secretKeyB64) {
+    console.log(`🔐 [E2EE Backup] ❌ Invalid restore parameters`);
+    return null;
+  }
   try {
+    console.log(`🔐 [E2EE Backup] 🔄 Restoring identity from backup for user ${userId.substring(0, 8)}...`);
     const secretKeyB64 = blob.secretKeyB64;
     const secretKeyBytes = decodeBase64(secretKeyB64);
     const kp = nacl.box.keyPair.fromSecretKey(secretKeyBytes);
@@ -273,8 +292,11 @@ export async function restoreIdentityFromAutoBackup(
     await SecureStore.setItemAsync(SEC, secretKeyB64);
     await SecureStore.setItemAsync(getBackupKey(userId), JSON.stringify(blob));
 
+    console.log(`🔐 [E2EE Backup] ✅ Identity restored successfully`);
+    console.log(`🔐 [E2EE Backup] 📤 Restored public key: ${publicKeyB64.substring(0, 20)}...`);
     return { publicKey: publicKeyB64, secretKey: secretKeyB64 };
   } catch (err) {
+    console.error(`🔐 [E2EE Backup] ❌ Restore failed:`, err);
     logger.error('E2EE restoreIdentityFromAutoBackup failed', err);
     return null;
   }

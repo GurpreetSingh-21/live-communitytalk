@@ -416,12 +416,18 @@ export default function DMThreadScreen() {
           if (m.isEncrypted && m.content) {
             try {
               if (m.content.startsWith('SR1:')) {
+                console.log(`🔐 [DM Decrypt] 🔓 Attempting session decrypt for msg ${m._id?.substring(0, 8)}...`);
                 const sessPlain = await sessionDecrypt(myId, partnerId, m.content);
-                if (sessPlain) return { ...m, content: sessPlain, _decrypted: true };
+                if (sessPlain) {
+                  console.log(`🔐 [DM Decrypt] ✅ Session decrypt successful`);
+                  return { ...m, content: sessPlain, _decrypted: true };
+                }
+                console.log(`🔐 [DM Decrypt] ❌ Session decrypt failed, showing encrypted placeholder`);
                 return { ...m, content: '🔒 Encrypted', _decrypted: false };
               }
 
               // Prefer message-stored key metadata (prevents failures after key rotation / reinstall)
+              console.log(`🔐 [DM Decrypt] 🔓 Attempting legacy decrypt for msg ${m._id?.substring(0, 8)}...`);
               const senderKey = (m.senderPublicKey || m.senderPubKey || null) as string | null;
               const recipientKey = (m.recipientPublicKey || m.recipientPubKey || null) as string | null;
               const fromId = String(m.from || m.fromId || "");
@@ -430,18 +436,22 @@ export default function DMThreadScreen() {
                   ? (recipientKey || partnerPubKey)
                   : (senderKey || partnerPubKey);
 
-              if (!keyToUse) return { ...m, content: '🔒 Encrypted', _decrypted: false };
+              if (!keyToUse) {
+                console.log(`🔐 [DM Decrypt] ❌ No key available for decryption`);
+                return { ...m, content: '🔒 Encrypted', _decrypted: false };
+              }
 
+              console.log(`🔐 [DM Decrypt] 🔑 Using ${senderKey || recipientKey ? 'message-stored' : 'cached'} key`);
               const decrypted = await decryptMessage(m.content, keyToUse, myId);
               // Check if decryption returned an error code
               if (decrypted.startsWith('[') && decrypted.endsWith(']')) {
-                console.warn('🔐 [E2EE] Decryption returned error:', decrypted, 'for msg:', m._id?.substring(0, 8));
+                console.warn(`🔐 [DM Decrypt] ❌ Decryption returned error: ${decrypted} for msg ${m._id?.substring(0, 8)}`);
                 return { ...m, content: '🔒 ' + decrypted.slice(1, -1), _decrypted: false };
               }
-              console.log('🔐 [E2EE] ✅ Decrypted:', m._id?.substring(0, 8));
+              console.log(`🔐 [DM Decrypt] ✅ Legacy decrypt successful`);
               return { ...m, content: decrypted, _decrypted: true };
             } catch (err) {
-              console.error('🔐 [E2EE] Decryption error:', err);
+              console.error(`🔐 [DM Decrypt] ❌ Decryption exception:`, err);
               return { ...m, content: '🔒 Encrypted', _decrypted: false };
             }
           }
@@ -810,6 +820,7 @@ export default function DMThreadScreen() {
       let data: any;
 
       // 🔐 E2EE: Prefer session-based encryption (SR1); fall back to static box
+      console.log(`🔐 [DM Send] 📤 Preparing to send message to ${partnerId.substring(0, 8)}...`);
       let contentToSend = text;
       let isEncrypted = false;
       const payload: any = {
@@ -821,34 +832,43 @@ export default function DMThreadScreen() {
       };
 
       // Try session encrypt first
+      console.log(`🔐 [DM Send] 🔒 Attempting session encryption (SR1)...`);
       let sessionCipher: string | null = null;
       try {
         sessionCipher = await sessionEncrypt(myId, partnerId, text);
       } catch (e) {
+        console.log(`🔐 [DM Send] ⚠️ Session encryption failed, trying legacy:`, e);
         sessionCipher = null;
       }
 
       if (sessionCipher) {
+        console.log(`🔐 [DM Send] ✅ Session encryption successful (SR1 format)`);
         contentToSend = sessionCipher;
         isEncrypted = true;
         payload.content = contentToSend;
         payload.isEncrypted = true;
         payload.sessionVersion = 'sr1';
       } else if (recipientPublicKey) {
+        console.log(`🔐 [DM Send] 🔄 Falling back to legacy encryption...`);
         try {
           const myPub = await getPublicKey(myId);
           const encrypted = await encryptMessage(text, recipientPublicKey, myId);
           if (encrypted) {
+            console.log(`🔐 [DM Send] ✅ Legacy encryption successful`);
             contentToSend = encrypted;
             isEncrypted = true;
             payload.content = contentToSend;
             payload.isEncrypted = true;
             payload.senderPublicKey = myPub || undefined;
             payload.recipientPublicKey = recipientPublicKey || undefined;
+          } else {
+            console.log(`🔐 [DM Send] ⚠️ Legacy encryption returned null, sending unencrypted`);
           }
         } catch (encErr) {
-          console.warn('🔐 [E2EE] Encryption failed, sending unencrypted:', encErr);
+          console.warn(`🔐 [DM Send] ❌ Encryption failed, sending unencrypted:`, encErr);
         }
+      } else {
+        console.log(`🔐 [DM Send] ℹ️ No recipient public key available, sending unencrypted`);
       }
 
       try {

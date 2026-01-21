@@ -8,11 +8,12 @@ import { api } from './api';
  */
 export async function uploadPublicKey(publicKey: string): Promise<boolean> {
   try {
+    console.log(`🔐 [E2EE API] 📤 PUT /api/user/publicKey (${publicKey.substring(0, 20)}...)`);
     await api.put('/api/user/publicKey', { publicKey });
-    console.log('🔐 [E2EE] Public key uploaded to server');
+    console.log(`🔐 [E2EE API] ✅ Public key uploaded successfully`);
     return true;
-  } catch (err) {
-    console.error('🔐 [E2EE] Failed to upload public key:', err);
+  } catch (err: any) {
+    console.error(`🔐 [E2EE API] ❌ Failed to upload public key:`, err?.response?.data || err?.message || err);
     return false;
   }
 }
@@ -23,14 +24,21 @@ export async function uploadPublicKey(publicKey: string): Promise<boolean> {
  */
 export async function fetchPublicKey(userId: string): Promise<string | null> {
   try {
+    console.log(`🔐 [E2EE API] 📥 GET /api/user/${userId.substring(0, 8)}.../publicKey`);
     const { data } = await api.get(`/api/user/${userId}/publicKey`);
-    return data?.publicKey || null;
+    const key = data?.publicKey || null;
+    if (key) {
+      console.log(`🔐 [E2EE API] ✅ Public key fetched: ${key.substring(0, 20)}...`);
+    } else {
+      console.log(`🔐 [E2EE API] ℹ️ No public key found for user`);
+    }
+    return key;
   } catch (err: any) {
     if (err?.response?.status === 404) {
-      // User has no public key - fallback to unencrypted
+      console.log(`🔐 [E2EE API] ℹ️ User has no public key (404) - fallback to unencrypted`);
       return null;
     }
-    console.error('🔐 [E2EE] Failed to fetch public key:', err);
+    console.error(`🔐 [E2EE API] ❌ Failed to fetch public key:`, err?.response?.data || err?.message || err);
     return null;
   }
 }
@@ -38,21 +46,30 @@ export async function fetchPublicKey(userId: string): Promise<string | null> {
 // ───────────────────────── Bundle APIs ─────────────────────────
 export async function uploadBundle(input: { signedPrekey: string; signedPrekeySig: string; oneTimePrekeys: string[] }) {
   try {
+    console.log(`🔐 [E2EE API] 📤 PUT /api/user/e2ee/bundle (${input.oneTimePrekeys.length} one-time keys)`);
     await api.put('/api/user/e2ee/bundle', input);
+    console.log(`🔐 [E2EE API] ✅ Bundle uploaded successfully`);
     return true;
-  } catch (err) {
-    console.error('🔐 [E2EE] Failed to upload bundle:', err);
+  } catch (err: any) {
+    console.error(`🔐 [E2EE API] ❌ Failed to upload bundle:`, err?.response?.data || err?.message || err);
     return false;
   }
 }
 
 export async function fetchBundle(userId: string) {
   try {
+    console.log(`🔐 [E2EE API] 📥 GET /api/user/${userId.substring(0, 8)}.../e2ee/bundle`);
     const { data } = await api.get(`/api/user/${userId}/e2ee/bundle`);
+    if (data) {
+      console.log(`🔐 [E2EE API] ✅ Bundle fetched successfully`);
+    }
     return data || null;
   } catch (err: any) {
-    if (err?.response?.status === 404) return null;
-    console.error('🔐 [E2EE] Failed to fetch bundle:', err);
+    if (err?.response?.status === 404) {
+      console.log(`🔐 [E2EE API] ℹ️ No bundle found (404)`);
+      return null;
+    }
+    console.error(`🔐 [E2EE API] ❌ Failed to fetch bundle:`, err?.response?.data || err?.message || err);
     return null;
   }
 }
@@ -61,21 +78,33 @@ export async function fetchBundle(userId: string) {
 
 export async function uploadIdentityBackup(backup: any): Promise<boolean> {
   try {
+    console.log(`🔐 [E2EE API] 📤 PUT /api/user/e2ee/backup (version ${backup?.version || 'unknown'})`);
     await api.put('/api/user/e2ee/backup', { backup });
+    console.log(`🔐 [E2EE API] ✅ Identity backup uploaded successfully`);
     return true;
-  } catch (err) {
-    console.error('🔐 [E2EE] Failed to upload identity backup:', err);
+  } catch (err: any) {
+    console.error(`🔐 [E2EE API] ❌ Failed to upload identity backup:`, err?.response?.data || err?.message || err);
     return false;
   }
 }
 
 export async function fetchIdentityBackup(): Promise<any | null> {
   try {
+    console.log(`🔐 [E2EE API] 📥 GET /api/user/e2ee/backup`);
     const { data } = await api.get('/api/user/e2ee/backup');
-    return data?.backup || null;
+    const backup = data?.backup || null;
+    if (backup) {
+      console.log(`🔐 [E2EE API] ✅ Identity backup fetched (version ${backup.version || 'unknown'})`);
+    } else {
+      console.log(`🔐 [E2EE API] ℹ️ No backup found`);
+    }
+    return backup;
   } catch (err: any) {
-    if (err?.response?.status === 404) return null;
-    console.error('🔐 [E2EE] Failed to fetch identity backup:', err);
+    if (err?.response?.status === 404) {
+      console.log(`🔐 [E2EE API] ℹ️ No backup found (404)`);
+      return null;
+    }
+    console.error(`🔐 [E2EE API] ❌ Failed to fetch identity backup:`, err?.response?.data || err?.message || err);
     return null;
   }
 }

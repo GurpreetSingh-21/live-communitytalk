@@ -338,33 +338,60 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       await registerForPushNotificationsAsync(); // SAFE
 
       // 🔐 E2EE: Generate keypair and upload public key on login
+      console.log(`\n🔐 [E2EE Auth] ==========================================`);
+      console.log(`🔐 [E2EE Auth] 🚀 Starting E2EE initialization on login`);
       try {
         const userId = (userObj as any)?.id || (userObj as any)?._id;
         if (userId) {
           const uid = String(userId);
+          console.log(`🔐 [E2EE Auth] 👤 User ID: ${uid.substring(0, 8)}...`);
 
           // 1) If server has an identity backup, try restoring that FIRST (new device / reinstall)
+          console.log(`🔐 [E2EE Auth] 📥 Checking for server backup...`);
           const remoteBackup = await fetchIdentityBackup();
           if (remoteBackup && remoteBackup.version === 2 && remoteBackup.secretKeyB64) {
+            console.log(`🔐 [E2EE Auth] ✅ Found backup on server (version ${remoteBackup.version})`);
+            console.log(`🔐 [E2EE Auth] 🔄 Restoring identity from backup...`);
             const restored = await restoreIdentityFromAutoBackup(uid, remoteBackup);
             if (restored) {
+              console.log(`🔐 [E2EE Auth] 📤 Uploading restored public key to server...`);
               await uploadPublicKey(restored.publicKey);
+              console.log(`🔐 [E2EE Auth] ✅ Public key uploaded successfully`);
+            } else {
+              console.log(`🔐 [E2EE Auth] ⚠️ Backup restore failed, generating new keys`);
+              const { publicKey } = await getOrCreateKeyPair(uid);
+              await uploadPublicKey(publicKey);
             }
           } else {
+            console.log(`🔐 [E2EE Auth] ℹ️ No backup found on server (new user or first device)`);
+            console.log(`🔐 [E2EE Auth] 🔑 Getting or creating keypair...`);
             const { publicKey } = await getOrCreateKeyPair(uid);
+            console.log(`🔐 [E2EE Auth] 📤 Uploading public key to server...`);
             await uploadPublicKey(publicKey);
+            console.log(`🔐 [E2EE Auth] ✅ Public key uploaded successfully`);
 
             // Create automatic backup on first login for this device
+            console.log(`🔐 [E2EE Auth] 💾 Creating automatic backup...`);
             const blob = await createAutoIdentityBackup(uid);
-            if (blob) await uploadIdentityBackup(blob);
+            if (blob) {
+              console.log(`🔐 [E2EE Auth] 📤 Uploading backup to server...`);
+              await uploadIdentityBackup(blob);
+              console.log(`🔐 [E2EE Auth] ✅ Backup uploaded successfully`);
+            } else {
+              console.log(`🔐 [E2EE Auth] ⚠️ Backup creation failed (non-fatal)`);
+            }
           }
 
           // Ensure prekey bundle exists for session establishment
+          console.log(`🔐 [E2EE Auth] 📦 Ensuring prekey bundle is uploaded...`);
           await ensureBundleUploaded(uid);
+          console.log(`🔐 [E2EE Auth] ✅ Prekey bundle ready`);
+          console.log(`🔐 [E2EE Auth] ==========================================\n`);
         } else {
-          console.warn('[E2EE] Skipping key generation - no user ID found');
+          console.warn(`🔐 [E2EE Auth] ❌ Skipping key generation - no user ID found`);
         }
       } catch (err) {
+        console.error(`🔐 [E2EE Auth] ❌ Key initialization failed (non-fatal):`, err);
         console.warn('[E2EE] Key initialization failed (non-fatal):', err);
       }
     },
