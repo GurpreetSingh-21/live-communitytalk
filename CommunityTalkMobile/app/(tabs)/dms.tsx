@@ -47,6 +47,7 @@ import { useSocket } from '@/src/context/SocketContext';
 // 🔐 E2EE for decrypting message previews// 🔐 E2EE
 import { decryptMessage } from '@/src/utils/e2ee';
 import { fetchPublicKey } from '@/src/api/e2eeApi';
+import { Colors, Fonts } from '@/constants/theme';
 
 // 🚀 PERFORMANCE: In-memory cache for public keys
 const PUBLIC_KEY_CACHE = new Map<string, string>();
@@ -67,7 +68,6 @@ const getCachedPublicKey = async (userId: string): Promise<string | null> => {
     return null;
   }
 };
-import { Colors, Fonts } from '@/constants/theme';
 
 /* ───────────────── Types ───────────────── */
 

@@ -23,9 +23,8 @@ import {
 import { refreshSocketAuth, disconnectSocket } from "../api/socket";
 import { registerForPushNotificationsAsync } from "../utils/notifications";
 import { getOrCreateKeyPair, createAutoIdentityBackup, restoreIdentityFromAutoBackup } from "../utils/e2ee";
-import { uploadIdentityBackup, fetchIdentityBackup } from "../api/e2eeApi";
+import { uploadIdentityBackup, fetchIdentityBackup , uploadPublicKey } from "../api/e2eeApi";
 import { ensureBundleUploaded } from "../utils/e2eeSessions";
-import { uploadPublicKey } from "../api/e2eeApi";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /* ───────────────────────────────────────────

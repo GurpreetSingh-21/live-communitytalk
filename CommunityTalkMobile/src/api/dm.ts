@@ -20,7 +20,7 @@ export type DMMessage = {
   from: string;                // sender Person._id
   to: string;                  // recipient Person._id
   content: string;
-  attachments?: Array<{ url: string; type?: string; name?: string; size?: number }>;
+  attachments?: { url: string; type?: string; name?: string; size?: number }[];
   timestamp: string | Date;    // createdAt
   status: "sent" | "read" | "edited" | "deleted";
   readAt?: string | Date;

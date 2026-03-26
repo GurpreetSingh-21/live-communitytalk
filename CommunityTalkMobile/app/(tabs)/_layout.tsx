@@ -19,6 +19,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useSocket } from '@/src/context/SocketContext';
 
+import { Colors } from '@/constants/theme';
+
 /* -------------------------------------------------------------------------- */
 /*                                    TYPES                                   */
 /* -------------------------------------------------------------------------- */
@@ -39,8 +41,6 @@ type TabRoute = {
 const SPRING_CONFIG = { damping: 16, stiffness: 200, mass: 0.8 };
 const ACTIVE_SCALE = 1.15;
 const INACTIVE_SCALE = 1.0;
-
-import { Colors } from '@/constants/theme';
 
 /* -------------------------------------------------------------------------- */
 /*                                     FAB                                    */

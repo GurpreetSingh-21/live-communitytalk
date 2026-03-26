@@ -123,7 +123,7 @@ router.post("/", async (req, res) => {
       isDeleted: msg.isDeleted,
       deletedAt: msg.deletedAt,
       clientMessageId: clientMessageId || undefined,
-      reactions: msg.reactions || [],
+      reactions: [],
       replyTo: msg.replyToSnapshot || undefined,
       attachments: msg.attachments, // JSONB
       type: (msg.attachments && msg.attachments.length > 0) ? msg.attachments[0].type : 'text'
@@ -265,14 +265,20 @@ router.get("/:communityId", async (req, res) => {
       }
     }
 
-    // 🚀 PERFORMANCE: No JOIN - use denormalized senderName field
+    // 🚀 PERFORMANCE: No JOIN for sender - use denormalized senderName field
+    // But DO include reactions relation since it's a separate table
     const docs = await prisma.message.findMany({
       where: {
         communityId: communityId,
         createdAt: { lt: before }
       },
       take: limit,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      include: {
+        reactions: {
+          include: { user: { select: { fullName: true } } }
+        }
+      }
     });
 
     // Map to frontend shape
@@ -289,7 +295,12 @@ router.get("/:communityId", async (req, res) => {
       editedAt: msg.editedAt,
       isDeleted: msg.isDeleted,
       deletedAt: msg.deletedAt,
-      reactions: msg.reactions || [],
+      reactions: (msg.reactions || []).map(r => ({
+        emoji: r.emoji,
+        userId: r.userId,
+        userName: r.user?.fullName || "User",
+        createdAt: r.createdAt,
+      })),
       replyTo: msg.replyToSnapshot || undefined,
       attachments: msg.attachments,
       type: (msg.attachments && msg.attachments.length > 0) ? msg.attachments[0].type : 'text'
@@ -329,8 +340,12 @@ router.get("/:communityId/latest", async (req, res) => {
 
     const latest = await prisma.message.findFirst({
       where: { communityId: communityId },
-      orderBy: { createdAt: 'desc' }
-      // include: { sender: { select: { avatar: true } } }
+      orderBy: { createdAt: 'desc' },
+      include: {
+        reactions: {
+          include: { user: { select: { fullName: true } } }
+        }
+      }
     });
 
     if (!latest) {
@@ -342,7 +357,7 @@ router.get("/:communityId/latest", async (req, res) => {
       id: latest.id,
       sender: latest.senderName,
       senderId: latest.senderId,
-      avatar: "/default-avatar.png", // Placeholder until verified
+      avatar: latest.senderAvatar || "/default-avatar.png",
       content: latest.content,
       timestamp: latest.createdAt,
       communityId: latest.communityId,
@@ -350,7 +365,12 @@ router.get("/:communityId/latest", async (req, res) => {
       editedAt: latest.editedAt,
       isDeleted: latest.isDeleted,
       deletedAt: latest.deletedAt,
-      reactions: latest.reactions || [],
+      reactions: (latest.reactions || []).map(r => ({
+        emoji: r.emoji,
+        userId: r.userId,
+        userName: r.user?.fullName || "User",
+        createdAt: r.createdAt,
+      })),
       replyTo: latest.replyToSnapshot || undefined,
       attachments: latest.attachments
     };
@@ -464,37 +484,40 @@ router.post("/:messageId/reactions", async (req, res) => {
     const gate = await assertCommunityAndMembership(doc.communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
-    // Update reactions jsonb
-    // We need to fetch current, modify, then update.
-    // Concurrency could be an issue but for now simple read-modify-write.
-    let reactions = Array.isArray(doc.reactions) ? doc.reactions : [];
-
-    // Remove existing reaction from this user for this emoji
-    reactions = reactions.filter(
-      r => !(String(r.userId) === String(req.user.id) && r.emoji === emoji)
-    );
-
-    // Add new reaction
-    reactions.push({
-      emoji,
-      userId: req.user.id,
-      userName: req.user.fullName || "User",
-      createdAt: new Date().toISOString() // Store as string in JSON usually safer
+    // Remove any existing reaction from this user for this emoji, then create new one
+    await prisma.reaction.deleteMany({
+      where: { messageId, userId: req.user.id, emoji }
     });
 
-    const updated = await prisma.message.update({
-      where: { id: messageId },
-      data: { reactions }
+    await prisma.reaction.create({
+      data: {
+        emoji,
+        messageId,
+        userId: req.user.id,
+      }
     });
+
+    // Fetch all reactions for this message to build the payload
+    const allReactions = await prisma.reaction.findMany({
+      where: { messageId },
+      include: { user: { select: { fullName: true } } }
+    });
+
+    const reactionsPayload = allReactions.map(r => ({
+      emoji: r.emoji,
+      userId: r.userId,
+      userName: r.user?.fullName || "User",
+      createdAt: r.createdAt,
+    }));
 
     const payload = {
-      _id: updated.id,
-      id: updated.id,
-      communityId: updated.communityId,
-      reactions: updated.reactions
+      _id: doc.id,
+      id: doc.id,
+      communityId: doc.communityId,
+      reactions: reactionsPayload
     };
 
-    req.io?.to(ROOM(updated.communityId)).emit("message:reacted", payload);
+    req.io?.to(ROOM(doc.communityId)).emit("message:reacted", payload);
     return res.json(payload);
   } catch (error) {
     console.error("POST /api/messages/:messageId/reactions error:", error);
@@ -506,6 +529,7 @@ router.post("/:messageId/reactions", async (req, res) => {
 router.delete("/:messageId/reactions/:emoji", async (req, res) => {
   try {
     const { messageId, emoji } = req.params;
+    const decodedEmoji = decodeURIComponent(emoji);
 
     const doc = await prisma.message.findUnique({ where: { id: messageId } });
     if (!doc) return res.status(404).json({ error: "Message not found" });
@@ -513,23 +537,29 @@ router.delete("/:messageId/reactions/:emoji", async (req, res) => {
     const gate = await assertCommunityAndMembership(doc.communityId, req.user.id);
     if (!gate.ok) return res.status(gate.code).json({ error: gate.msg });
 
-    let reactions = Array.isArray(doc.reactions) ? doc.reactions : [];
-
-    // Remove reaction
-    reactions = reactions.filter(
-      r => !(String(r.userId) === String(req.user.id) && r.emoji === decodeURIComponent(emoji))
-    );
-
-    const updated = await prisma.message.update({
-      where: { id: messageId },
-      data: { reactions }
+    // Remove reaction using proper Prisma relational delete
+    await prisma.reaction.deleteMany({
+      where: { messageId, userId: req.user.id, emoji: decodedEmoji }
     });
 
+    // Fetch remaining reactions for the payload
+    const allReactions = await prisma.reaction.findMany({
+      where: { messageId },
+      include: { user: { select: { fullName: true } } }
+    });
+
+    const reactionsPayload = allReactions.map(r => ({
+      emoji: r.emoji,
+      userId: r.userId,
+      userName: r.user?.fullName || "User",
+      createdAt: r.createdAt,
+    }));
+
     const payload = {
-      _id: updated.id,
-      id: updated.id,
-      communityId: updated.communityId,
-      reactions: updated.reactions
+      _id: doc.id,
+      id: doc.id,
+      communityId: doc.communityId,
+      reactions: reactionsPayload
     };
 
     req.io?.to(ROOM(doc.communityId)).emit("message:reacted", payload);

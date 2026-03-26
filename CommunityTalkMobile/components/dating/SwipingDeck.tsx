@@ -258,7 +258,7 @@ function LimitToast({ visible, onClose }: { visible: boolean; onClose: () => voi
                 </View>
                 <Text style={toastStyles.title}>Daily Limit Reached</Text>
                 <Text style={toastStyles.message}>
-                    You've swiped 5 times today. Wait for tomorrow or upgrade for unlimited swipes!
+                    You&apos;ve swiped 5 times today. Wait for tomorrow or upgrade for unlimited swipes!
                 </Text>
 
                 <TouchableOpacity style={toastStyles.primaryButton} onPress={() => Alert.alert("Premium", "Upgrade flow coming soon!")}>
@@ -266,7 +266,7 @@ function LimitToast({ visible, onClose }: { visible: boolean; onClose: () => voi
                 </TouchableOpacity>
 
                 <TouchableOpacity style={toastStyles.secondaryButton} onPress={onClose}>
-                    <Text style={toastStyles.secondaryButtonText}>I'll wait</Text>
+                    <Text style={toastStyles.secondaryButtonText}>I&apos;ll wait</Text>
                 </TouchableOpacity>
             </View>
         </View>

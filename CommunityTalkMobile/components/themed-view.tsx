@@ -33,9 +33,8 @@ export function ThemedView({
 }: ThemedViewProps) {
   const scheme = useColorScheme();
   const hasBgClass = typeof className === "string" && /\bbg-/.test(className);
-  const baseColor = !hasBgClass
-    ? useThemeColor({ light: lightColor, dark: darkColor }, "background")
-    : undefined;
+  const themeColor = useThemeColor({ light: lightColor, dark: darkColor }, "background");
+  const baseColor = !hasBgClass ? themeColor : undefined;
 
   const isDark = scheme === "dark";
 

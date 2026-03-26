@@ -481,7 +481,7 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             <Image source={{ uri: formData.photos[0] }} style={{ width: 150, height: 200, borderRadius: 12, marginBottom: 20 }} />
             <Text style={[styles.title, { color: theme.text }]}>{formData.firstName}, {new Date().getFullYear() - parseInt(formData.birthDate.year)}</Text>
             <Text style={[styles.text, { color: theme.textMuted }]}>{formData.major} • {formData.year}</Text>
-            <Text style={[styles.text, { fontStyle: 'italic', marginTop: 10, color: theme.textMuted }]}>"{formData.bio}"</Text>
+            <Text style={[styles.text, { fontStyle: 'italic', marginTop: 10, color: theme.textMuted }]}>&quot;{formData.bio}&quot;</Text>
 
             <View style={{ height: 20 }} />
             <Text style={[styles.label, { color: theme.text }]}>Ready to join the pool?</Text>

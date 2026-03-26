@@ -26,11 +26,10 @@ import {
   Clipboard,
   Modal,
   Pressable,
-} from "react-native";
+ useColorScheme } from "react-native";
 import * as Haptics from 'expo-haptics';
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useColorScheme } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from 'expo-image-picker';
 import { Swipeable } from 'react-native-gesture-handler';
@@ -44,12 +43,12 @@ import UserProfileModal from "@/components/UserProfileModal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { BlurView } from "expo-blur";
 
+import { Colors, Fonts } from "@/constants/theme";
+import { useColorScheme as useAppColorScheme } from "@/hooks/use-color-scheme";
+
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
-
-import { Colors, Fonts } from "@/constants/theme";
-import { useColorScheme as useAppColorScheme } from "@/hooks/use-color-scheme";
 
 /* ───────── Theme Adapter ───────── */
 // Replaced local useTheme with global constants
@@ -87,12 +86,12 @@ type ChatMessage = {
   deliveredAt?: string | Date;
   readAt?: string | Date;
   clientMessageId?: string;
-  reactions?: Array<{
+  reactions?: {
     emoji: string;
     userId: string;
     userName: string;
     createdAt: Date;
-  }>;
+  }[];
   type?: "text" | "photo" | "video" | "file";
   fileName?: string;
   replyTo?: {
@@ -931,7 +930,7 @@ export default function CommunityScreen() {
       style={{
         backgroundColor: isDark ? '#000000' : '#FFFFFF',
         paddingHorizontal: 16,
-        paddingTop: Platform.OS === "ios" ? 60 : 16,
+        paddingTop: insets.top + 10,
         paddingBottom: 16,
         borderBottomWidth: 0.5,
         borderBottomColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.06)',
@@ -939,24 +938,23 @@ export default function CommunityScreen() {
     >
       {/* Top Row: Back + Title + Menu */}
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        {/* Back Button */}
+        {/* Back Button - Professional icon-only style */}
         <TouchableOpacity
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.back();
           }}
           style={{
-            flexDirection: 'row',
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.06)' : 'rgba(0, 0, 0, 0.04)',
             alignItems: 'center',
-            paddingVertical: 8,
-            paddingRight: 8,
+            justifyContent: 'center',
           }}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="chevron-back" size={22} color={colors.primary} />
-          <Text style={{ color: colors.primary, fontSize: 16, fontFamily: Fonts.sans, marginLeft: 2 }}>
-            Back
-          </Text>
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
         </TouchableOpacity>
 
         {/* Centered Title */}
