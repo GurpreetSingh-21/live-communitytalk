@@ -920,7 +920,7 @@ export default function CommunityScreen() {
       name: senderName,
       email: member?.email,
       status: member?.status || "offline",
-      avatar: member?.avatar || member?.personAvatar || undefined,
+      avatar: member?.avatar || undefined,
     });
     setShowUserModal(true);
   }, [members]);
@@ -1552,7 +1552,7 @@ export default function CommunityScreen() {
     const memberInfo = members.find(m => String(m.person) === String(item.senderId));
 
     return (
-      <View style={{ paddingHorizontal: 16, paddingVertical: 3 }}>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 3, paddingBottom: (item.reactions && item.reactions.length > 0) ? 16 : 3 }}>
         {showDateDivider && (
           <View style={{ alignItems: "center", marginVertical: 20 }}>
             <View
@@ -1727,64 +1727,6 @@ export default function CommunityScreen() {
                           resizeMode="cover"
                         />
                       </TouchableOpacity>
-                      {/* Reactions overlapping bottom-right */}
-                      {item.reactions && item.reactions.length > 0 && (
-                        <View style={{
-                          position: 'absolute',
-                          bottom: 8,
-                          right: 8,
-                          flexDirection: 'row',
-                          flexWrap: 'wrap',
-                          maxWidth: 180,
-                          justifyContent: 'flex-end',
-                        }}>
-                          {Object.entries(
-                            item.reactions.reduce((acc, r) => {
-                              acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                              acc[r.emoji].count++;
-                              acc[r.emoji].users.push(r.userName);
-                              if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                              return acc;
-                            }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                          ).map(([emoji, data]) => (
-                            <TouchableOpacity
-                              key={emoji}
-                              onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                toggleReaction(item._id, emoji);
-                              }}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                paddingHorizontal: 6,
-                                paddingVertical: 3,
-                                borderRadius: 12,
-                                backgroundColor: data.hasYou
-                                  ? 'rgba(94, 92, 230, 0.9)'
-                                  : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                                marginLeft: 4,
-                                marginBottom: 4,
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 1 },
-                                shadowOpacity: 0.3,
-                                shadowRadius: 2,
-                              }}
-                            >
-                              <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                              {data.count > 1 && (
-                                <Text style={{
-                                  marginLeft: 3,
-                                  fontSize: 10,
-                                  color: data.hasYou ? '#fff' : colors.text,
-                                  fontFamily: Fonts.bold
-                                }}>
-                                  {data.count}
-                                </Text>
-                              )}
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      )}
                     </View>
                   ) : item.type === 'video' ? (
                     <View style={{ position: 'relative' }}>
@@ -1812,64 +1754,6 @@ export default function CommunityScreen() {
                           <Ionicons name="play" size={24} color="#fff" />
                         </View>
                       </TouchableOpacity>
-                      {/* Reactions overlapping bottom-right */}
-                      {item.reactions && item.reactions.length > 0 && (
-                        <View style={{
-                          position: 'absolute',
-                          bottom: 8,
-                          right: 8,
-                          flexDirection: 'row',
-                          flexWrap: 'wrap',
-                          maxWidth: 180,
-                          justifyContent: 'flex-end',
-                        }}>
-                          {Object.entries(
-                            item.reactions.reduce((acc, r) => {
-                              acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                              acc[r.emoji].count++;
-                              acc[r.emoji].users.push(r.userName);
-                              if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                              return acc;
-                            }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                          ).map(([emoji, data]) => (
-                            <TouchableOpacity
-                              key={emoji}
-                              onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                toggleReaction(item._id, emoji);
-                              }}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                paddingHorizontal: 6,
-                                paddingVertical: 3,
-                                borderRadius: 12,
-                                backgroundColor: data.hasYou
-                                  ? 'rgba(94, 92, 230, 0.9)'
-                                  : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                                marginLeft: 4,
-                                marginBottom: 4,
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 1 },
-                                shadowOpacity: 0.3,
-                                shadowRadius: 2,
-                              }}
-                            >
-                              <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                              {data.count > 1 && (
-                                <Text style={{
-                                  marginLeft: 3,
-                                  fontSize: 10,
-                                  color: data.hasYou ? '#fff' : colors.text,
-                                  fontFamily: Fonts.bold
-                                }}>
-                                  {data.count}
-                                </Text>
-                              )}
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      )}
                     </View>
                   ) : (
                     <View style={{ position: 'relative' }}>
@@ -1898,67 +1782,68 @@ export default function CommunityScreen() {
                           </Text>
                         )}
                       </View>
-                      {/* Reactions overlapping bottom-right */}
-                      {item.reactions && item.reactions.length > 0 && (
-                        <View style={{
-                          position: 'absolute',
-                          bottom: -6,
-                          right: 8,
-                          flexDirection: 'row',
-                          flexWrap: 'wrap',
-                          maxWidth: 200,
-                          justifyContent: 'flex-end',
-                        }}>
-                          {Object.entries(
-                            item.reactions.reduce((acc, r) => {
-                              acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                              acc[r.emoji].count++;
-                              acc[r.emoji].users.push(r.userName);
-                              if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                              return acc;
-                            }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                          ).map(([emoji, data]) => (
-                            <TouchableOpacity
-                              key={emoji}
-                              onPress={() => {
-                                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                toggleReaction(item._id, emoji);
-                              }}
-                              style={{
-                                flexDirection: 'row',
-                                alignItems: 'center',
-                                paddingHorizontal: 6,
-                                paddingVertical: 3,
-                                borderRadius: 12,
-                                backgroundColor: data.hasYou
-                                  ? 'rgba(94, 92, 230, 0.9)'
-                                  : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                                marginLeft: 4,
-                                marginBottom: 2,
-                                shadowColor: '#000',
-                                shadowOffset: { width: 0, height: 1 },
-                                shadowOpacity: 0.2,
-                                shadowRadius: 2,
-                              }}
-                            >
-                              <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                              {data.count > 1 && (
-                                <Text style={{
-                                  marginLeft: 3,
-                                  fontSize: 10,
-                                  color: data.hasYou ? '#fff' : colors.text,
-                                  fontFamily: Fonts.bold
-                                }}>
-                                  {data.count}
-                                </Text>
-                              )}
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      )}
                     </View>
                   )}
                 </TouchableOpacity>
+
+                {/* WhatsApp-style Reactions - Below bubble */}
+                {item.reactions && item.reactions.length > 0 && (
+                  <View style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    marginTop: -8,
+                    marginLeft: 4,
+                    zIndex: 5,
+                  }}>
+                    {Object.entries(
+                      item.reactions.reduce((acc, r) => {
+                        acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
+                        acc[r.emoji].count++;
+                        acc[r.emoji].users.push(r.userName);
+                        if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
+                        return acc;
+                      }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
+                    ).map(([emoji, data]) => (
+                      <TouchableOpacity
+                        key={emoji}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          toggleReaction(item._id, emoji);
+                        }}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: 12,
+                          backgroundColor: isDark ? '#2C2C2E' : '#FFFFFF',
+                          marginRight: 4,
+                          marginBottom: 2,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.12,
+                          shadowRadius: 3,
+                          elevation: 3,
+                          borderWidth: data.hasYou ? 1.5 : 0,
+                          borderColor: data.hasYou ? colors.primary : 'transparent',
+                        }}
+                      >
+                        <Text style={{ fontSize: 16 }}>{emoji}</Text>
+                        {data.count > 1 && (
+                          <Text style={{
+                            marginLeft: 3,
+                            fontSize: 11,
+                            color: colors.textSecondary,
+                            fontFamily: Fonts.bold
+                          }}>
+                            {data.count}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
               </View>
             </View>
           ) : (
@@ -2033,64 +1918,6 @@ export default function CommunityScreen() {
                             resizeMode="cover"
                           />
                         </TouchableOpacity>
-                        {/* Reactions overlapping bottom-right */}
-                        {item.reactions && item.reactions.length > 0 && (
-                          <View style={{
-                            position: 'absolute',
-                            bottom: 8,
-                            right: 8,
-                            flexDirection: 'row',
-                            flexWrap: 'wrap',
-                            maxWidth: 180,
-                            justifyContent: 'flex-end',
-                          }}>
-                            {Object.entries(
-                              item.reactions.reduce((acc, r) => {
-                                acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                                acc[r.emoji].count++;
-                                acc[r.emoji].users.push(r.userName);
-                                if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                                return acc;
-                              }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                            ).map(([emoji, data]) => (
-                              <TouchableOpacity
-                                key={emoji}
-                                onPress={() => {
-                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                  toggleReaction(item._id, emoji);
-                                }}
-                                style={{
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  paddingHorizontal: 6,
-                                  paddingVertical: 3,
-                                  borderRadius: 12,
-                                  backgroundColor: data.hasYou
-                                    ? 'rgba(94, 92, 230, 0.9)'
-                                    : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                                  marginLeft: 4,
-                                  marginBottom: 4,
-                                  shadowColor: '#000',
-                                  shadowOffset: { width: 0, height: 1 },
-                                  shadowOpacity: 0.3,
-                                  shadowRadius: 2,
-                                }}
-                              >
-                                <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                                {data.count > 1 && (
-                                  <Text style={{
-                                    marginLeft: 3,
-                                    fontSize: 10,
-                                    color: data.hasYou ? '#fff' : colors.text,
-                                    fontWeight: '600'
-                                  }}>
-                                    {data.count}
-                                  </Text>
-                                )}
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        )}
                       </View>
                     ) : item.type === 'video' ? (
                       <View style={{ position: 'relative' }}>
@@ -2116,136 +1943,27 @@ export default function CommunityScreen() {
                             <Ionicons name="play" size={24} color="#fff" />
                           </View>
                         </TouchableOpacity>
-                        {/* Reactions overlapping bottom-right */}
-                        {item.reactions && item.reactions.length > 0 && (
-                          <View style={{
-                            position: 'absolute',
-                            bottom: 8,
-                            right: 8,
-                            flexDirection: 'row',
-                            flexWrap: 'wrap',
-                            maxWidth: 180,
-                            justifyContent: 'flex-end',
-                          }}>
-                            {Object.entries(
-                              item.reactions.reduce((acc, r) => {
-                                acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                                acc[r.emoji].count++;
-                                acc[r.emoji].users.push(r.userName);
-                                if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                                return acc;
-                              }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                            ).map(([emoji, data]) => (
-                              <TouchableOpacity
-                                key={emoji}
-                                onPress={() => {
-                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                  toggleReaction(item._id, emoji);
-                                }}
-                                style={{
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  paddingHorizontal: 6,
-                                  paddingVertical: 3,
-                                  borderRadius: 12,
-                                  backgroundColor: data.hasYou
-                                    ? 'rgba(94, 92, 230, 0.9)'
-                                    : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                                  marginLeft: 4,
-                                  marginBottom: 4,
-                                  shadowColor: '#000',
-                                  shadowOffset: { width: 0, height: 1 },
-                                  shadowOpacity: 0.3,
-                                  shadowRadius: 2,
-                                }}
-                              >
-                                <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                                {data.count > 1 && (
-                                  <Text style={{
-                                    marginLeft: 3,
-                                    fontSize: 10,
-                                    color: data.hasYou ? '#fff' : colors.text,
-                                    fontWeight: '600'
-                                  }}>
-                                    {data.count}
-                                  </Text>
-                                )}
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        )}
                       </View>
                     ) : (
                       <View style={{ position: 'relative' }}>
                         <Text style={{ color: "#FFFFFF", fontSize: 15, lineHeight: 20 }}>
                           {item.content}
                         </Text>
-                        {/* Reactions overlapping bottom-right */}
-                        {item.reactions && item.reactions.length > 0 && (
-                          <View style={{
-                            position: 'absolute',
-                            bottom: -6,
-                            right: 8,
-                            flexDirection: 'row',
-                            flexWrap: 'wrap',
-                            maxWidth: 200,
-                            justifyContent: 'flex-end',
-                          }}>
-                            {Object.entries(
-                              item.reactions.reduce((acc, r) => {
-                                acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
-                                acc[r.emoji].count++;
-                                acc[r.emoji].users.push(r.userName);
-                                if (String(r.userId) === String(user?._id)) acc[r.emoji].hasYou = true;
-                                return acc;
-                              }, {} as Record<string, { count: number; users: string[]; hasYou: boolean }>)
-                            ).map(([emoji, data]) => (
-                              <TouchableOpacity
-                                key={emoji}
-                                onPress={() => {
-                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                                  toggleReaction(item._id, emoji);
-                                }}
-                                style={{
-                                  flexDirection: 'row',
-                                  alignItems: 'center',
-                                  paddingHorizontal: 6,
-                                  paddingVertical: 3,
-                                  borderRadius: 12,
-                                  backgroundColor: data.hasYou
-                                    ? 'rgba(94, 92, 230, 0.9)'
-                                    : (isDark ? 'rgba(0, 0, 0, 0.7)' : 'rgba(255, 255, 255, 0.95)'),
-                                  marginLeft: 4,
-                                  marginBottom: 2,
-                                  shadowColor: '#000',
-                                  shadowOffset: { width: 0, height: 1 },
-                                  shadowOpacity: 0.2,
-                                  shadowRadius: 2,
-                                }}
-                              >
-                                <Text style={{ fontSize: 12 }}>{emoji}</Text>
-                                {data.count > 1 && (
-                                  <Text style={{
-                                    marginLeft: 3,
-                                    fontSize: 10,
-                                    color: data.hasYou ? '#fff' : colors.text,
-                                    fontWeight: '600'
-                                  }}>
-                                    {data.count}
-                                  </Text>
-                                )}
-                              </TouchableOpacity>
-                            ))}
-                          </View>
-                        )}
                       </View>
                     )}
                   </View>
                 </TouchableOpacity>
 
-                {/* Reactions Display (Right Aligned) - Premium Pill Style */}
+                {/* WhatsApp-style Reactions - Below bubble, right-aligned */}
                 {item.reactions && item.reactions.length > 0 && (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', position: 'absolute', bottom: -14, right: 12, zIndex: 10, justifyContent: 'flex-end' }}>
+                  <View style={{
+                    flexDirection: 'row',
+                    flexWrap: 'wrap',
+                    justifyContent: 'flex-end',
+                    marginTop: -8,
+                    marginRight: 4,
+                    zIndex: 5,
+                  }}>
                     {Object.entries(
                       item.reactions.reduce((acc, r) => {
                         acc[r.emoji] = acc[r.emoji] || { count: 0, users: [], hasYou: false };
@@ -2264,30 +1982,27 @@ export default function CommunityScreen() {
                         style={{
                           flexDirection: 'row',
                           alignItems: 'center',
-                          paddingHorizontal: 10,
-                          paddingVertical: 6,
-                          borderRadius: 16,
-                          backgroundColor: data.hasYou
-                            ? (isDark ? 'rgba(94, 92, 230, 0.25)' : 'rgba(94, 92, 230, 0.15)')
-                            : (isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'),
-                          borderWidth: 1.5,
-                          borderColor: data.hasYou
-                            ? colors.primary
-                            : (isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'),
-                          marginLeft: 6,
-                          shadowColor: data.hasYou ? colors.primary : '#000',
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: data.hasYou ? 0.3 : 0.1,
-                          shadowRadius: 4,
-                          elevation: data.hasYou ? 4 : 2,
+                          paddingHorizontal: 6,
+                          paddingVertical: 2,
+                          borderRadius: 12,
+                          backgroundColor: isDark ? '#2C2C2E' : '#FFFFFF',
+                          marginLeft: 4,
+                          marginBottom: 2,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.12,
+                          shadowRadius: 3,
+                          elevation: 3,
+                          borderWidth: data.hasYou ? 1.5 : 0,
+                          borderColor: data.hasYou ? colors.primary : 'transparent',
                         }}
                       >
-                        <Text style={{ fontSize: 14 }}>{emoji}</Text>
+                        <Text style={{ fontSize: 16 }}>{emoji}</Text>
                         {data.count > 1 && (
                           <Text style={{
-                            marginLeft: 5,
+                            marginLeft: 3,
                             fontSize: 11,
-                            color: data.hasYou ? colors.primary : colors.textSecondary,
+                            color: colors.textSecondary,
                             fontFamily: Fonts.bold
                           }}>
                             {data.count}
@@ -2297,8 +2012,6 @@ export default function CommunityScreen() {
                     ))}
                   </View>
                 )}
-
-                {/* Delivery status indicators - only show on last message of group */}
                 {!deleted && isLastOfGroup && (
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 4, marginRight: 4 }}>
                     <Text style={{
@@ -2417,12 +2130,18 @@ export default function CommunityScreen() {
                         keyExtractor={(m) => String(m._id)}
                         renderItem={renderMessage}
                         removeClippedSubviews={true}
-                        maxToRenderPerBatch={15}
-                        windowSize={21}
-                        initialNumToRender={20}
+                        maxToRenderPerBatch={10}
+                        windowSize={15}
+                        initialNumToRender={15}
+                        updateCellsBatchingPeriod={30}
                         onContentSizeChange={handleChatContentSizeChange}
                         onScroll={handleChatScroll}
-                        scrollEventThrottle={16}
+                        scrollEventThrottle={32}
+                        decelerationRate="fast"
+                        showsVerticalScrollIndicator={false}
+                        maintainVisibleContentPosition={{
+                          minIndexForVisible: 0,
+                        }}
                         ListHeaderComponent={
                           chatHasMore ? (
                             <TouchableOpacity
@@ -2471,7 +2190,6 @@ export default function CommunityScreen() {
                           )
                         }
                         contentContainerStyle={{ paddingBottom: 8, paddingTop: 8 }}
-                        showsVerticalScrollIndicator={false}
                       />
                     )}
                   </View>
@@ -2583,7 +2301,7 @@ export default function CommunityScreen() {
                         {/* Animated Attachment Menu - iMessage/Discord Style */}
                         {showAttachmentMenu && (
                           <>
-                            {/* Backdrop to close menu when tapping outside */}
+                            {/* Dark scrim overlay */}
                             <Pressable
                               style={{
                                 position: 'absolute',
@@ -2591,7 +2309,7 @@ export default function CommunityScreen() {
                                 left: -2000,
                                 right: -2000,
                                 bottom: -2000,
-                                backgroundColor: 'transparent',
+                                backgroundColor: 'rgba(0, 0, 0, 0.35)',
                               }}
                               onPress={() => {
                                 attachmentMenuAnim.setValue(0);
@@ -2601,158 +2319,171 @@ export default function CommunityScreen() {
                             <Animated.View
                               style={{
                                 position: 'absolute',
-                                bottom: inputHeight + Math.max(insets.bottom, 12) + 10,
-                                left: 12,
+                                bottom: 56,
+                                left: 0,
+                                right: 0,
                                 zIndex: 1000,
-                                maxWidth: 250,
                                 transform: [
                                   {
                                     translateY: attachmentMenuAnim.interpolate({
                                       inputRange: [0, 1],
-                                      outputRange: [20, 0],
-                                    }),
-                                  },
-                                  {
-                                    scale: attachmentMenuAnim.interpolate({
-                                      inputRange: [0, 1],
-                                      outputRange: [0.8, 1],
+                                      outputRange: [30, 0],
                                     }),
                                   },
                                 ],
                                 opacity: attachmentMenuAnim,
                               }}
                             >
-                              <BlurView
-                                intensity={80}
-                                tint={isDark ? 'dark' : 'light'}
+                              <View
                                 style={{
-                                  borderRadius: 16,
-                                  overflow: 'hidden',
-                                  borderWidth: 1,
-                                  borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+                                  backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+                                  borderRadius: 20,
+                                  marginHorizontal: 12,
+                                  paddingTop: 14,
+                                  paddingBottom: 18,
+                                  paddingHorizontal: 8,
                                   shadowColor: '#000',
-                                  shadowOffset: { width: 0, height: 8 },
-                                  shadowOpacity: 0.3,
-                                  shadowRadius: 20,
-                                  elevation: 12,
+                                  shadowOffset: { width: 0, height: -4 },
+                                  shadowOpacity: isDark ? 0.5 : 0.15,
+                                  shadowRadius: 24,
+                                  elevation: 20,
+                                  borderWidth: isDark ? 1 : 0,
+                                  borderColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'transparent',
                                 }}
                               >
-                                <View style={{ padding: 8 }}>
+                                {/* Handle bar */}
+                                <View style={{ alignItems: 'center', marginBottom: 16 }}>
+                                  <View style={{
+                                    width: 36,
+                                    height: 4,
+                                    borderRadius: 2,
+                                    backgroundColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.12)',
+                                  }} />
+                                </View>
+
+                                {/* Options grid */}
+                                <View style={{
+                                  flexDirection: 'row',
+                                  justifyContent: 'space-evenly',
+                                  paddingHorizontal: 4,
+                                }}>
+                                  {/* Photo */}
                                   <TouchableOpacity
                                     onPress={handlePickPhoto}
-                                    style={{
-                                      flexDirection: 'row',
-                                      alignItems: 'center',
-                                      paddingHorizontal: 16,
-                                      paddingVertical: 12,
-                                      minHeight: 44,
-                                      borderRadius: 12,
-                                    }}
-                                    activeOpacity={0.7}
+                                    activeOpacity={0.65}
+                                    style={{ alignItems: 'center', width: 80 }}
                                   >
-                                    <View
-                                      style={{
-                                        width: 32,
-                                        height: 32,
-                                        borderRadius: 16,
-                                        backgroundColor: '#5E5CE6',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        marginRight: 12,
-                                      }}
-                                    >
-                                      <Ionicons name="image" size={18} color="#fff" />
+                                    <View style={{
+                                      width: 56,
+                                      height: 56,
+                                      borderRadius: 16,
+                                      backgroundColor: isDark ? 'rgba(94, 92, 230, 0.2)' : 'rgba(94, 92, 230, 0.1)',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginBottom: 8,
+                                    }}>
+                                      <Ionicons name="image" size={26} color="#5E5CE6" />
                                     </View>
-                                    <Text style={{ color: colors.text, fontSize: 16, fontFamily: Fonts.bold, flex: 1 }}>
+                                    <Text style={{
+                                      color: colors.text,
+                                      fontSize: 12,
+                                      fontFamily: Fonts.sans,
+                                      textAlign: 'center',
+                                    }}>
                                       Photo
                                     </Text>
-                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                                   </TouchableOpacity>
 
-                                  <View
-                                    style={{
-                                      height: 1,
-                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                                      marginVertical: 4,
-                                    }}
-                                  />
-
+                                  {/* Video */}
                                   <TouchableOpacity
                                     onPress={handlePickVideo}
-                                    style={{
-                                      flexDirection: 'row',
-                                      alignItems: 'center',
-                                      paddingHorizontal: 16,
-                                      paddingVertical: 12,
-                                      minHeight: 44,
-                                      borderRadius: 12,
-                                    }}
-                                    activeOpacity={0.7}
+                                    activeOpacity={0.65}
+                                    style={{ alignItems: 'center', width: 80 }}
                                   >
-                                    <View
-                                      style={{
-                                        width: 32,
-                                        height: 32,
-                                        borderRadius: 16,
-                                        backgroundColor: '#007AFF',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        marginRight: 12,
-                                      }}
-                                    >
-                                      <Ionicons name="videocam" size={18} color="#fff" />
+                                    <View style={{
+                                      width: 56,
+                                      height: 56,
+                                      borderRadius: 16,
+                                      backgroundColor: isDark ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.1)',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginBottom: 8,
+                                    }}>
+                                      <Ionicons name="videocam" size={26} color="#007AFF" />
                                     </View>
-                                    <Text style={{ color: colors.text, fontSize: 16, fontFamily: Fonts.bold, flex: 1 }}>
+                                    <Text style={{
+                                      color: colors.text,
+                                      fontSize: 12,
+                                      fontFamily: Fonts.sans,
+                                      textAlign: 'center',
+                                    }}>
                                       Video
                                     </Text>
-                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
                                   </TouchableOpacity>
 
-                                  <View
-                                    style={{
-                                      height: 1,
-                                      backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                                      marginVertical: 4,
-                                    }}
-                                  />
-
+                                  {/* Camera */}
                                   <TouchableOpacity
                                     onPress={() => {
-                                      // Placeholder for camera
                                       attachmentMenuAnim.setValue(0);
                                       setShowAttachmentMenu(false);
                                       Alert.alert('Coming Soon', 'Camera feature will be available soon.');
                                     }}
-                                    style={{
-                                      flexDirection: 'row',
-                                      alignItems: 'center',
-                                      paddingHorizontal: 16,
-                                      paddingVertical: 12,
-                                      minHeight: 44,
-                                      borderRadius: 12,
-                                    }}
-                                    activeOpacity={0.7}
+                                    activeOpacity={0.65}
+                                    style={{ alignItems: 'center', width: 80 }}
                                   >
-                                    <View
-                                      style={{
-                                        width: 32,
-                                        height: 32,
-                                        borderRadius: 16,
-                                        backgroundColor: '#34C759',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        marginRight: 12,
-                                      }}
-                                    >
-                                      <Ionicons name="camera" size={18} color="#fff" />
+                                    <View style={{
+                                      width: 56,
+                                      height: 56,
+                                      borderRadius: 16,
+                                      backgroundColor: isDark ? 'rgba(52, 199, 89, 0.2)' : 'rgba(52, 199, 89, 0.1)',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginBottom: 8,
+                                    }}>
+                                      <Ionicons name="camera" size={26} color="#34C759" />
                                     </View>
-                                    <Text style={{ color: colors.text, fontSize: 16, fontFamily: Fonts.bold, flex: 1 }}>
+                                    <Text style={{
+                                      color: colors.text,
+                                      fontSize: 12,
+                                      fontFamily: Fonts.sans,
+                                      textAlign: 'center',
+                                    }}>
                                       Camera
                                     </Text>
-                                    <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+                                  </TouchableOpacity>
+
+                                  {/* Document */}
+                                  <TouchableOpacity
+                                    onPress={() => {
+                                      attachmentMenuAnim.setValue(0);
+                                      setShowAttachmentMenu(false);
+                                      Alert.alert('Coming Soon', 'Document sharing will be available soon.');
+                                    }}
+                                    activeOpacity={0.65}
+                                    style={{ alignItems: 'center', width: 80 }}
+                                  >
+                                    <View style={{
+                                      width: 56,
+                                      height: 56,
+                                      borderRadius: 16,
+                                      backgroundColor: isDark ? 'rgba(255, 159, 10, 0.2)' : 'rgba(255, 159, 10, 0.1)',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      marginBottom: 8,
+                                    }}>
+                                      <Ionicons name="document" size={26} color="#FF9F0A" />
+                                    </View>
+                                    <Text style={{
+                                      color: colors.text,
+                                      fontSize: 12,
+                                      fontFamily: Fonts.sans,
+                                      textAlign: 'center',
+                                    }}>
+                                      File
+                                    </Text>
                                   </TouchableOpacity>
                                 </View>
-                              </BlurView>
+                              </View>
                             </Animated.View>
                           </>
                         )}
@@ -2769,11 +2500,18 @@ export default function CommunityScreen() {
                             borderRadius: 18,
                             alignItems: 'center',
                             justifyContent: 'center',
-                            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+                            backgroundColor: showAttachmentMenu
+                              ? colors.primary
+                              : (isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)'),
+                            transform: [{ rotate: showAttachmentMenu ? '45deg' : '0deg' }],
                           }}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="add" size={22} color={colors.text} />
+                          <Ionicons
+                            name="add"
+                            size={22}
+                            color={showAttachmentMenu ? '#FFFFFF' : colors.text}
+                          />
                         </TouchableOpacity>
 
                         {/* Text Input */}

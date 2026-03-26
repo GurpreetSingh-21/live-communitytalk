@@ -10,7 +10,9 @@ import {
     TextInput,
     Image,
     FlatList,
-    Modal
+    Modal,
+    StatusBar,
+    Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +21,7 @@ import { AuthContext } from '@/src/context/AuthContext';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // ── TYPES ────────────────────────────────────────────────────────────────────
 type FormData = {
@@ -59,8 +62,9 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     const [loading, setLoading] = useState(false);
     const { user } = useContext(AuthContext) as any;
     const router = useRouter();
-    const isDark = useColorScheme() === 'dark';
-    const theme = isDark ? Colors.dark : Colors.light;
+    const colorScheme = useColorScheme() ?? 'light';
+    const theme = Colors[colorScheme];
+    const insets = useSafeAreaInsets();
 
     // Form State
     const [formData, setFormData] = useState<FormData>({
@@ -113,10 +117,9 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: 'images',
-            allowsEditing: true,
-            aspect: [3, 4], // Portrait aspect ratio like Tinder
-            quality: 0.5, // Good balance for base64
-            base64: true, // ✅ Request Base64
+            allowsEditing: false,
+            quality: 0.7,
+            base64: true,
         });
 
         if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -289,9 +292,14 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             <View style={[styles.bulletList, { backgroundColor: theme.surface }]}>
                 <Text style={[styles.bullet, { color: theme.text }]}>• Real Names Only</Text>
                 <Text style={[styles.bullet, { color: theme.text }]}>• Verified .edu Emails</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• No Toxicity Tolerated</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• No Toxicity or Harassment Tolerated</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• Zero Tolerance for Fake Profiles</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• Must be 18+ Years Old</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• Respect Boundaries & Consent</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• You Assume All Risks for Offline Meets</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• Report Suspicious Behavior Immediately</Text>
             </View>
-            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary }]} onPress={nextStep}>
+            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary, marginTop: 10 }]} onPress={nextStep}>
                 <Text style={styles.primaryButtonText}>I Pledge to be Respectful</Text>
             </TouchableOpacity>
         </View>
@@ -450,14 +458,21 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     const renderPhotos = () => (
         <View style={styles.formContainer}>
             <Text style={[styles.label, { color: theme.text }]}>Add Photos (Min 2)</Text>
-            <Text style={[styles.text, { color: theme.textMuted }]}>Drag to reorder (Coming soon). First photo is your main one.</Text>
+            <Text style={[styles.text, { color: theme.textMuted, textAlign: 'left', marginBottom: 4 }]}>First photo is your main profile picture.</Text>
 
             <View style={styles.photoGrid}>
                 {formData.photos.map((uri, idx) => (
-                    <View key={idx} style={[styles.photoSlot, { backgroundColor: theme.muted }]}>
-                        <Image source={{ uri }} style={styles.photoImage} />
+                    <View key={idx} style={[styles.photoSlot, { 
+                        backgroundColor: theme.muted,
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 2 },
+                        shadowOpacity: 0.15,
+                        shadowRadius: 6,
+                        elevation: 4,
+                    }]}>
+                        <Image source={{ uri }} style={styles.photoImage} resizeMode="cover" />
                         <TouchableOpacity style={styles.removeButton} onPress={() => removePhoto(idx)}>
-                            <Ionicons name="close" size={16} color="#FFF" />
+                            <Ionicons name="close-circle" size={22} color="#FF3B30" />
                         </TouchableOpacity>
                         {idx === 0 && (
                             <View style={[styles.mainBadge, { backgroundColor: theme.primary }]}>
@@ -468,8 +483,20 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                 ))}
 
                 {formData.photos.length < 6 && (
-                    <TouchableOpacity style={[styles.addPhotoSlot, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={pickImage}>
-                        <Ionicons name="add" size={40} color={theme.textMuted} />
+                    <TouchableOpacity 
+                        style={[styles.addPhotoSlot, { backgroundColor: theme.surface, borderColor: theme.primary + '40' }]} 
+                        onPress={pickImage}
+                        activeOpacity={0.7}
+                    >
+                        <View style={{ 
+                            width: 44, height: 44, borderRadius: 22, 
+                            backgroundColor: theme.primary + '15', 
+                            alignItems: 'center', justifyContent: 'center', 
+                            marginBottom: 6 
+                        }}>
+                            <Ionicons name="camera" size={22} color={theme.primary} />
+                        </View>
+                        <Text style={{ fontSize: 12, color: theme.textMuted, fontFamily: Fonts.bold }}>Add Photo</Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -502,7 +529,12 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
     return (
         <View style={[styles.container, { backgroundColor: theme.background }]}>
-            <View style={styles.header}>
+            <StatusBar 
+                backgroundColor={theme.background} 
+                barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'}
+                translucent={false}
+            />
+            <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 12) : 8 }]}>
                 {step > 0 && (
                     <TouchableOpacity onPress={prevStep} style={styles.backButton}>
                         <Ionicons name="arrow-back" size={24} color={theme.text} />
@@ -518,7 +550,14 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                 ))}
             </View>
 
-            <ScrollView contentContainerStyle={styles.content}>
+            <ScrollView 
+                contentContainerStyle={[styles.content, { paddingBottom: 120 }]} 
+                showsVerticalScrollIndicator={false}
+                scrollEventThrottle={16}
+                decelerationRate="fast"
+                keyboardShouldPersistTaps="handled"
+                overScrollMode="never"
+            >
                 {renderStepContent()}
             </ScrollView>
 
@@ -548,9 +587,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 60, // Safe Area
         paddingHorizontal: 20,
-        paddingBottom: 20,
+        paddingBottom: 8,
     },
     backButton: {
         padding: 8,
@@ -564,7 +602,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         gap: 8,
-        marginBottom: 20
+        marginBottom: 10
     },
     progressDot: {
         width: 8,
@@ -711,11 +749,19 @@ const styles = StyleSheet.create({
     },
     removeButton: {
         position: 'absolute',
-        top: 4,
-        right: 4,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        borderRadius: 10,
-        padding: 4
+        top: 6,
+        right: 6,
+        backgroundColor: 'rgba(255,255,255,0.9)',
+        borderRadius: 12,
+        width: 24,
+        height: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+        elevation: 3,
     },
     mainBadge: {
         position: 'absolute',

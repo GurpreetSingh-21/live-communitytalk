@@ -172,6 +172,22 @@ router.post("/profile", async (req, res) => {
       return profile;
     });
 
+    // Update User.hasDatingProfile flag
+    await prisma.user.update({
+      where: { id: userId },
+      data: { hasDatingProfile: true, datingProfileId: result.id }
+    });
+
+    // Invalidate Redis bootstrap cache so refreshBootstrap() returns fresh data
+    if (req.redisClient) {
+      try {
+        await req.redisClient.del(`bootstrap:${userId}`);
+        console.log(`🗑️ [Dating] Invalidated bootstrap cache for user ${userId}`);
+      } catch (cacheErr) {
+        console.warn('[Dating] Redis cache invalidation failed:', cacheErr);
+      }
+    }
+
     return res.json(result);
 
   } catch (err) {
