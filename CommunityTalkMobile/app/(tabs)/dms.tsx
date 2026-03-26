@@ -816,7 +816,18 @@ export default function DMsScreen(): React.JSX.Element {
         else if (type === 'file') contentStr = 'File';
       }
 
-      const content: MessageContent = { type, content: contentStr };
+      // Always replace raw URLs with friendly labels for the list preview
+      if (type === 'photo' || contentStr.match(/\.(jpeg|jpg|gif|png|webp)/i) || contentStr.includes('cloudinary.com')) {
+        contentStr = 'Photo';
+      } else if (type === 'video' || contentStr.match(/\.(mp4|mov|avi|webm)/i)) {
+        contentStr = 'Video';
+      } else if (type === 'audio' || contentStr.match(/\.(m4a|mp3|aac|wav|ogg)/i)) {
+        contentStr = 'Voice Note';
+      } else if (type === 'file' || contentStr.match(/\.(pdf|doc|docx|xls|xlsx)/i)) {
+        contentStr = 'File';
+      }
+
+      const content: MessageContent = { type: type === 'text' && contentStr === 'Photo' ? 'photo' : type, content: contentStr };
       const lastAt = Number(new Date(payload?.createdAt ?? Date.now()).getTime());
 
       setThreads(prev => {

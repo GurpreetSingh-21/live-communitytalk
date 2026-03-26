@@ -24,6 +24,7 @@ import {
   Linking,
   Keyboard,
   StyleSheet,
+  Modal,
  useColorScheme } from "react-native";
 import { Stack, useLocalSearchParams, router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -283,6 +284,7 @@ export default function DMThreadScreen() {
   // ✅ Recording State
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [attachMenuVisible, setAttachMenuVisible] = useState(false);
 
   // Typing indicator state
   const [partnerTyping, setPartnerTyping] = useState(false);
@@ -798,12 +800,7 @@ export default function DMThreadScreen() {
         }
       );
     } else {
-      Alert.alert("Add Attachment", "Choose an option", [
-        { text: "Photo & Video", onPress: handlePickMedia },
-        { text: "Document (PDF)", onPress: handlePickDocument },
-        { text: "Record Audio", onPress: startRecording },
-        { text: "Cancel", style: "cancel" },
-      ]);
+      setAttachMenuVisible(true);
     }
   };
 
@@ -1454,6 +1451,75 @@ export default function DMThreadScreen() {
           {renderContent()}
         </View>
       )}
+
+      {/* 📎 Attachment Bottom Sheet Modal */}
+      <Modal
+        visible={attachMenuVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAttachMenuVisible(false)}
+      >
+        <TouchableOpacity 
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }} 
+          activeOpacity={1} 
+          onPress={() => setAttachMenuVisible(false)}
+        >
+          <View style={{
+            backgroundColor: theme.surface,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            paddingBottom: insets.bottom || 24,
+            paddingTop: 12,
+            paddingHorizontal: 20,
+          }}>
+            {/* Handle */}
+            <View style={{ width: 40, height: 5, backgroundColor: theme.border, borderRadius: 3, alignSelf: 'center', marginBottom: 20 }} />
+            
+            <Text style={{ fontFamily: Fonts.bold, fontSize: 18, color: theme.text, marginBottom: 16 }}>Add Attachment</Text>
+
+            <View style={{ gap: 12 }}>
+              <TouchableOpacity 
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#2C2D31' : '#F2F2F7', padding: 16, borderRadius: 16 }}
+                onPress={() => { setAttachMenuVisible(false); handlePickMedia(); }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                  <Ionicons name="image" size={20} color="#FFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 16, color: theme.text }}>Photo & Video</Text>
+                  <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Share from your gallery</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#2C2D31' : '#F2F2F7', padding: 16, borderRadius: 16 }}
+                onPress={() => { setAttachMenuVisible(false); handlePickDocument(); }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.warning, alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                  <Ionicons name="document-text" size={20} color="#FFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 16, color: theme.text }}>Document</Text>
+                  <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Share PDFs and files</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: isDark ? '#2C2D31' : '#F2F2F7', padding: 16, borderRadius: 16 }}
+                onPress={() => { setAttachMenuVisible(false); startRecording(); }}
+              >
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.success, alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+                  <Ionicons name="mic" size={20} color="#FFF" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: Fonts.bold, fontSize: 16, color: theme.text }}>Voice Note</Text>
+                  <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted, marginTop: 2 }}>Record an audio message</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
