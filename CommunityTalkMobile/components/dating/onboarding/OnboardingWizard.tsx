@@ -1,4 +1,5 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useCallback } from 'react';
+import { Linking } from 'react-native';
 import {
     View,
     Text,
@@ -41,7 +42,11 @@ type FormData = {
     height: string;
 };
 
+// ToS version — bump this string whenever terms change; stored server-side with consent
+const TOS_VERSION = '2025-04-15';
+
 const STEPS = [
+    'Agreement',   // Step 0 — legal gate
     'Welcome',
     'The Basics',
     'Your Vibe',
@@ -66,6 +71,12 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     const theme = Colors[colorScheme];
     const insets = useSafeAreaInsets();
 
+    // ── Legal Consent State ────────────────────────────────────────────────────
+    const [agreedAge, setAgreedAge] = useState(false);
+    const [agreedTos, setAgreedTos] = useState(false);
+    const [agreedPrivacy, setAgreedPrivacy] = useState(false);
+    const allConsentsGiven = agreedAge && agreedTos && agreedPrivacy;
+
     // Form State
     const [formData, setFormData] = useState<FormData>({
         firstName: user?.fullName?.split(' ')[0] || '',
@@ -80,24 +91,93 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
         height: ''
     });
 
-    const nextStep = () => {
-        // Validation
-        if (step === 1) { // Basics
-            if (!formData.firstName) return Alert.alert("Required", "Please enter your first name.");
-            if (!formData.gender) return Alert.alert("Required", "Please select your gender.");
-            if (!formData.birthDate.day || !formData.birthDate.month || !formData.birthDate.year) return Alert.alert("Required", "Please enter your full birth date.");
-            // Basic age check
-            const age = new Date().getFullYear() - parseInt(formData.birthDate.year);
-            if (age < 18) return Alert.alert("Age Restriction", "You must be 18+ to use Dating.");
-            if (!formData.major || !formData.year) return Alert.alert("Required", "Please tell us your major and year.");
+    // ── Log consent to backend before proceeding from Agreement step ──────────
+    const logConsent = useCallback(async () => {
+        try {
+            await api.post('/api/dating/consent', {
+                tosVersion: TOS_VERSION,
+                agreedAt: new Date().toISOString(),
+                platform: Platform.OS,
+            });
+        } catch (e) {
+            // Non-blocking: consent is already tracked client-side via state.
+            // Backend should also validate presence of consent on profile creation.
+            console.warn('[Dating] consent log failed:', e);
         }
-        if (step === 2) { // Photos (Swapping order: Vibe -> Photos -> Review is better? No, Photos -> Vibe -> Review usually. Let's stick to STEPS array.)
-            // STEPS: Welcome, Basics, Vibe, Photos, Review
-            // Current Step 2 is Vibe (Bio)
-            if (!formData.bio) return Alert.alert("Required", "Please write a short bio.");
+    }, []);
+
+    const nextStep = async () => {
+        // ── Step 0: Legal Agreement Gate ──────────────────────────────────────
+        if (step === 0) {
+            if (!allConsentsGiven) {
+                return Alert.alert(
+                    'Agreement Required',
+                    'You must confirm your age and agree to our Terms of Service and Privacy Policy to continue.'
+                );
+            }
+            await logConsent();
+            setStep(1);
+            return;
         }
-        if (step === 3) { // Photos
-            if (formData.photos.length < 2) return Alert.alert("Required", "Please add at least 2 photos.");
+
+        // ── Step 2: Basics ────────────────────────────────────────────────────
+        if (step === 2) {
+            if (!formData.firstName.trim()) return Alert.alert('Required', 'Please enter your first name.');
+            if (!formData.gender) return Alert.alert('Required', 'Please select your gender.');
+
+            const { day, month, year } = formData.birthDate;
+            if (!day || !month || !year || year.length < 4) {
+                return Alert.alert('Required', 'Please enter your complete date of birth.');
+            }
+
+            // ── Accurate age check using real calendar date ────────────────
+            const dayN = parseInt(day, 10);
+            const monthN = parseInt(month, 10) - 1; // JS months are 0-indexed
+            const yearN = parseInt(year, 10);
+            const birthDate = new Date(yearN, monthN, dayN);
+            const today = new Date();
+
+            // Validate that the parsed date is a real date
+            if (
+                birthDate.getFullYear() !== yearN ||
+                birthDate.getMonth() !== monthN ||
+                birthDate.getDate() !== dayN
+            ) {
+                return Alert.alert('Invalid Date', 'Please enter a valid date of birth.');
+            }
+
+            let age = today.getFullYear() - yearN;
+            if (
+                today.getMonth() < monthN ||
+                (today.getMonth() === monthN && today.getDate() < dayN)
+            ) {
+                age -= 1; // Birthday hasn't occurred yet this year
+            }
+
+            if (yearN < 1900 || yearN > today.getFullYear()) {
+                return Alert.alert('Invalid Date', 'Please enter a valid birth year.');
+            }
+
+            if (age < 18) {
+                return Alert.alert(
+                    'Age Restriction',
+                    'You must be 18 years of age or older to use Campustry Dating. This is strictly enforced.'
+                );
+            }
+
+            if (!formData.major.trim() || !formData.year) {
+                return Alert.alert('Required', 'Please tell us your major and year.');
+            }
+        }
+
+        // ── Step 3: Vibe (Bio) ────────────────────────────────────────────────
+        if (step === 3) {
+            if (!formData.bio.trim()) return Alert.alert('Required', 'Please write a short bio.');
+        }
+
+        // ── Step 4: Photos ────────────────────────────────────────────────────
+        if (step === 4) {
+            if (formData.photos.length < 2) return Alert.alert('Required', 'Please add at least 2 photos.');
         }
 
         if (step < STEPS.length - 1) setStep(step + 1);
@@ -211,68 +291,67 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     };
 
     const handleSubmit = async () => {
+        // Guard: consent must have been given at step 0 before we ever reach here.
+        // This is a client-side safety net; backend also enforces via tosVersion field.
+        if (!allConsentsGiven) {
+            Alert.alert('Error', 'Agreement step was not completed. Please restart.');
+            setStep(0);
+            return;
+        }
+
         try {
             setLoading(true);
 
-            // 1. Upload Photos Sequentially to prevent network congestion
-            console.log("Starting uploads...");
-            const uploadedUrls = [];
+            // 1. Upload Photos Sequentially
+            const uploadedUrls: string[] = [];
             for (const photoUri of formData.photos) {
                 const url = await uploadPhoto(photoUri);
                 uploadedUrls.push(url);
             }
-            console.log("Uploads done:", uploadedUrls);
 
             // 2. Construct ISO Date
             const isoDate = `${formData.birthDate.year}-${formData.birthDate.month.padStart(2, '0')}-${formData.birthDate.day.padStart(2, '0')}T00:00:00.000Z`;
 
-            // Enum Mapping
             const genderMap: Record<string, string> = {
-                "Male": "MALE",
-                "Female": "FEMALE",
-                "Non-binary": "NON_BINARY" // Important: Underscore matches Schema
+                'Male': 'MALE',
+                'Female': 'FEMALE',
+                'Non-binary': 'NON_BINARY',
             };
-
             const yearMap: Record<string, string> = {
-                "Freshman": "FRESHMAN",
-                "Sophomore": "SOPHOMORE",
-                "Junior": "JUNIOR",
-                "Senior": "SENIOR",
-                "Grad Student": "GRADUATE",
-                "Alumni": "ALUMNI"
+                'Freshman': 'FRESHMAN',
+                'Sophomore': 'SOPHOMORE',
+                'Junior': 'JUNIOR',
+                'Senior': 'SENIOR',
+                'Grad Student': 'GRADUATE',
+                'Alumni': 'ALUMNI',
             };
-
-            // Helpers to safely get enum or fallback
-            const safeGender = genderMap[formData.gender] || "OTHER";
-            const safeYear = yearMap[formData.year] || "OTHER";
 
             const payload = {
-                firstName: formData.firstName,
-                gender: safeGender,
+                firstName: formData.firstName.trim(),
+                gender: genderMap[formData.gender] || 'OTHER',
                 birthDate: isoDate,
-                major: formData.major,
-                year: safeYear,
-                bio: formData.bio,
+                major: formData.major.trim(),
+                year: yearMap[formData.year] || 'OTHER',
+                bio: formData.bio.trim(),
                 hobbies: formData.hobbies,
-                instagramHandle: formData.instagramHandle,
-                height: formData.height ? parseInt(formData.height) : null, // Ensure height is Int or null
-                photos: uploadedUrls
+                instagramHandle: formData.instagramHandle.trim() || null,
+                height: formData.height ? parseInt(formData.height, 10) : null,
+                photos: uploadedUrls,
+                // Consent metadata sent with every profile creation request
+                tosVersion: TOS_VERSION,
+                tosAgreedAt: new Date().toISOString(),
             };
 
-            const { data } = await api.post('/api/dating/profile', payload);
+            await api.post('/api/dating/profile', payload);
 
-            // Success
             Alert.alert(
-                "Welcome!",
-                "Your profile is created.",
-                [{
-                    text: "OK",
-                    onPress: () => onComplete()
-                }]
+                'Welcome to Campustry Dating! 🎉',
+                'Your profile is under review. You can start swiping while your photos are approved.',
+                [{ text: 'OK', onPress: () => onComplete() }]
             );
         } catch (err: any) {
-            console.error("Profile creation error:", err);
-            Alert.alert("Error", err.response?.data?.error || "Failed to create profile. Check your internet.");
+            console.error('Profile creation error:', err);
+            Alert.alert('Error', err.response?.data?.error || 'Failed to create profile. Please check your connection.');
         } finally {
             setLoading(false);
         }
@@ -280,6 +359,84 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
     // ── RENDERERS ──────────────────────────────────────────────────────────────
 
+    // Step 0 — Legal Agreement (required gate before any profile data is entered)
+    const renderAgreement = () => (
+        <View style={styles.stepContainer}>
+            <View style={[styles.iconCircle, { backgroundColor: '#EF444415' }]}>
+                <Ionicons name="shield-checkmark" size={60} color="#EF4444" />
+            </View>
+            <Text style={[styles.title, { color: theme.text }]}>Before You Continue</Text>
+            <Text style={[styles.text, { color: theme.textMuted }]}>
+                Campustry Dating is an adults-only feature. You must confirm the following before creating a profile.
+            </Text>
+
+            {/* Age Confirmation */}
+            <TouchableOpacity
+                style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: agreedAge ? theme.primary : theme.border }]}
+                onPress={() => setAgreedAge(!agreedAge)}
+                activeOpacity={0.8}
+            >
+                <View style={[styles.checkbox, { backgroundColor: agreedAge ? theme.primary : 'transparent', borderColor: agreedAge ? theme.primary : theme.textMuted }]}>
+                    {agreedAge && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                </View>
+                <Text style={[styles.consentText, { color: theme.text }]}>
+                    I confirm that I am <Text style={{ fontFamily: Fonts.bold }}>18 years of age or older.</Text> I understand that misrepresenting my age will result in a permanent ban and may have legal consequences.
+                </Text>
+            </TouchableOpacity>
+
+            {/* Terms of Service */}
+            <TouchableOpacity
+                style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: agreedTos ? theme.primary : theme.border }]}
+                onPress={() => setAgreedTos(!agreedTos)}
+                activeOpacity={0.8}
+            >
+                <View style={[styles.checkbox, { backgroundColor: agreedTos ? theme.primary : 'transparent', borderColor: agreedTos ? theme.primary : theme.textMuted }]}>
+                    {agreedTos && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                </View>
+                <Text style={[styles.consentText, { color: theme.text }]}>
+                    I agree to Campustry's{' '}
+                    <Text style={{ color: theme.primary, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('https://campustry.com/terms')}>
+                        Terms of Service
+                    </Text>
+                    {', including the Community Guidelines and Safety Policies.  '}
+                </Text>
+            </TouchableOpacity>
+
+            {/* Privacy Policy */}
+            <TouchableOpacity
+                style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: agreedPrivacy ? theme.primary : theme.border }]}
+                onPress={() => setAgreedPrivacy(!agreedPrivacy)}
+                activeOpacity={0.8}
+            >
+                <View style={[styles.checkbox, { backgroundColor: agreedPrivacy ? theme.primary : 'transparent', borderColor: agreedPrivacy ? theme.primary : theme.textMuted }]}>
+                    {agreedPrivacy && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                </View>
+                <Text style={[styles.consentText, { color: theme.text }]}>
+                    I have read and agree to Campustry's{' '}
+                    <Text style={{ color: theme.primary, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('https://campustry.com/privacy')}>
+                        Privacy Policy
+                    </Text>
+                    {', including how my location, photos, and profile data are used.  '}
+                </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+                style={[
+                    styles.primaryButton,
+                    { backgroundColor: allConsentsGiven ? theme.primary : theme.muted, marginTop: 8 }
+                ]}
+                onPress={nextStep}
+                disabled={!allConsentsGiven}
+                activeOpacity={0.8}
+            >
+                <Text style={[styles.primaryButtonText, { color: allConsentsGiven ? '#FFF' : theme.textMuted }]}>
+                    {allConsentsGiven ? 'I Agree — Continue' : 'Please check all boxes above'}
+                </Text>
+            </TouchableOpacity>
+        </View>
+    );
+
+    // Step 1 — Welcome / What to expect
     const renderIntro = () => (
         <View style={styles.stepContainer}>
             <View style={[styles.iconCircle, { backgroundColor: theme.primary + '20' }]}>
@@ -292,16 +449,10 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             <View style={[styles.bulletList, { backgroundColor: theme.surface }]}>
                 <Text style={[styles.bullet, { color: theme.text }]}>• Real Names Only</Text>
                 <Text style={[styles.bullet, { color: theme.text }]}>• Verified .edu Emails</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• No Toxicity or Harassment Tolerated</Text>
                 <Text style={[styles.bullet, { color: theme.text }]}>• Zero Tolerance for Fake Profiles</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• Must be 18+ Years Old</Text>
                 <Text style={[styles.bullet, { color: theme.text }]}>• Respect Boundaries & Consent</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• You Assume All Risks for Offline Meets</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• Report Suspicious Behavior Immediately</Text>
+                <Text style={[styles.bullet, { color: theme.text }]}>• Report anything suspicious immediately</Text>
             </View>
-            <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary, marginTop: 10 }]} onPress={nextStep}>
-                <Text style={styles.primaryButtonText}>I Pledge to be Respectful</Text>
-            </TouchableOpacity>
         </View>
     );
 
@@ -452,6 +603,23 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                     );
                 })}
             </View>
+
+            {/* Instagram — disclosed as optional + shown on profile */}
+            <Text style={[styles.label, { color: theme.text }]}>Instagram Handle{' '}
+                <Text style={{ fontFamily: Fonts.regular, fontSize: 12, color: theme.textMuted }}>(Optional)</Text>
+            </Text>
+            <Text style={[styles.hint, { color: theme.textMuted, marginTop: -6, marginBottom: 8 }]}>
+                If provided, this will be visible on your public dating profile.
+            </Text>
+            <TextInput
+                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                value={formData.instagramHandle}
+                onChangeText={t => setFormData({ ...formData, instagramHandle: t.replace('@', '') })}
+                placeholder="yourhandle  (without @)"
+                placeholderTextColor={theme.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+            />
         </View>
     );
 
@@ -518,11 +686,12 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 
     const renderStepContent = () => {
         switch (step) {
-            case 0: return renderIntro();
-            case 1: return renderBasics();
-            case 2: return renderVibe();
-            case 3: return renderPhotos();
-            case 4: return renderReview();
+            case 0: return renderAgreement();
+            case 1: return renderIntro();
+            case 2: return renderBasics();
+            case 3: return renderVibe();
+            case 4: return renderPhotos();
+            case 5: return renderReview();
             default: return null;
         }
     };
@@ -564,11 +733,18 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             {step > 0 && (
                 <View style={[styles.footer, { borderTopColor: theme.border }]}>
                     {step === STEPS.length - 1 ? (
-                        <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary }]} onPress={handleSubmit} disabled={loading}>
+                        <TouchableOpacity
+                            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+                            onPress={handleSubmit}
+                            disabled={loading}
+                        >
                             {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>Create Profile</Text>}
                         </TouchableOpacity>
                     ) : (
-                        <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary }]} onPress={nextStep}>
+                        <TouchableOpacity
+                            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+                            onPress={nextStep}
+                        >
                             <Text style={styles.primaryButtonText}>Next</Text>
                         </TouchableOpacity>
                     )}
@@ -788,5 +964,30 @@ const styles = StyleSheet.create({
         color: '#FFF',
         fontFamily: Fonts.bold,
         fontSize: 16
-    }
+    },
+    consentRow: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        padding: 14,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        gap: 12,
+        alignSelf: 'stretch',
+    },
+    checkbox: {
+        width: 22,
+        height: 22,
+        borderRadius: 6,
+        borderWidth: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        marginTop: 1,
+    },
+    consentText: {
+        flex: 1,
+        fontSize: 14,
+        lineHeight: 20,
+        fontFamily: Fonts.regular,
+    },
 });

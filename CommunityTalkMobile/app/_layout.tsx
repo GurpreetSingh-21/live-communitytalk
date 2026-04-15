@@ -36,15 +36,24 @@ function AppLayout() {
   const { isAuthed, isLoading } = useContext(AuthContext);
   const segments = useSegments();
   const router = useRouter();
+  const [hasViewedOnboarding, setHasViewedOnboarding] = React.useState<boolean | null>(null);
 
   useEffect(() => {
-    if (isLoading) return;
+    import('@react-native-async-storage/async-storage').then(({ default: AsyncStorage }) => {
+      AsyncStorage.getItem('hasViewedOnboarding').then((val) => {
+        setHasViewedOnboarding(val === 'true');
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isLoading || hasViewedOnboarding === null) return;
 
     // Define routes that are accessible without being logged in
     const publicRoutes = ["landing", "register", "verify-email"];
 
     // Routes that should be accessible to both auth states (don't redirect)
-    const neutralRoutes = ["modal"];
+    const neutralRoutes = ["modal", "onboarding"];
 
     const currentRoute = segments[0] as string;
     const isPublicRoute = publicRoutes.includes(currentRoute);
@@ -57,10 +66,14 @@ function AppLayout() {
       // 🔒 Not logged in + trying to access protected route -> Redirect to Landing
       router.replace("/landing");
     } else if (isAuthed && isPublicRoute) {
-      // 🔓 Logged in + trying to access public route -> Redirect to App
-      router.replace("/(tabs)");
+      // 🔓 Logged in + trying to access public route -> Redirect to App (or Onboarding)
+      if (!hasViewedOnboarding) {
+        router.replace("/onboarding");
+      } else {
+        router.replace("/(tabs)");
+      }
     }
-  }, [isAuthed, segments, isLoading]);
+  }, [isAuthed, segments, isLoading, hasViewedOnboarding]);
 
   return (
     <Stack

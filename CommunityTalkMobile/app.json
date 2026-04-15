@@ -18,7 +18,8 @@
         "NSCameraUsageDescription": "This app uses the camera for verifying your profile and taking photos for messages.",
         "NSMicrophoneUsageDescription": "This app uses the microphone to record voice messages in chats.",
         "NSPhotoLibraryUsageDescription": "This app accesses your photos to let you share images in chats and update your profile.",
-        "NSPhotoLibraryAddUsageDescription": "This app saves photos to your library."
+        "NSPhotoLibraryAddUsageDescription": "This app saves photos to your library.",
+        "NSLocationWhenInUseUsageDescription": "Campustry uses your location to show dating profiles near you on campus. Your exact location is never shared with other users."
       }
     },
     "android": {
@@ -27,6 +28,10 @@
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",
       "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#FAF9F7",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -39,6 +44,12 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Campustry uses your location to show dating profiles near you on campus. Your exact location is never shared with other users."
+        }
+      ],
       [
         "expo-splash-screen",
         {

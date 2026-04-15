@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, Dimensions, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, StyleSheet, Image, Dimensions, TouchableWithoutFeedback, TouchableOpacity, Alert } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import DatingAPI, { ReportReason } from '@/src/api/dating';
 
 const { width, height } = Dimensions.get('window');
 
@@ -16,6 +17,7 @@ type DatingProfile = {
     photos: string[];
     hobbies: string[];
     collegeName?: string;
+    isVerified?: boolean; // controls the blue tick
 };
 
 interface DatingCardProps {
@@ -28,20 +30,46 @@ export default function DatingCard({ profile }: DatingCardProps) {
     const handleTap = (evt: any) => {
         const locationX = evt.nativeEvent.locationX;
         if (locationX > width / 2) {
-            // Next photo
-            if (photoIndex < profile.photos.length - 1) {
-                setPhotoIndex(photoIndex + 1);
-            } else {
-                setPhotoIndex(0); // Loop back? Or stop? Let's loop for now.
-            }
+            if (photoIndex < profile.photos.length - 1) setPhotoIndex(photoIndex + 1);
+            else setPhotoIndex(0);
         } else {
-            // Prev photo
-            if (photoIndex > 0) {
-                setPhotoIndex(photoIndex - 1);
-            } else {
-                setPhotoIndex(profile.photos.length - 1);
-            }
+            if (photoIndex > 0) setPhotoIndex(photoIndex - 1);
+            else setPhotoIndex(profile.photos.length - 1);
         }
+    };
+
+    const handleReport = () => {
+        const reasons: { label: string; value: ReportReason }[] = [
+            { label: 'Fake Profile or Impersonation', value: 'FAKE_PROFILE' },
+            { label: 'Inappropriate Photos', value: 'INAPPROPRIATE_PHOTOS' },
+            { label: 'Harassment or Bullying', value: 'HARASSMENT' },
+            { label: 'Spam or Scam', value: 'SPAM' },
+            { label: 'Appears to Be Underage', value: 'UNDERAGE' },
+            { label: 'Hate Speech or Discrimination', value: 'HATE_SPEECH' },
+            { label: 'Other', value: 'OTHER' },
+        ];
+
+        Alert.alert(
+            `Report ${profile.firstName}`,
+            'Why are you reporting this profile?',
+            [
+                ...reasons.map(r => ({
+                    text: r.label,
+                    onPress: async () => {
+                        try {
+                            await DatingAPI.reportProfile(profile.id, r.value);
+                            Alert.alert(
+                                'Report Submitted',
+                                'Thank you. Our team will review this profile within 24 hours.'
+                            );
+                        } catch {
+                            Alert.alert('Error', 'Failed to submit report. Please try again.');
+                        }
+                    },
+                })),
+                { text: 'Cancel', style: 'cancel' },
+            ]
+        );
     };
 
     return (
@@ -69,9 +97,12 @@ export default function DatingCard({ profile }: DatingCardProps) {
                             </View>
                         )}
 
-                        <View style={styles.headerRow}>
+                    <View style={styles.headerRow}>
                             <Text style={styles.name}>{profile.firstName}, {profile.age}</Text>
-                            <Ionicons name="checkmark-circle" size={26} color="#4C5FD5" />
+                            {/* Only show verified badge if the profile is actually verified */}
+                            {profile.isVerified && (
+                                <Ionicons name="checkmark-circle" size={26} color="#4C5FD5" />
+                            )}
                         </View>
 
                         <Text style={styles.subtext}>{profile.major} • {profile.year}</Text>
@@ -88,6 +119,15 @@ export default function DatingCard({ profile }: DatingCardProps) {
                         </View>
                     </View>
                 </LinearGradient>
+
+                {/* Report Button */}
+                <TouchableOpacity
+                    style={styles.reportButton}
+                    onPress={handleReport}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                    <Ionicons name="ellipsis-horizontal" size={20} color="rgba(255,255,255,0.9)" />
+                </TouchableOpacity>
 
                 {/* Photo Indicators */}
                 <View style={styles.indicatorContainer}>
@@ -217,5 +257,14 @@ const styles = StyleSheet.create({
         height: 3,
         borderRadius: 2,
         backgroundColor: 'rgba(255,255,255,0.2)'
-    }
+    },
+    reportButton: {
+        position: 'absolute',
+        top: 48,
+        right: 16,
+        backgroundColor: 'rgba(0,0,0,0.35)',
+        borderRadius: 20,
+        padding: 8,
+        zIndex: 10,
+    },
 });

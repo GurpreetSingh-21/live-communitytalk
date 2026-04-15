@@ -1,7 +1,7 @@
-
 import React, { useContext, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -90,16 +90,28 @@ export default function DatingScreen() {
                             <Text style={[styles.headerTitle, { color: theme.text }]}>Dating</Text>
                         </TouchableOpacity>
 
-                        <TouchableOpacity
-                            style={[styles.navItem, view === 'matches' && styles.navItemActive]}
-                            onPress={() => setView('matches')}
-                        >
-                            <IconSymbol
-                                name="bubble.left.and.bubble.right.fill"
-                                size={26}
-                                color={view === 'matches' ? theme.text : theme.textMuted}
-                            />
-                        </TouchableOpacity>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                            {/* Safety Center */}
+                            <TouchableOpacity
+                                style={styles.navItem}
+                                onPress={() => router.push('/dating/safety-center')}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            >
+                                <Ionicons name="shield-checkmark-outline" size={22} color={theme.textMuted} />
+                            </TouchableOpacity>
+
+                            {/* Matches */}
+                            <TouchableOpacity
+                                style={[styles.navItem, view === 'matches' && styles.navItemActive]}
+                                onPress={() => setView('matches')}
+                            >
+                                <IconSymbol
+                                    name="bubble.left.and.bubble.right.fill"
+                                    size={26}
+                                    color={view === 'matches' ? theme.text : theme.textMuted}
+                                />
+                            </TouchableOpacity>
+                        </View>
                     </View>
 
                     <View style={styles.content}>

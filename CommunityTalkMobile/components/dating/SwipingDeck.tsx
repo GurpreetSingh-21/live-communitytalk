@@ -13,6 +13,7 @@ import { api } from '@/src/api/api';
 import DatingCard from './DatingCard';
 import SwipeOverlay from './SwipeOverlay';
 import ActionButtons from './ActionButtons';
+import MatchModal from './MatchModal';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
@@ -20,11 +21,17 @@ const SWIPE_THRESHOLD = width * 0.25;
 
 export default function SwipingDeck() {
     const [pool, setPool] = useState<any[]>([]);
-    const [activeIndex, setActiveIndex] = useState(0); // Add active index pointer
+    const [activeIndex, setActiveIndex] = useState(0);
     const [loading, setLoading] = useState(true);
     const [matchModalVisible, setMatchModalVisible] = useState(false);
-    const [lastMatch, setLastMatch] = useState<any>(null);
-    const [limitReached, setLimitReached] = useState(false); // Toast state
+    const [matchData, setMatchData] = useState<{
+        matchId?: string;
+        partnerFirstName: string;
+        partnerPhoto?: string | null;
+        myPhoto?: string | null;
+        partnerUserId?: string;
+    } | null>(null);
+    const [limitReached, setLimitReached] = useState(false);
 
     const translateX = useSharedValue(0);
     const translateY = useSharedValue(0);
@@ -81,10 +88,16 @@ export default function SwipingDeck() {
                 type
             });
 
-            if (data.match) {
-                setLastMatch(data.match);
+            if (data.isMatch && data.matchDetails) {
+                const partner = data.matchDetails.partner;
+                setMatchData({
+                    matchId: data.matchDetails.id,
+                    partnerFirstName: currentProfile.firstName,
+                    partnerPhoto: currentProfile.photos?.[0] || null,
+                    myPhoto: null, // Will use default avatar in modal
+                    partnerUserId: currentProfile.userId,
+                });
                 setMatchModalVisible(true);
-                Alert.alert("It's a Match!", `You matched with ${currentProfile.firstName}!`);
             }
         } catch (err: any) {
             console.error("Swipe error:", err);
@@ -235,11 +248,20 @@ export default function SwipingDeck() {
                 onNope={() => triggerSwipe('left')}
                 onLike={() => triggerSwipe('right')}
                 onSuperLike={() => triggerSwipe('up')}
-                onBoost={() => Alert.alert("Boost", "Feature coming soon!")}
             />
 
-            {/* Premium Toast Overlay */}
+            {/* Like Limit Toast */}
             <LimitToast visible={limitReached} onClose={() => setLimitReached(false)} />
+
+            {/* Match Modal */}
+            <MatchModal
+                visible={matchModalVisible}
+                matchData={matchData}
+                onClose={() => {
+                    setMatchModalVisible(false);
+                    setMatchData(null);
+                }}
+            />
         </View>
     );
 }

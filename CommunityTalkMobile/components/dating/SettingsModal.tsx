@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Switch, Alert, Image, ActivityIndicator, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, Modal, TouchableOpacity, ScrollView, Switch, Alert, Image, ActivityIndicator, TextInput, Platform, Linking, TextInput as RNTextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { router } from 'expo-router';
 import DatingAPI, { DatingProfile, DatingPhoto, DatingPreference } from '@/src/api/dating';
 
 interface SettingsModalProps {
@@ -12,6 +13,9 @@ interface SettingsModalProps {
 export default function SettingsModal({ visible, onClose }: SettingsModalProps) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+    const [deleteConfirmInput, setDeleteConfirmInput] = useState('');
 
     // State
     const [profile, setProfile] = useState<DatingProfile | null>(null);
@@ -43,13 +47,69 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
 
             if (data.preference) {
                 setAgeMin(data.preference.ageMin);
-                setAgeMax(data.preference.ageMax);
+                // Enforce platform cap at load time
+                setAgeMax(Math.min(data.preference.ageMax, 35));
                 setMaxDistance(data.preference.maxDistance);
                 setInterestedInGender(data.preference.interestedInGender || []);
                 setShowOnCampus(data.preference.showToPeopleOnCampusOnly);
             }
         }
         setLoading(false);
+    };
+
+    /**
+     * Show a transparent disclosure when the user adjusts the distance preference.
+     * The OS will surface a native location permission dialog automatically the
+     * first time the swipe pool makes a location-aware request.
+     * If the user has previously denied permission, we deep-link to Settings.
+     */
+    const requestLocationForDistance = () => {
+        Alert.alert(
+            'Location Used for Distance',
+            `Campustry uses your device location only to show nearby profiles. Your exact location is never shared with other users.\n\nIf profiles are not appearing, make sure Location is enabled for Campustry in your device Settings.`,
+            [
+                { text: 'Got it', style: 'default' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            ]
+        );
+    };
+
+    const handleDelete = () => {
+        // Step 1 — First warning
+        Alert.alert(
+            'Delete Dating Profile',
+            'This will permanently delete your dating profile, all photos, matches, and conversations. This action is irreversible.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Continue',
+                    style: 'destructive',
+                    onPress: () => setDeleteConfirmVisible(true),
+                },
+            ]
+        );
+    };
+
+    const handleConfirmedDelete = async () => {
+        if (deleteConfirmInput.trim().toUpperCase() !== 'DELETE') {
+            Alert.alert('Incorrect', 'Please type DELETE in all caps to confirm.');
+            return;
+        }
+        setDeleting(true);
+        try {
+            await DatingAPI.deleteDatingProfile();
+            setDeleteConfirmVisible(false);
+            onClose();
+            Alert.alert(
+                'Profile Deleted',
+                'Your dating profile has been permanently deleted.',
+                [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
+            );
+        } catch (err: any) {
+            Alert.alert('Error', err?.response?.data?.error || 'Failed to delete profile. Please try again.');
+        } finally {
+            setDeleting(false);
+        }
     };
 
     const handleSave = async () => {
@@ -232,11 +292,31 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
                             <Text style={styles.label}>Maximum Distance</Text>
                             <Text style={styles.value}>{maxDistance} mi</Text>
                         </View>
-                        {/* Mock Slider for now - implementing native slider requires generic component */}
+                        <Text style={{ fontSize: 11, color: '#999', marginBottom: 6, marginTop: -4 }}>
+                            Location access is used only to show nearby profiles.
+                        </Text>
                         <View style={styles.sliderRow}>
-                            <TouchableOpacity onPress={() => setMaxDistance(Math.max(5, maxDistance - 5))} style={styles.stepper}><Text style={styles.stepperText}>-</Text></TouchableOpacity>
-                            <View style={styles.sliderTrack}><View style={[styles.sliderFill, { width: `${(maxDistance / 100) * 100}%` }]} /></View>
-                            <TouchableOpacity onPress={() => setMaxDistance(Math.min(100, maxDistance + 5))} style={styles.stepper}><Text style={styles.stepperText}>+</Text></TouchableOpacity>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setMaxDistance(Math.max(5, maxDistance - 5));
+                                    requestLocationForDistance();
+                                }}
+                                style={styles.stepper}
+                            >
+                                <Text style={styles.stepperText}>-</Text>
+                            </TouchableOpacity>
+                            <View style={styles.sliderTrack}>
+                                <View style={[styles.sliderFill, { width: `${(maxDistance / 100) * 100}%` }]} />
+                            </View>
+                            <TouchableOpacity
+                                onPress={() => {
+                                    setMaxDistance(Math.min(100, maxDistance + 5));
+                                    requestLocationForDistance();
+                                }}
+                                style={styles.stepper}
+                            >
+                                <Text style={styles.stepperText}>+</Text>
+                            </TouchableOpacity>
                         </View>
 
                         <View style={styles.divider} />
@@ -272,22 +352,31 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
 
                         <View style={styles.divider} />
 
-                        {/* Age Range */}
+                        {/* Age Range — capped at 35 for a college platform */}
                         <View style={styles.row}>
                             <Text style={styles.label}>Age Range</Text>
-                            <Text style={styles.value}>{ageMin} - {ageMax}</Text>
+                            <Text style={styles.value}>{ageMin} – {ageMax}</Text>
                         </View>
+                        {ageMax - ageMin > 10 && (
+                            <View style={styles.ageWarning}>
+                                <Ionicons name="warning" size={13} color="#F59E0B" style={{ marginRight: 6 }} />
+                                <Text style={styles.ageWarningText}>
+                                    Large age gap selected. Ensure this is intentional.
+                                </Text>
+                            </View>
+                        )}
                         <View style={styles.sliderRow}>
                             <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'space-between' }}>
                                 <TouchableOpacity onPress={() => setAgeMin(Math.max(18, ageMin - 1))} style={styles.stepperSmall}><Text>-</Text></TouchableOpacity>
                                 <Text style={styles.rangeVal}>Min: {ageMin}</Text>
-                                <TouchableOpacity onPress={() => setAgeMin(Math.min(ageMax, ageMin + 1))} style={styles.stepperSmall}><Text>+</Text></TouchableOpacity>
+                                <TouchableOpacity onPress={() => setAgeMin(Math.min(ageMax - 1, ageMin + 1))} style={styles.stepperSmall}><Text>+</Text></TouchableOpacity>
 
                                 <View style={{ width: 20 }} />
 
-                                <TouchableOpacity onPress={() => setAgeMax(Math.max(ageMin, ageMax - 1))} style={styles.stepperSmall}><Text>-</Text></TouchableOpacity>
+                                <TouchableOpacity onPress={() => setAgeMax(Math.max(ageMin + 1, ageMax - 1))} style={styles.stepperSmall}><Text>-</Text></TouchableOpacity>
                                 <Text style={styles.rangeVal}>Max: {ageMax}</Text>
-                                <TouchableOpacity onPress={() => setAgeMax(Math.min(60, ageMax + 1))} style={styles.stepperSmall}><Text>+</Text></TouchableOpacity>
+                                {/* Hard cap at 35 for college dating platform */}
+                                <TouchableOpacity onPress={() => setAgeMax(Math.min(35, ageMax + 1))} style={styles.stepperSmall}><Text>+</Text></TouchableOpacity>
                             </View>
                         </View>
 
@@ -319,13 +408,67 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
                         </Text>
                     </View>
 
-                    <TouchableOpacity style={styles.logoutButton} onPress={() => Alert.alert("Delete Account", "Functionality coming soon.")}>
-                        <Text style={styles.logoutText}>Delete Account</Text>
+                    <TouchableOpacity
+                        style={styles.logoutButton}
+                        onPress={handleDelete}
+                    >
+                        <Ionicons name="trash-outline" size={18} color="#FF3B30" style={{ marginRight: 8 }} />
+                        <Text style={styles.logoutText}>Delete Dating Profile</Text>
                     </TouchableOpacity>
 
                     <View style={{ height: 100 }} />
                 </ScrollView>
             </View>
+
+            {/* Delete Confirmation Modal */}
+            <Modal
+                visible={deleteConfirmVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={() => setDeleteConfirmVisible(false)}
+            >
+                <View style={styles.deleteOverlay}>
+                    <View style={styles.deleteSheet}>
+                        <View style={styles.deleteIconCircle}>
+                            <Ionicons name="warning" size={32} color="#FF3B30" />
+                        </View>
+                        <Text style={styles.deleteTitle}>Are you absolutely sure?</Text>
+                        <Text style={styles.deleteBody}>
+                            This permanently deletes your dating profile, all photos, matches, and conversations. There is no undo.
+                        </Text>
+                        <Text style={styles.deleteInstructions}>
+                            Type{' '}<Text style={{ fontWeight: '700', color: '#FF3B30' }}>DELETE</Text>{' '}to confirm:
+                        </Text>
+                        <TextInput
+                            style={styles.deleteInput}
+                            value={deleteConfirmInput}
+                            onChangeText={setDeleteConfirmInput}
+                            placeholder="Type DELETE here"
+                            placeholderTextColor="#999"
+                            autoCapitalize="characters"
+                            autoCorrect={false}
+                        />
+                        <TouchableOpacity
+                            onPress={handleConfirmedDelete}
+                            disabled={deleting}
+                            style={[
+                                styles.deleteConfirmBtn,
+                                { opacity: deleting ? 0.7 : 1 }
+                            ]}
+                        >
+                            {deleting
+                                ? <ActivityIndicator color="#FFF" />
+                                : <Text style={styles.deleteConfirmBtnText}>Permanently Delete</Text>}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => { setDeleteConfirmVisible(false); setDeleteConfirmInput(''); }}
+                            style={styles.deleteCancelBtn}
+                        >
+                            <Text style={styles.deleteCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </Modal>
     );
 }
@@ -508,6 +651,76 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600'
     },
+    deleteOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        justifyContent: 'flex-end',
+    },
+    deleteSheet: {
+        backgroundColor: '#FFF',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        padding: 28,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 28,
+    },
+    deleteIconCircle: {
+        width: 60,
+        height: 60,
+        borderRadius: 30,
+        backgroundColor: '#FFF0F0',
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'center',
+        marginBottom: 16,
+    },
+    deleteTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#000',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    deleteBody: {
+        fontSize: 14,
+        color: '#555',
+        textAlign: 'center',
+        lineHeight: 20,
+        marginBottom: 20,
+    },
+    deleteInstructions: {
+        fontSize: 14,
+        color: '#333',
+        marginBottom: 10,
+    },
+    deleteInput: {
+        borderWidth: 1.5,
+        borderColor: '#FF3B30',
+        borderRadius: 10,
+        padding: 12,
+        fontSize: 16,
+        color: '#000',
+        marginBottom: 16,
+    },
+    deleteConfirmBtn: {
+        backgroundColor: '#FF3B30',
+        padding: 16,
+        borderRadius: 14,
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    deleteConfirmBtnText: {
+        color: '#FFF',
+        fontWeight: '700',
+        fontSize: 16,
+    },
+    deleteCancelBtn: {
+        padding: 12,
+        alignItems: 'center',
+    },
+    deleteCancelText: {
+        color: '#666',
+        fontSize: 16,
+    },
     // Custom Slider Styles
     sliderRow: {
         flexDirection: 'row',
@@ -525,6 +738,21 @@ const styles = StyleSheet.create({
     sliderTrack: { flex: 1, height: 4, backgroundColor: '#E5E5EA', borderRadius: 2, overflow: 'hidden' },
     sliderFill: { height: '100%', backgroundColor: '#FF6B6B' },
     rangeVal: { fontSize: 14, fontWeight: '600', color: '#555' },
+    ageWarning: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FEF3C7',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        marginBottom: 8,
+    },
+    ageWarningText: {
+        flex: 1,
+        fontSize: 12,
+        color: '#92400E',
+        fontWeight: '500',
+    },
 
     // Segment Control
     segmentContainer: {

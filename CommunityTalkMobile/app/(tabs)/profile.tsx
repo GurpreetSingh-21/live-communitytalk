@@ -11,7 +11,11 @@ import {
   useColorScheme as useDeviceColorScheme,
   type SectionListRenderItemInfo,
   Image,
+  Appearance,
+  Linking,
+  Platform,
 } from "react-native";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StatusBar } from "expo-status-bar";
 import { router } from "expo-router";
 import {
@@ -98,6 +102,18 @@ const buildSections = (
           title: "Privacy & Security",
           icon: "shield-checkmark-outline",
           screen: "/profile/security",
+        },
+        {
+          type: "setting",
+          title: "Dark Mode",
+          icon: "moon-outline",
+          screen: "toggle_dark_mode",
+        },
+        {
+          type: "setting",
+          title: "Rate Your App",
+          icon: "star-outline",
+          screen: "rate_app",
         },
         {
           type: "setting",
@@ -323,7 +339,25 @@ const SettingsRow = ({
 
   return (
     <Pressable
-      onPress={() => router.push(item.screen as any)}
+      onPress={async () => {
+        if (item.screen === "toggle_dark_mode") {
+          const currentTheme = Appearance.getColorScheme();
+          const targetTheme = currentTheme === 'dark' ? 'light' : 'dark';
+          Appearance.setColorScheme(targetTheme);
+          await AsyncStorage.setItem("themePreference", targetTheme);
+        } else if (item.screen === "rate_app") {
+          try {
+            const storeUrl = Platform.OS === 'ios'
+              ? 'https://apps.apple.com/app/idYOUR_APP_ID?action=write-review'
+              : 'market://details?id=com.campustry.app';
+            await Linking.openURL(storeUrl);
+          } catch (error) {
+            Alert.alert("Store Unavailable", "Could not reach the app store to leave a review.");
+          }
+        } else {
+          router.push(item.screen as any);
+        }
+      }}
       style={{
         flexDirection: 'row',
         alignItems: 'center',

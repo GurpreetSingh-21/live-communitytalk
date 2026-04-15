@@ -243,6 +243,7 @@ const PremiumInput = ({
   const scheme = useColorScheme() ?? "light";
   const colors = Colors[scheme];
   const [isFocused, setIsFocused] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
 
   return (
     <MotiView
@@ -272,7 +273,7 @@ const PremiumInput = ({
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.textMuted}
-        secureTextEntry={secureTextEntry}
+        secureTextEntry={secureTextEntry && !isVisible}
         autoCapitalize={autoCapitalize}
         keyboardType={keyboardType}
         style={{
@@ -285,6 +286,11 @@ const PremiumInput = ({
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
       />
+      {secureTextEntry && (
+        <TouchableOpacity onPress={() => setIsVisible(!isVisible)} style={{ padding: 4 }}>
+          <Ionicons name={isVisible ? "eye-outline" : "eye-off-outline"} size={20} color={colors.textMuted} />
+        </TouchableOpacity>
+      )}
     </MotiView>
   );
 };

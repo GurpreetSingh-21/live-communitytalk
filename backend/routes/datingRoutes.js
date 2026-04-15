@@ -67,15 +67,16 @@ router.post("/profile", async (req, res) => {
       firstName,
       bio,
       gender,
-      birthDate, // ISO String
+      birthDate,
       height,
       major,
       year,
       collegeSlug,
       hobbies,
       instagramHandle,
-      photos, // Array of { url, isMain } or strings
-      preferences
+      photos,
+      preferences,
+      pauseProfile  // from SettingsModal
     } = req.body;
 
     // 1. Check if profile exists to determine validation strictness
@@ -99,16 +100,17 @@ router.post("/profile", async (req, res) => {
         profile = await tx.datingProfile.update({
           where: { userId },
           data: {
-            firstName: firstName || undefined, // Only update if provided
-            bio: bio !== undefined ? bio : undefined,
-            gender: gender || undefined,
-            birthDate: birthDate ? new Date(birthDate) : undefined,
-            height: height !== undefined ? (height ? parseInt(height) : null) : undefined,
-            major: major !== undefined ? major : undefined,
-            year: year !== undefined ? year : undefined,
-            hobbies: hobbies || undefined,
+            firstName:       firstName       || undefined,
+            bio:             bio             !== undefined ? bio : undefined,
+            gender:          gender          || undefined,
+            birthDate:       birthDate       ? new Date(birthDate) : undefined,
+            height:          height          !== undefined ? (height ? parseInt(height) : null) : undefined,
+            major:           major           !== undefined ? major : undefined,
+            year:            year            !== undefined ? year : undefined,
+            hobbies:         hobbies         || undefined,
             instagramHandle: instagramHandle !== undefined ? instagramHandle : undefined,
-            // Recalculate score if key fields change? Simplified for now.
+            // Pause / unpause profile visibility
+            isPaused:        pauseProfile    !== undefined ? Boolean(pauseProfile) : undefined,
           }
         });
       } else {
@@ -173,9 +175,10 @@ router.post("/profile", async (req, res) => {
     });
 
     // Update User.hasDatingProfile flag
+    // NOTE: User model does NOT have a datingProfileId field — only hasDatingProfile boolean
     await prisma.user.update({
       where: { id: userId },
-      data: { hasDatingProfile: true, datingProfileId: result.id }
+      data: { hasDatingProfile: true }
     });
 
     // Invalidate Redis bootstrap cache so refreshBootstrap() returns fresh data
@@ -538,35 +541,61 @@ router.get("/matches", async (req, res) => {
 
 /**
  * POST /api/dating/report
- * Report a User
+ * Report a profile for a safety violation.
+ * Maps frontend reason strings to Prisma ReportReason enum.
  */
 router.post("/report", async (req, res) => {
   try {
     const userId = req.user.id;
-    const { targetId, reason, details } = req.body;
+    // Frontend sends targetProfileId (DatingProfile ID)
+    const { targetProfileId, targetId: legacyTargetId, reason, details } = req.body;
+    const profileId = targetProfileId || legacyTargetId;
 
-    if (!targetId || !reason) {
-      return res.status(400).json({ error: "Target ID and reason are required" });
+    if (!profileId || !reason) {
+      return res.status(400).json({ error: "Target profile ID and reason are required." });
     }
+
+    // Map frontend reason strings → Prisma ReportReason enum
+    const REASON_MAP = {
+      FAKE_PROFILE:          'FAKE_PROFILE',
+      INAPPROPRIATE_PHOTOS:  'INAPPROPRIATE_CONTENT',
+      HARASSMENT:            'HARASSMENT',
+      SPAM:                  'SPAM',
+      UNDERAGE:              'UNDERAGE',
+      HATE_SPEECH:           'HATE_SPEECH',
+      OTHER:                 'OTHER',
+    };
+    const mappedReason = REASON_MAP[reason] || 'OTHER';
 
     // Resolve target userId from datingProfileId
     const targetProfile = await prisma.datingProfile.findUnique({
-      where: { id: targetId },
+      where: { id: profileId },
       select: { userId: true }
     });
+    if (!targetProfile) return res.status(404).json({ error: "Target profile not found." });
 
-    if (!targetProfile) return res.status(404).json({ error: "Target profile not found" });
+    // Prevent self-report
+    if (targetProfile.userId === userId) {
+      return res.status(400).json({ error: "You cannot report yourself." });
+    }
 
     await prisma.report.create({
       data: {
         reporterId: userId,
         reportedId: targetProfile.userId,
-        reason,
-        details,
-        targetType: "dating_profile",
-        targetId,
-        status: "pending"
+        reason: mappedReason,
+        details: details || null,
+        targetType: 'dating_profile',
+        targetId: profileId,
+        status: 'PENDING',
+        priority: mappedReason === 'UNDERAGE' ? 'URGENT' : 'NORMAL',
       }
+    });
+
+    // Bump reportsReceivedCount on the target user
+    await prisma.user.update({
+      where: { id: targetProfile.userId },
+      data: { reportsReceivedCount: { increment: 1 } }
     });
 
     res.json({ message: "Report submitted. Thank you for keeping us safe." });
@@ -578,67 +607,202 @@ router.post("/report", async (req, res) => {
 
 /**
  * POST /api/dating/block
- * Block a user (Remove from matches, prevent future seeing)
+ * Block a user — removes from match pool, deactivates existing matches, clears swipes
  */
 router.post("/block", async (req, res) => {
   try {
     const userId = req.user.id;
-    const { targetId } = req.body; // DatingProfile ID of person to block
+    const { targetUserId, targetId } = req.body;
+    // Accept either targetUserId (user ID) or targetId (dating profile ID)
 
-    if (!targetId) return res.status(400).json({ error: "Target ID is required" });
+    let blockedProfileId = targetId;
+
+    if (!blockedProfileId && targetUserId) {
+      const blockedProfile = await prisma.datingProfile.findUnique({
+        where: { userId: targetUserId },
+        select: { id: true }
+      });
+      if (blockedProfile) blockedProfileId = blockedProfile.id;
+    }
+
+    if (!blockedProfileId) return res.status(400).json({ error: "Target ID is required." });
 
     const myProfile = await prisma.datingProfile.findUnique({ where: { userId } });
-    if (!myProfile) return res.status(400).json({ error: "No profile" });
+    if (!myProfile) return res.status(400).json({ error: "No dating profile found." });
 
-    // 1. Create Block Record
-    // Use upsert to prevent unique constraint errors if already blocked
+    if (myProfile.id === blockedProfileId) {
+      return res.status(400).json({ error: "You cannot block yourself." });
+    }
+
+    // 1. Upsert block record (safe if already blocked)
     await prisma.datingBlock.upsert({
-      where: {
-        blockerId_blockedId: {
-          blockerId: myProfile.id,
-          blockedId: targetId
-        }
-      },
-      create: {
-        blockerId: myProfile.id,
-        blockedId: targetId
-      },
+      where: { blockerId_blockedId: { blockerId: myProfile.id, blockedId: blockedProfileId } },
+      create: { blockerId: myProfile.id, blockedId: blockedProfileId },
       update: {}
     });
 
-    // 2. Remove any existing Match
-    // Matches logic uses profile1Id < profile2Id
-    const [p1, p2] = [myProfile.id, targetId].sort();
-
-    // Deactivate/Delete Match
-    // We can delete or set isActive=false. Let's delete to be "never existed" or isActive=false to keep history.
-    // Schema has isActive. Let's use that.
+    // 2. Deactivate any existing match between users
+    const [p1, p2] = [myProfile.id, blockedProfileId].sort();
     await prisma.datingMatch.updateMany({
-      where: {
-        profile1Id: p1,
-        profile2Id: p2
-      },
-      data: {
-        isActive: false,
-        unmatchedBy: myProfile.id
-      }
+      where: { profile1Id: p1, profile2Id: p2 },
+      data: { isActive: false, unmatchedBy: myProfile.id }
     });
 
-    // 3. Remove Swipes (Optional, but cleaner)
+    // 3. Delete bilateral swipe records
     await prisma.datingSwipe.deleteMany({
       where: {
         OR: [
-          { swiperId: myProfile.id, targetId: targetId },
-          { swiperId: targetId, targetId: myProfile.id }
+          { swiperId: myProfile.id, targetId: blockedProfileId },
+          { swiperId: blockedProfileId, targetId: myProfile.id }
         ]
       }
     });
 
-    res.json({ message: "User blocked" });
-
+    res.json({ message: "User blocked." });
   } catch (err) {
     console.error("POST /api/dating/block error", err);
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * DELETE /api/dating/matches/:matchId
+ * Unmatch — deactivates the match record
+ */
+router.delete("/matches/:matchId", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { matchId } = req.params;
+
+    const myProfile = await prisma.datingProfile.findUnique({ where: { userId } });
+    if (!myProfile) return res.status(400).json({ error: "No dating profile found." });
+
+    // Verify this user is part of the match before allowing unmatch
+    const match = await prisma.datingMatch.findUnique({ where: { id: matchId } });
+    if (!match) return res.status(404).json({ error: "Match not found." });
+
+    const isParticipant = match.profile1Id === myProfile.id || match.profile2Id === myProfile.id;
+    if (!isParticipant) return res.status(403).json({ error: "Not authorized to unmatch this." });
+
+    await prisma.datingMatch.update({
+      where: { id: matchId },
+      data: { isActive: false, unmatchedBy: myProfile.id }
+    });
+
+    res.json({ message: "Unmatched successfully." });
+  } catch (err) {
+    console.error("DELETE /api/dating/matches/:matchId error", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * DELETE /api/dating/profile
+ * GDPR / App Store compliant account deletion.
+ * Deletes the dating profile + all associated data (photos, swipes, matches, blocks).
+ * Prisma onDelete: Cascade handles child records automatically.
+ * Clears the User.hasDatingProfile flag.
+ */
+router.delete("/profile", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const profile = await prisma.datingProfile.findUnique({ where: { userId } });
+    if (!profile) return res.status(404).json({ error: "Dating profile not found." });
+
+    // Delete dating profile — cascades to: DatingPhoto, DatingPreference,
+    // DatingSwipe (Swiper + Target), DatingMatch (profile1/profile2), DatingBlock
+    await prisma.datingProfile.delete({ where: { userId } });
+
+    // Clear hasDatingProfile flag on User
+    await prisma.user.update({
+      where: { id: userId },
+      data: { hasDatingProfile: false }
+    });
+
+    // Invalidate Redis bootstrap cache
+    if (req.redisClient) {
+      try {
+        await req.redisClient.del(`bootstrap:${userId}`);
+      } catch (cacheErr) {
+        console.warn('[Dating] Redis cache invalidation failed on delete:', cacheErr);
+      }
+    }
+
+    console.log(`[Dating] 🗑️ Profile deleted for user ${userId}`);
+    res.json({ message: "Dating profile permanently deleted." });
+  } catch (err) {
+    console.error("DELETE /api/dating/profile error", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * POST /api/dating/consent
+ * Log Terms of Service acceptance with version + timestamp.
+ * Stored in ModerationLog as an audit trail (no separate table needed).
+ */
+router.post("/consent", async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { tosVersion, agreedAt, platform } = req.body;
+
+    if (!tosVersion) {
+      return res.status(400).json({ error: "tosVersion is required." });
+    }
+
+    // Store consent as a system moderation log entry for audit trail
+    // We use action: "tos_consent" so it can be queried by admins
+    await prisma.moderationLog.create({
+      data: {
+        action: 'tos_consent',
+        targetType: 'user',
+        targetId: userId,
+        moderatorId: userId, // Self-action — same ID in both fields
+        reason: `Dating ToS v${tosVersion} accepted`,
+        details: {
+          tosVersion,
+          agreedAt: agreedAt || new Date().toISOString(),
+          platform: platform || 'unknown',
+          ip: req.ip || null,
+        },
+        userId,
+      }
+    });
+
+    res.json({ message: "Consent recorded." });
+  } catch (err) {
+    console.error("POST /api/dating/consent error", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * GET /api/dating/verification/status
+ * Returns the latest verification request for the user.
+ * Used by the client to show pending/rejected state and enforce rate limiting.
+ */
+router.get("/verification/status", async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const latest = await prisma.verificationRequest.findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      include: { pose: { select: { name: true } } }
+    });
+
+    if (!latest) return res.json({ status: 'NONE' });
+
+    res.json({
+      status: latest.status,
+      adminNote: latest.adminNote || null,
+      submittedAt: latest.createdAt,
+      poseName: latest.pose?.name || null,
+    });
+  } catch (err) {
+    console.error('GET /api/dating/verification/status error', err);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

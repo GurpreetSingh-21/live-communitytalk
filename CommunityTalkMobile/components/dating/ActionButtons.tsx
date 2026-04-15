@@ -10,10 +10,9 @@ interface ActionButtonsProps {
     onNope: () => void;
     onLike: () => void;
     onSuperLike: () => void;
-    onBoost: () => void;
 }
 
-export default function ActionButtons({ onNope, onLike, onSuperLike, onBoost }: ActionButtonsProps) {
+export default function ActionButtons({ onNope, onLike, onSuperLike }: ActionButtonsProps) {
     return (
         <View style={styles.floatingContainer}>
             <BlurView intensity={0} tint="light" style={styles.blurContainer}>
@@ -35,23 +34,13 @@ export default function ActionButtons({ onNope, onLike, onSuperLike, onBoost }: 
                     delay={100}
                 />
 
-                {/* BOOST */}
-                <ActionButton
-                    icon="flash"
-                    color="#A537FD"
-                    size={20}
-                    small
-                    onPress={onBoost}
-                    delay={200}
-                />
-
                 {/* LIKE */}
                 <ActionButton
                     icon="heart"
                     color="#4CE0B3"
                     size={28}
                     onPress={onLike}
-                    delay={300}
+                    delay={200}
                     highlight
                 />
             </BlurView>

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
-import DatingAPI from '@/src/api/dating';
+import DatingAPI, { ReportReason } from '@/src/api/dating';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
+const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/thumbs/png?seed=campustry';
 
 type Match = {
     matchId: string;
@@ -54,14 +55,65 @@ export default function MatchesList() {
 
     const openChat = (userId: string, name: string) => {
         router.push({
-            pathname: "/dm/[id]",
+            pathname: '/dm/[id]',
             params: { id: userId, name: name, type: 'dating' }
         });
     };
 
+    const handleUnmatch = (matchId: string, name: string) => {
+        Alert.alert(
+            `Unmatch ${name}?`,
+            'This will remove the match and delete all messages between you. This cannot be undone.',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Unmatch',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await DatingAPI.unmatch(matchId);
+                            setMatches(prev => prev.filter(m => m.matchId !== matchId));
+                        } catch {
+                            Alert.alert('Error', 'Failed to unmatch. Please try again.');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleReportMatch = (userId: string, name: string) => {
+        const reasons: { label: string; value: ReportReason }[] = [
+            { label: 'Fake Profile or Impersonation', value: 'FAKE_PROFILE' },
+            { label: 'Inappropriate Messages', value: 'HARASSMENT' },
+            { label: 'Spam or Scam', value: 'SPAM' },
+            { label: 'Appears to Be Underage', value: 'UNDERAGE' },
+            { label: 'Hate Speech', value: 'HATE_SPEECH' },
+            { label: 'Other', value: 'OTHER' },
+        ];
+        Alert.alert(
+            `Report ${name}`,
+            'Select a reason:',
+            [
+                ...reasons.map(r => ({
+                    text: r.label,
+                    onPress: async () => {
+                        try {
+                            await DatingAPI.reportProfile(userId, r.value);
+                            Alert.alert('Report Submitted', 'Our team will review this within 24 hours.');
+                        } catch {
+                            Alert.alert('Error', 'Failed to submit report.');
+                        }
+                    },
+                })),
+                { text: 'Cancel', style: 'cancel' },
+            ]
+        );
+    };
+
     const renderThread = ({ item }: { item: Thread }) => (
         <TouchableOpacity style={styles.matchItem} onPress={() => openChat(item.partnerId, item.partnerName)}>
-            <Image source={{ uri: item.avatar || 'https://via.placeholder.com/150' }} style={styles.avatar} />
+            <Image source={{ uri: item.avatar || DEFAULT_AVATAR }} style={styles.avatar} />
             <View style={styles.info}>
                 <View style={styles.row}>
                     <Text style={styles.name}>{item.partnerName}</Text>
@@ -70,7 +122,7 @@ export default function MatchesList() {
                     )}
                 </View>
                 <Text style={[styles.messagePreview, item.unread > 0 && styles.unreadText]} numberOfLines={1}>
-                    {item.lastMessage || "Start a conversation"}
+                    {item.lastMessage || 'Start a conversation'}
                 </Text>
             </View>
             {item.unread > 0 && (
@@ -107,9 +159,25 @@ export default function MatchesList() {
                 <>
                     <Text style={styles.header}>New Matches</Text>
                     <View style={styles.newMatchesRow}>
-                        {matches.slice(0, 10).map(m => ( // Show top 10
-                            <TouchableOpacity key={m.matchId} style={styles.bubble} onPress={() => openChat(m.userId, m.firstName)}>
-                                <Image source={{ uri: m.photo || 'https://via.placeholder.com/150' }} style={styles.bubbleImage} />
+                        {matches.slice(0, 10).map(m => (
+                            <TouchableOpacity
+                                key={m.matchId}
+                                style={styles.bubble}
+                                onPress={() => openChat(m.userId, m.firstName)}
+                                onLongPress={() =>
+                                    Alert.alert(
+                                        m.firstName,
+                                        'What would you like to do?',
+                                        [
+                                            { text: 'Send Message', onPress: () => openChat(m.userId, m.firstName) },
+                                            { text: 'Unmatch', style: 'destructive', onPress: () => handleUnmatch(m.matchId, m.firstName) },
+                                            { text: 'Report', style: 'destructive', onPress: () => handleReportMatch(m.partnerId, m.firstName) },
+                                            { text: 'Cancel', style: 'cancel' },
+                                        ]
+                                    )
+                                }
+                            >
+                                <Image source={{ uri: m.photo || DEFAULT_AVATAR }} style={styles.bubbleImage} />
                                 <Text style={styles.bubbleName} numberOfLines={1}>{m.firstName}</Text>
                             </TouchableOpacity>
                         ))}
