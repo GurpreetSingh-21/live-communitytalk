@@ -50,7 +50,7 @@ export default function VerificationScreen() {
 
             // Fetch current verification status from profile
             const profile = await DatingAPI.getMyProfile();
-            if (profile?.isPhotoVerified) {
+            if (profile?.isVerified) {
                 setVerificationStatus('APPROVED');
                 setLoading(false);
                 return;
