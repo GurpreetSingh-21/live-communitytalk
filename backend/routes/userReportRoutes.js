@@ -31,7 +31,8 @@ async function checkAndAutoBan(reportedUserId, threshold) {
                 where: { id: reportedUserId },
                 data: { 
                     isPermanentlyDeleted: true, 
-                    isActive: false // Deactivate account immediately
+                    isActive: false, // Deactivate account immediately
+                    accountStatus: 'BANNED'
                 }
             });
             

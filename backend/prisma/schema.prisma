@@ -31,10 +31,13 @@ model User {
   e2eeBundleUpdatedAt    DateTime?
 
   // Account Status
-  emailVerified    Boolean @default(false)
-  role             Role    @default(user) // user, mod, admin
-  isActive         Boolean @default(true)
-  verificationCode String?
+  emailVerified             Boolean @default(false)
+  role                      Role    @default(user) // user, mod, admin
+  isActive                  Boolean @default(true)
+  verificationCode          String?
+  verificationCodeExpires   DateTime?
+  verificationCodeAttempts  Int     @default(0)
+  tokenVersion              Int     @default(0)
 
   // Moderation & Safety
   reportsReceivedCount Int           @default(0)
@@ -54,6 +57,9 @@ model User {
   
   // Rate Limiting (JSON for flexibility)
   rateLimits           Json?
+
+  // Devices
+  trustedDevices       TrustedDevice[]
 
   // College & Religion Scope
   collegeName String?
@@ -793,4 +799,20 @@ model ModerationLog {
   @@index([moderatorId])
   @@index([createdAt])
   @@map("moderation_logs")
+}
+
+// ───────────────────────── Security & Device Tracking ─────────────────────────
+model TrustedDevice {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceId    String
+  deviceModel String?
+  ipAddress   String?
+  lastLoginAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("trusted_devices")
 }

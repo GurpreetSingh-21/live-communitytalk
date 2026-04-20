@@ -60,10 +60,20 @@ router.post('/login', async (req, res) => {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
 
+        if (user.twoFactorEnabled) {
+            const tempToken = jwt.sign(
+                { id: user.id, temp2FA: true },
+                process.env.MY_SECRET_KEY,
+                { expiresIn: '10m' }
+            );
+            return res.status(200).json({ requires2FA: true, tempToken, message: "Please enter your 2FA code" });
+        }
+
         const payload = {
             id: user.id,
             email: user.email,
-            role: user.role
+            role: user.role,
+            tokenVersion: user.tokenVersion
         };
 
         jwt.sign(

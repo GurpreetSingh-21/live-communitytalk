@@ -7,7 +7,7 @@ const speakeasy = require("speakeasy");
 
 const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
-const { sendVerificationEmail } = require("../services/emailService");
+const { sendVerificationEmail, sendNewDeviceEmail } = require("../services/emailService");
 
 require("dotenv").config();
 
@@ -23,9 +23,9 @@ const normalizeEmail = (email) => String(email || "").trim().toLowerCase();
 
 const signToken = (user) =>
   jwt.sign(
-    { id: user.id, email: user.email, fullName: user.fullName },
+    { id: user.id, email: user.email, fullName: user.fullName, tokenVersion: user.tokenVersion },
     JWT_SECRET,
-    { expiresIn: "14d" }
+    { expiresIn: "1d" }
   );
 
 // Updated to accept Prisma Transaction Client (tx)
@@ -165,21 +165,8 @@ router.post("/register", async (req, res) => {
             where: { id: exists.id },
             data: {
               verificationCode,
-              // verificationCodeExpires is not in schema? Let's check schema.
-              // Wait, previous file checks showed 'verificationCode'.
-              // I need to be sure 'verificationCodeExpires' is in schema or if I missed it.
-              // Assuming I missed it or Mongoose had it. 
-              // Prisma schema has `verificationCode String?`. Does it have expires?
-              // The schema view earlier showed:
-              //   verificationCode String?
-              // It did NOT show `verificationCodeExpires`.
-              // I MUST ADD IT TO SCHEMA if I want to support expiry.
-              // For now, I'll skip setting it or treat verificationCode as enough (or store JSON metadata?)
-              // The schema DOES have generic JSON preferences, but specific fields are better.
-              // Let's assume I need to add it, but for this step I will comment it out or store in JSON if urgent.
-              // Actually, I should just fix the schema.
-              // But let's verify if I can just skip it for now to avoid another migration loop in this turn.
-              // I'll skip setting expiry column for now and just rely on time logic or add it later.
+              verificationCodeExpires: expires,
+              verificationCodeAttempts: 0
             }
           });
 
@@ -195,7 +182,7 @@ router.post("/register", async (req, res) => {
         // New user
         const hash = await bcrypt.hash(password, 10);
         verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-        // const verificationCodeExpires = ... (Schema missing this field)
+        const verificationCodeExpires = new Date(Date.now() + 3600000); // 1 hour
 
         const created = await tx.user.create({
           data: {
@@ -204,6 +191,9 @@ router.post("/register", async (req, res) => {
             password: hash,
             role: "user",
             verificationCode,
+            verificationCodeExpires,
+            verificationCodeAttempts: 0,
+            tokenVersion: 1,
             emailVerified: false,
             collegeName: collegeDoc.name,
             collegeSlug: collegeDoc.key,
@@ -257,6 +247,8 @@ router.post("/login", async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
+    const deviceId = req.body?.deviceId;
+    const deviceModel = req.body?.deviceModel;
 
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password are required" });
@@ -271,6 +263,10 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
+    if (user.accountStatus === 'BANNED' || user.isActive === false || user.isPermanentlyDeleted) {
+      return res.status(403).json({ error: "Account Banned" });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({ error: "Invalid email or password" });
@@ -282,6 +278,45 @@ router.post("/login", async (req, res) => {
           "Please verify your email to log in. Check your inbox for a 6-digit code.",
         code: "EMAIL_NOT_VERIFIED",
       });
+    }
+
+    // ✅ DEVICE FINGERPRINTING CHALLENGE
+    if (deviceId) {
+      const knownDevice = await prisma.trustedDevice.findUnique({
+        where: { userId_deviceId: { userId: user.id, deviceId } }
+      });
+
+      if (!knownDevice) {
+        // Unknown device! Trigger Device Challenge OTP
+        const crypto = require("crypto");
+        const verificationCode = crypto.randomInt(100000, 999999).toString();
+        const verificationCodeExpires = new Date(Date.now() + 3600000); // 1 hr
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { verificationCode, verificationCodeExpires, verificationCodeAttempts: 0 }
+        });
+
+        await sendNewDeviceEmail(user.email, deviceModel, verificationCode);
+
+        const tempDeviceToken = jwt.sign(
+          { id: user.id, deviceId, deviceModel, pendingDevice: true },
+          JWT_SECRET,
+          { expiresIn: "10m" }
+        );
+
+        return res.status(200).json({
+          requiresDeviceVerification: true,
+          tempToken: tempDeviceToken,
+          message: "New device detected. Please check your email for the verification code."
+        });
+      } else {
+        // Known device, update last login
+        await prisma.trustedDevice.update({
+          where: { id: knownDevice.id },
+          data: { lastLoginAt: new Date(), ipAddress: req.ip }
+        });
+      }
     }
 
     // ✅ Check if 2FA is enabled
@@ -369,6 +404,10 @@ router.post("/verify-2fa-login", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    if (user.accountStatus === 'BANNED' || user.isActive === false || user.isPermanentlyDeleted) {
+      return res.status(403).json({ error: "Account Banned" });
+    }
+
     if (!user.twoFactorEnabled) {
       return res.status(400).json({ error: "2FA is not enabled for this account" });
     }
@@ -448,7 +487,7 @@ router.post("/verify-2fa-login", async (req, res) => {
 /* -------------------------- VERIFY CODE -------------------------- */
 router.post("/verify-code", async (req, res) => {
   try {
-    const { email, code } = req.body;
+    const { email, code, deviceId, deviceModel } = req.body;
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail || !code) {
@@ -467,20 +506,39 @@ router.post("/verify-code", async (req, res) => {
       return res.status(400).json({ error: "Email is already verified." });
     }
 
-    if (!user.verificationCode || user.verificationCode !== code) {
-      return res.status(400).json({ error: "Invalid verification code." });
+    if (user.verificationCodeAttempts >= 5) {
+      return res.status(400).json({ error: "Max attempts reached. Request a new code." });
     }
 
-    // TODO: Add verificationCodeExpires check if added to schema
-    // if (user.verificationCodeExpires < new Date()) ...
+    if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
+      return res.status(400).json({ error: "Verification code has expired." });
+    }
+
+    if (!user.verificationCode || user.verificationCode !== code) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { verificationCodeAttempts: { increment: 1 } }
+      });
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
 
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
         emailVerified: true,
         verificationCode: null,
+        verificationCodeExpires: null,
+        verificationCodeAttempts: 0,
       }
     });
+
+    if (deviceId) {
+      await prisma.trustedDevice.upsert({
+        where: { userId_deviceId: { userId: user.id, deviceId } },
+        update: { lastLoginAt: new Date(), ipAddress: req.ip },
+        create: { userId: user.id, deviceId, deviceModel, ipAddress: req.ip }
+      });
+    }
 
     const token = signToken(updatedUser);
 
@@ -962,6 +1020,112 @@ router.get("/my/communities", authenticate, async (req, res) => {
   } catch (err) {
     console.error("GET /my/communities error:", err);
     res.status(500).json({ error: "Server Error" });
+  }
+});
+/* -------------------------- LOGOUT -------------------------- */
+router.post("/logout", authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // Increment the user's tokenVersion to invalidate existing tokens
+    await prisma.user.update({
+      where: { id: userId },
+      data: { tokenVersion: { increment: 1 } }
+    });
+    
+    return res.status(200).json({ message: "Successfully logged out across all devices" });
+  } catch (err) {
+    console.error("POST /logout error:", err);
+    return res.status(500).json({ error: "Internal server error" });
+  }
+});
+/* -------------------- VERIFY NEW DEVICE -------------------- */
+router.post("/verify-new-device", async (req, res) => {
+  try {
+    const { tempToken, code } = req.body;
+    if (!tempToken || !code) return res.status(400).json({ error: "Token and code are required." });
+
+    const decoded = jwt.verify(tempToken, JWT_SECRET);
+    if (!decoded.pendingDevice) {
+      return res.status(400).json({ error: "Invalid token type." });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: decoded.id } });
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    if (user.verificationCodeAttempts >= 5) {
+      return res.status(400).json({ error: "Max attempts reached. Please request a new code." });
+    }
+
+    if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
+      return res.status(400).json({ error: "Verification code expired. Please log in again." });
+    }
+
+    if (!user.verificationCode || user.verificationCode !== code) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { verificationCodeAttempts: { increment: 1 } }
+      });
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
+
+    // Clear verification flags and trust the device
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          verificationCode: null,
+          verificationCodeExpires: null,
+          verificationCodeAttempts: 0
+        }
+      }),
+      prisma.trustedDevice.upsert({
+        where: { userId_deviceId: { userId: user.id, deviceId: decoded.deviceId } },
+        update: { lastLoginAt: new Date(), ipAddress: req.ip },
+        create: {
+          userId: user.id,
+          deviceId: decoded.deviceId,
+          deviceModel: decoded.deviceModel,
+          ipAddress: req.ip
+        }
+      })
+    ]);
+
+    // Issue real login session (or pass to 2FA layer)
+    if (user.twoFactorEnabled) {
+      const temp2FAToken = jwt.sign(
+        { id: user.id, temp2FA: true },
+        JWT_SECRET,
+        { expiresIn: "10m" }
+      );
+      return res.status(200).json({
+        requires2FA: true,
+        tempToken: temp2FAToken,
+        message: "Device trusted. Please enter your 2FA app code."
+      });
+    }
+
+    const token = signToken(user);
+    
+    // Quick load communities for frontend
+    const memberships = await prisma.member.findMany({
+      where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
+      include: { community: { select: { id: true, name: true, type: true, key: true } } }
+    });
+    const communities = memberships.map(m => m.community).filter(Boolean);
+
+    return res.status(200).json({
+      message: "Device trusted and login successful",
+      token,
+      user: {
+        _id: user.id, id: user.id, fullName: user.fullName, email: user.email, avatar: user.avatar,
+        role: user.role, isActive: user.isActive, profileVerified: user.profileVerified,
+        collegeSlug: user.collegeSlug, religionKey: user.religionKey, hasDatingProfile: user.hasDatingProfile,
+        adminPass: user.role === "admin", communities
+      }
+    });
+  } catch (err) {
+    if (err.name === "TokenExpiredError") return res.status(401).json({ error: "Session expired. Log in again." });
+    return res.status(401).json({ error: "Invalid token or error: " + err.message });
   }
 });
 
