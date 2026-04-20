@@ -132,6 +132,17 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ error: "User not found", code: "USER_NOT_FOUND" });
     }
 
+    if (userDoc.accountStatus === 'BANNED' || userDoc.isActive === false || userDoc.isPermanentlyDeleted) {
+      return res.status(403).json({ error: "Account Banned", code: "USER_BANNED" });
+    }
+
+    // Ignore tokenVersion check for temp tokens used in 2FA (they don't have tokenVersion)
+    if (!decoded.temp2FA && decoded.tokenVersion !== undefined) {
+      if (decoded.tokenVersion !== userDoc.tokenVersion) {
+        return res.status(401).json({ error: "Session expired. Please log in again.", code: "TOKEN_EXPIRED" });
+      }
+    }
+
     // Shape the user object that routes expect
     const user = {
       id: userDoc.id,

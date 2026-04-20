@@ -4,6 +4,7 @@ const router = express.Router();
 const speakeasy = require("speakeasy");
 const QRCode = require("qrcode");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 
 const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
@@ -96,7 +97,7 @@ router.post("/verify-setup", async (req, res) => {
     // Generate backup codes
     const backupCodes = [];
     for (let i = 0; i < 10; i++) {
-      const c = Math.random().toString(36).substring(2, 10).toUpperCase();
+      const c = crypto.randomBytes(4).toString('hex').toUpperCase();
       backupCodes.push(c);
     }
 
@@ -199,7 +200,7 @@ router.post("/backup-codes", async (req, res) => {
     // Generate new backup codes
     const backupCodes = [];
     for (let i = 0; i < 10; i++) {
-        const c = Math.random().toString(36).substring(2, 10).toUpperCase();
+        const c = crypto.randomBytes(4).toString('hex').toUpperCase();
         backupCodes.push(c);
     }
 
