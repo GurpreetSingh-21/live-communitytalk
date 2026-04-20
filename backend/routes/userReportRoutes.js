@@ -75,9 +75,7 @@ router.post("/user", authenticate, async (req, res) => {
             where: {
                 reporterId: reporterId,
                 reportedId: reportedUserId,
-                status: 'pending' // Only check active requests? Or all?
-                // Mongoose logic probably had index on (reporter, reported).
-                // Let's assume we want to prevent duplicate PENDING reports.
+                status: 'PENDING' // Only block duplicate PENDING reports
             }
         });
         
@@ -91,7 +89,7 @@ router.post("/user", authenticate, async (req, res) => {
                 reporterId: reporterId,
                 reportedId: reportedUserId,
                 reason: String(reason).trim().substring(0, 255), // Truncate reason for safety
-                status: 'pending',
+                status: 'PENDING',
                 targetType: 'user',
                 targetId: reportedUserId
             }
@@ -123,7 +121,7 @@ router.patch("/admin/:userId/resolve", authenticate, requireAdmin, async (req, r
     try {
         // Find all reports against this user that are currently 'pending' and update their status
         const result = await prisma.report.updateMany({
-            where: { reportedId: userId, status: 'pending' },
+            where: { reportedId: userId, status: 'PENDING' },
             data: { status: 'resolved' }
         });
 
