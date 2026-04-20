@@ -91,6 +91,17 @@ router.post("/profile", async (req, res) => {
       }
     }
 
+    // 🔒 F-25: Server-side 18+ age validation (client-side check is not enough)
+    if (birthDate) {
+      const birth = new Date(birthDate);
+      const now   = new Date();
+      const age   = now.getFullYear() - birth.getFullYear() -
+        (now < new Date(now.getFullYear(), birth.getMonth(), birth.getDate()) ? 1 : 0);
+      if (age < 18) {
+        return res.status(400).json({ error: "You must be at least 18 years old to use dating features." });
+      }
+    }
+
     // 3. Transaction to handle Profile + Preferences + Photos
     const result = await prisma.$transaction(async (tx) => {
       let profile;
@@ -301,20 +312,21 @@ router.get("/pool", async (req, res) => {
       return age;
     };
 
-    // Transform response to match frontend expectations
+    // Transform response — explicit allowlist only (F-18: no userId, F-25: no birthDate, F-31: no lat/lng)
     const transformed = candidates.map(profile => ({
-      id: profile.id,
-      userId: profile.userId,
-      firstName: profile.firstName,
-      age: calculateAge(profile.birthDate),
-      gender: profile.gender,
-      bio: profile.bio || '',
-      major: profile.major || 'Undecided',
-      year: profile.year || 'FRESHMAN',
+      id:          profile.id,
+      // 🔒 userId intentionally omitted — prevents linking anonymous dating identity to main account
+      firstName:   profile.firstName,
+      age:         calculateAge(profile.birthDate), // computed age only, not raw birthDate
+      gender:      profile.gender,
+      bio:         profile.bio || '',
+      major:       profile.major || 'Undecided',
+      year:        profile.year || 'FRESHMAN',
       collegeSlug: profile.collegeSlug,
-      collegeName: 'Queens College', // TODO: Map from collegeSlug
-      hobbies: profile.hobbies || [],
-      photos: profile.photos.map(p => p.url),
+      collegeName: 'Queens College',
+      hobbies:     profile.hobbies || [],
+      photos:      profile.photos.map(p => p.url),
+      // 🔒 birthDate, lat, lng, userId intentionally omitted
     }));
 
     // Shuffle results

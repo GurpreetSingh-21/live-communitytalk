@@ -630,10 +630,23 @@ router.get("/bootstrap", authenticate, async (req, res) => {
     const responseData = {
       message: "Bootstrap successful",
       user: {
-        ...user,
-        _id: user.id, // back-compat
-        hasDatingProfile: hasProfile,
-        datingProfileId: datingProfileId
+        _id:              user.id,
+        id:               user.id,
+        email:            user.email,
+        fullName:         user.fullName,
+        avatar:           user.avatar       || null,
+        role:             user.role         || 'user',
+        collegeSlug:      user.collegeSlug  || null,
+        religionKey:      user.religionKey  || null,
+        emailVerified:    user.emailVerified,
+        twoFactorEnabled: user.twoFactorEnabled,
+        allowDMsFromOthers: user.allowDMsFromOthers ?? true,
+        showOnlineStatus:   user.showOnlineStatus   ?? true,
+        hasDatingProfile:   hasProfile,
+        datingProfileId:    datingProfileId,
+        createdAt:          user.createdAt,
+        // 🔒 NEVER include: password, twoFactorSecret, twoFactorBackupCodes,
+        //    verificationCode, verificationCodeExpires, tokenVersion, isPermanentlyDeleted
       },
       communities,
     };
@@ -682,12 +695,23 @@ router.get("/profile", authenticate, async (req, res) => {
     return res.status(200).json({
       message: "Welcome to your profile!",
       user: {
-        ...user,
-        _id: user.id // back-compat
+        _id:              user.id,
+        id:               user.id,
+        email:            user.email,
+        fullName:         user.fullName,
+        avatar:           user.avatar       || null,
+        role:             user.role         || 'user',
+        collegeSlug:      user.collegeSlug  || null,
+        religionKey:      user.religionKey  || null,
+        emailVerified:    user.emailVerified,
+        twoFactorEnabled: user.twoFactorEnabled,
+        allowDMsFromOthers: user.allowDMsFromOthers ?? true,
+        showOnlineStatus:   user.showOnlineStatus   ?? true,
+        hasDatingProfile:   user.hasDatingProfile   || false,
+        datingProfileId:    user.datingProfileId    || null,
+        createdAt:          user.createdAt,
       },
       communities,
-      iat: req.user.iat,
-      exp: req.user.exp,
     });
   } catch (err) {
     console.error("GET /profile error:", err);
@@ -784,7 +808,23 @@ router.patch("/profile", authenticate, async (req, res) => {
 
     return res.status(200).json({
       message: "Profile updated",
-      user: { ...user, _id: user.id },
+      user: {
+        _id:              user.id,
+        id:               user.id,
+        email:            user.email,
+        fullName:         user.fullName,
+        avatar:           user.avatar       || null,
+        role:             user.role         || 'user',
+        collegeSlug:      user.collegeSlug  || null,
+        religionKey:      user.religionKey  || null,
+        emailVerified:    user.emailVerified,
+        twoFactorEnabled: user.twoFactorEnabled,
+        allowDMsFromOthers: user.allowDMsFromOthers ?? true,
+        showOnlineStatus:   user.showOnlineStatus   ?? true,
+        hasDatingProfile:   user.hasDatingProfile   || false,
+        datingProfileId:    user.datingProfileId    || null,
+        createdAt:          user.createdAt,
+      },
       communities,
     });
   } catch (err) {
@@ -954,39 +994,7 @@ router.put("/notification-prefs", authenticate, async (req, res) => {
   }
 });
 
-/* ------------------------------- BOOTSTRAP ------------------------------- */
-router.get("/bootstrap", authenticate, async (req, res) => {
-  try {
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id }
-    });
 
-    if (!user) return res.status(404).json({ error: "User not found" });
-
-    // Fetch communities via Memberships
-    const memberships = await prisma.member.findMany({
-      where: { userId: user.id, memberStatus: { in: ["active", "owner"] } },
-      select: { communityId: true },
-    });
-    const communityIds = memberships.map(m => m.communityId);
-
-    let communities = [];
-    if (communityIds.length > 0) {
-      communities = await prisma.community.findMany({
-        where: { id: { in: communityIds } },
-        select: { id: true, name: true, type: true, key: true, createdAt: true, updatedAt: true },
-      });
-    }
-
-    return res.status(200).json({
-      user: { ...user, _id: user.id },
-      communities
-    });
-  } catch (err) {
-    console.error("GET /bootstrap error:", err);
-    return res.status(500).json({ error: "Internal server error" });
-  }
-});
 
 /* ------------------------------- MY COMMUNITIES -------------------------- */
 router.get("/my/communities", authenticate, async (req, res) => {

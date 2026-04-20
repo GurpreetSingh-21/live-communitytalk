@@ -12,6 +12,14 @@ if (!process.env.RESEND_API_KEY) {
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// 🔒 F-46: Mask email for logs — never log full PII to stdout/CloudWatch
+function maskEmail(email) {
+  if (typeof email !== 'string' || !email.includes('@')) return '***';
+  const [local, domain] = email.split('@');
+  const visible = local.slice(0, 2);
+  return `${visible}${'*'.repeat(Math.max(2, local.length - 2))}@${domain}`;
+}
+
 /**
  * Sends a verification email to a new user using Resend.
  * @param {string} userEmail - The new user's email address.
@@ -19,7 +27,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
  */
 async function sendVerificationEmail(userEmail, verificationCode) {
   try {
-    console.log(`📧 [Email] Attempting to send verification code to ${userEmail}...`);
+    console.log(`📧 [Email] Sending verification code to ${maskEmail(userEmail)}...`);
     
     const { data, error } = await resend.emails.send({
       from: 'CommunityTalk <noreply@debugdragons.com>',
@@ -44,11 +52,9 @@ async function sendVerificationEmail(userEmail, verificationCode) {
       throw error;
     }
 
-    console.log(`✅ [Email] Verification code sent successfully to ${userEmail}`, {
-      id: data.id
-    });
+    console.log(`✅ [Email] Verification code sent to ${maskEmail(userEmail)}`, { id: data.id });
   } catch (error) {
-    console.error(`❌ [Email] FAILED to send verification code to ${userEmail}`);
+    console.error(`❌ [Email] FAILED to send verification code to ${maskEmail(userEmail)}`);
     
     // Log the entire error object as JSON to see everything
     console.error(`❌ [Email] Full error object:`, JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
@@ -72,7 +78,7 @@ async function sendVerificationEmail(userEmail, verificationCode) {
  */
 async function sendNewDeviceEmail(userEmail, deviceModel, verificationCode) {
   try {
-    console.log(`📧 [Email] Sending New Device Verification to ${userEmail}...`);
+    console.log(`📧 [Email] Sending New Device Verification to ${maskEmail(userEmail)}...`);
     
     const { data, error } = await resend.emails.send({
       from: 'CommunityTalk Security <noreply@debugdragons.com>',
@@ -98,9 +104,9 @@ async function sendNewDeviceEmail(userEmail, deviceModel, verificationCode) {
       throw error;
     }
 
-    console.log(`✅ [Email] New device code sent successfully to ${userEmail}`, { id: data.id });
+    console.log(`✅ [Email] New device code sent to ${maskEmail(userEmail)}`, { id: data.id });
   } catch (error) {
-    console.error(`❌ [Email] FAILED to send new device code to ${userEmail}`, error);
+    console.error(`❌ [Email] FAILED to send new device code to ${maskEmail(userEmail)}`, error.message);
     throw new Error(`Failed to send verification email: ${error.message}`);
   }
 }
