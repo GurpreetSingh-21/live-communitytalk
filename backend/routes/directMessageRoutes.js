@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
+const { deleteCloudinaryAsset } = require("../services/CloudinaryHelper");
 
 router.use(authenticate);
 
@@ -169,7 +170,9 @@ router.get("/", async (req, res) => {
 
     // Filter by search query if present
     if (q) {
-      const rx = new RegExp(q, "i");
+      // F-38: Safe Regex (ReDoS mitigation)
+      const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(escapeRegExp(q), "i");
       normalized = normalized.filter(h =>
         rx.test(h.fullName) || rx.test(h.email)
       );
@@ -280,13 +283,11 @@ const handleSend = async (req, res) => {
     const from = req.user.id;
     const to = req.params.id || req.body.to;
 
-    // 🛡️ SAFETY: Rate Limit
-    // Use a shared rate limiter import
-    const RateLimiter = require('../services/RateLimiter');
-    const ALLOWED_RATE = RateLimiter.checkLimit(from, 'send_dm', 15, 60 * 1000); // 15 per min
-    if (!ALLOWED_RATE) {
-      return res.status(429).json({ error: "You are sending messages too fast. Please slow down." });
-    }
+    // 🛡️ SAFETY: Rate Limit - F-13: Moved to Redis across DB instances
+    const dmKey = `ratelimit:dm:${from}`;
+    const count = await req.redisClient.incr(dmKey);
+    if (count === 1) await req.redisClient.expire(dmKey, 60); // 1-min window
+    if (count > 15) return res.status(429).json({ error: "You are sending messages too fast. Please slow down." });
 
     // 🛡️ SAFETY: Spam Repetition
     const ALLOWED_CONTENT = RateLimiter.checkRepetition(from, req.body.content || "", 3);
@@ -295,10 +296,30 @@ const handleSend = async (req, res) => {
     }
 
     if (!to) return res.status(400).json({ error: "Invalid recipient id" });
-    if (String(to) === String(from))
-      return res.status(400).json({ error: "Cannot message yourself" });
+    if (String(to) === String(from)) return res.status(400).json({ error: "Cannot message yourself" });
 
-    let {
+    // F-23: Privacy validation - don't allow DMs if recipient disabled it
+    const recipient = await prisma.user.findUnique({
+      where: { id: to }, select: { privacyPrefs: true, collegeSlug: true }
+    });
+    if (!recipient) return res.status(404).json({ error: "Recipient not found" });
+
+    if (recipient.privacyPrefs) {
+      let prefs = recipient.privacyPrefs;
+      if (typeof prefs === 'string') {
+        try { prefs = JSON.parse(prefs); } catch (e) { prefs = {}; }
+      }
+      if (prefs && prefs.allowDMsFromOthers === false) {
+        if (prefs.allowDMsFromSameCollege) {
+          const sender = await prisma.user.findUnique({ where: { id: from }, select: { collegeSlug: true } });
+          if (sender.collegeSlug !== recipient.collegeSlug) {
+            return res.status(403).json({ error: "This user is not accepting messages from you." });
+          }
+        } else {
+          return res.status(403).json({ error: "This user is not accepting direct messages." });
+        }
+      }
+    }    let {
       content = "",
       attachments = [],
       type = "text",
@@ -401,7 +422,10 @@ router.patch("/:memberId/read", async (req, res) => {
       }
     });
 
-    req.io?.to(String(them)).emit("dm_read", { by: String(me) });
+    // F-39: Only emit if result.count > 0
+    if (result.count > 0) {
+      req.io?.to(String(them)).emit("dm_read", { by: String(me) });
+    }
     return res.json({ updated: result.count || 0 });
   } catch (err) {
     console.error("[DM Routes] READ error:", err);
@@ -428,6 +452,29 @@ router.delete("/:partnerId", async (req, res) => {
     // Soft delete all messages in the conversation (both directions)
     // Delete messages where:
     // - (fromId = me AND toId = partnerId) OR (fromId = partnerId AND toId = me)
+
+    // F-19: Delete files from Cloudinary when conversation is deleted
+    const messagesToDelete = await prisma.directMessage.findMany({
+      where: {
+        OR: [
+          { fromId: me, toId: partnerId },
+          { fromId: partnerId, toId: me }
+        ],
+        isDeleted: false
+      },
+      select: { attachments: true }
+    });
+
+    for (const msg of messagesToDelete) {
+      if (msg.attachments && Array.isArray(msg.attachments)) {
+        for (const attachment of msg.attachments) {
+          if (attachment && attachment.url) {
+            await deleteCloudinaryAsset(attachment.url);
+          }
+        }
+      }
+    }
+
     const result = await prisma.directMessage.updateMany({
       where: {
         OR: [
@@ -448,9 +495,20 @@ router.delete("/:partnerId", async (req, res) => {
       const cacheKey1 = `dm_inbox:${me}`;
       const cacheKey2 = `dm_inbox:${partnerId}`;
       try {
-        await req.redisClient.del(cacheKey1);
-        await req.redisClient.del(cacheKey2);
-        console.log(`[DM Routes] 🧹 Invalidated inbox cache for both users`);
+        await req.redisClient.del(cacheKey1, cacheKey2);
+
+        // F-15: Invalidate message cache explicitly with SCAN instead of KEYS
+        const patterns = [`dm:messages:${me}:${partnerId}:*`, `dm:messages:${partnerId}:${me}:*`];
+        for (const pattern of patterns) {
+          let cursor = '0';
+          do {
+            const [nextCursor, keys] = await req.redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+            cursor = nextCursor;
+            if (keys.length > 0) await req.redisClient.del(...keys);
+          } while (cursor !== '0');
+        }
+
+        console.log(`[DM Routes] 🧹 Invalidated inbox and message caches for both users`);
       } catch (cacheErr) {
         console.warn('[DM Routes] Cache invalidation failed:', cacheErr);
       }

@@ -26,6 +26,26 @@ const toId = (v) => (v == null ? "" : String(v));
 /* ───────────────────────── Core API ───────────────────────── */
 
 /**
+ * F-14: Clear all presence keys. Run on server startup to fix ghost-online users.
+ */
+async function reset() {
+  if (!redis) return;
+  try {
+    const pattern = "presence:*";
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      if (keys.length > 0) await redis.del(...keys);
+    } while (cursor !== '0');
+    console.log("🧹 Presence state reset on startup.");
+  } catch (e) {
+    console.error("Failed to reset presence", e);
+  }
+}
+
+
+/**
  * Register a new socket connection.
  * Returns true if this was the user's first connection (i.e., they were offline).
  */
@@ -277,6 +297,7 @@ async function snapshot() {
 module.exports = {
   // NEW: Init function must be called
   init,
+  reset, // F-14: Startup cleanup
 
   // Core
   connect,

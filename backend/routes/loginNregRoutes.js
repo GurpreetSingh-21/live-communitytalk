@@ -227,14 +227,11 @@ router.post("/register", async (req, res) => {
     }
 
   } catch (error) {
-    if (error?.code === "USER_EXISTS") {
-      return res
-        .status(400)
-        .json({ error: { email: "An account with this email already exists" } });
-    }
-    // Prisma Unique Constraint Violation
-    if (error?.code === "P2002") {
-      return res.status(400).json({ error: "Duplicate entry (email or handle)." });
+    if (error?.code === "USER_EXISTS" || error?.code === "P2002") {
+      // F-20: Prevent email enumeration by returning a generic success message
+      return res.status(201).json({
+        message: "Registration successful. Please check your email for a 6-digit code.",
+      });
     }
     console.error("POST /register error:", error);
     return res.status(500).json({ error: "Server Error" });

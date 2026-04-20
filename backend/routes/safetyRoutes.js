@@ -41,6 +41,18 @@ router.post('/report', authenticate, async (req, res) => {
             return res.status(404).json({ error: 'Reported user not found' });
         }
 
+        // F-17: Deduplication to prevent spamming reports on the same target
+        const existingReport = await prisma.report.findFirst({
+            where: {
+                reporterId,
+                reportedId,
+                status: 'PENDING'
+            }
+        });
+        if (existingReport) {
+            return res.status(429).json({ error: 'You already have a pending report for this user.' });
+        }
+
         // Create the report
         const report = await prisma.report.create({
             data: {
@@ -68,34 +80,9 @@ router.post('/report', authenticate, async (req, res) => {
             data: { reportsReceivedCount: { increment: 1 } }
         });
 
-        // Auto-suspend if 3+ reports
-        if (reportedUser.reportsReceivedCount + 1 >= 3) {
-            const suspendUntil = new Date();
-            suspendUntil.setDate(suspendUntil.getDate() + 7); // 7 day suspension
-
-            await prisma.user.update({
-                where: { id: reportedId },
-                data: {
-                    accountStatus: 'SUSPENDED',
-                    suspendedUntil,
-                    suspendedReason: 'Automatic suspension due to multiple reports pending review'
-                }
-            });
-
-            // Log the action
-            await prisma.moderationLog.create({
-                data: {
-                    action: 'auto_suspend',
-                    targetType: 'user',
-                    targetId: reportedId,
-                    moderatorId: reporterId, // System action triggered by report
-                    reason: 'Auto-suspend: 3+ reports received',
-                    details: { reportId: report.id, reportCount: reportedUser.reportsReceivedCount + 1 },
-                    userId: reportedId
-                }
-            });
-        }
-
+        // F-17: Removed AUTO-SUSPEND logic because it can be abused.
+        // Instead, the URGENT priority flag from above handles it for admins.
+        
         res.status(201).json({
             message: 'Report submitted successfully',
             report: {

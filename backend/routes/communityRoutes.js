@@ -31,11 +31,15 @@ async function invalidateMemberCache(req, communityId) {
   if (req.redisClient) {
     try {
       const pattern = `members:${communityId}:*`;
-      const keys = await req.redisClient.keys(pattern);
-      if (keys.length > 0) {
-        await req.redisClient.del(...keys);
-        console.log(`[CACHE] Invalidated ${keys.length} member cache entries for ${communityId}`);
-      }
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await req.redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        if (keys.length > 0) {
+          await req.redisClient.del(...keys);
+          console.log(`[CACHE] Invalidated ${keys.length} member cache entries for ${communityId}`);
+        }
+      } while (cursor !== '0');
     } catch (err) {
       console.warn('[CACHE] Member invalidation failed:', err);
     }
@@ -43,7 +47,6 @@ async function invalidateMemberCache(req, communityId) {
 }
 
 function isAdmin(req) {
-  return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
   return !!(req?.user?.isAdmin || String(req?.user?.role || "").toLowerCase() === "admin");
 }
 
@@ -409,11 +412,24 @@ router.get("/:id/unread", async (_req, res) => {
  */
 router.patch("/:id", async (req, res) => {
   try {
-    if (!isAdmin(req)) {
-      return res.status(403).json({ error: "Only admins can update communities" });
+    const { id } = req.params;
+    
+    // Authorization: Admin or Community Owner
+    const isUserAdmin = isAdmin(req);
+    let isOwner = false;
+    
+    if (!isUserAdmin && req.user?.id) {
+      const membership = await prisma.member.findUnique({
+        where: { userId_communityId: { userId: req.user.id, communityId: id } }
+      });
+      isOwner = membership?.role === 'owner';
     }
 
-    const { id } = req.params;
+    if (!isUserAdmin && !isOwner) {
+      return res.status(403).json({ error: "Only admins or community owners can update communities" });
+    }
+
+
 
     const community = await prisma.community.findUnique({ where: { id } });
     if (!community) return res.status(404).json({ error: "Community not found" });
@@ -461,11 +477,24 @@ router.patch("/:id", async (req, res) => {
  */
 router.delete("/:id", async (req, res) => {
   try {
-    if (!isAdmin(req)) {
-      return res.status(403).json({ error: "Only admins can delete communities" });
+    const { id } = req.params;
+    
+    // Authorization: Admin or Community Owner
+    const isUserAdmin = isAdmin(req);
+    let isOwner = false;
+    
+    if (!isUserAdmin && req.user?.id) {
+      const membership = await prisma.member.findUnique({
+        where: { userId_communityId: { userId: req.user.id, communityId: id } }
+      });
+      isOwner = membership?.role === 'owner';
     }
 
-    const { id } = req.params;
+    if (!isUserAdmin && !isOwner) {
+      return res.status(403).json({ error: "Only admins or community owners can delete communities" });
+    }
+
+
 
     // Transaction to delete members then community
     // Or Prisma Cascade Delete if configured in schema.

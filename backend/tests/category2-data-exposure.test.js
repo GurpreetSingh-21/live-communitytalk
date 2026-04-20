@@ -153,7 +153,17 @@ beforeAll(() => {
   const datingRoutes = require('../routes/datingRoutes');
 
   app.use('/api/auth',   authRoutes);
-  app.use('/api/dating', datingRoutes);
+  const authenticate = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: "Unauthorized" });
+    try {
+      req.user = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+      next();
+    } catch (e) {
+      return res.status(401).json({ error: "Invalid Token" });
+    }
+  };
+  app.use('/api/dating', authenticate, datingRoutes);
 });
 
 beforeEach(() => jest.clearAllMocks());

@@ -3,6 +3,7 @@ const express = require("express");
 const router = express.Router();
 const prisma = require("../prisma/client");
 const { sendPushNotifications } = require("../services/notificationService");
+const { deleteCloudinaryAsset } = require("../services/CloudinaryHelper");
 
 // Require auth
 router.use((req, res, next) => {
@@ -20,11 +21,15 @@ async function invalidateMessageCache(req, communityId) {
   if (req.redisClient) {
     try {
       const pattern = `messages:${communityId}:*`;
-      const keys = await req.redisClient.keys(pattern);
-      if (keys.length > 0) {
-        await req.redisClient.del(...keys);
-        console.log(`[CACHE] Invalidated ${keys.length} message cache entries for ${communityId}`);
-      }
+      let cursor = '0';
+      do {
+        const [nextCursor, keys] = await req.redisClient.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+        cursor = nextCursor;
+        if (keys.length > 0) {
+          await req.redisClient.del(...keys);
+          console.log(`[CACHE] Invalidated ${keys.length} message cache entries for ${communityId}`);
+        }
+      } while (cursor !== '0');
     } catch (err) {
       console.warn('[CACHE] Message invalidation failed:', err);
     }
@@ -451,6 +456,14 @@ router.delete("/:messageId", async (req, res) => {
       }
     });
 
+    // F-19: Delete attachments from Cloudinary to prevent stale file access
+    if (doc.attachments && Array.isArray(doc.attachments)) {
+      for (const attachment of doc.attachments) {
+        if (attachment && attachment.url) {
+          await deleteCloudinaryAsset(attachment.url);
+        }
+      }
+    }
     const payload = {
       _id: updated.id,
       id: updated.id,

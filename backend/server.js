@@ -97,6 +97,8 @@ redisClient.on("error", (err) =>
 
 // Pass the client to our presence module
 presence.init(redisClient);
+// F-14: Clear ghost connections on server start
+presence.reset();
 
 // Pub/Sub clients for the Socket.io adapter
 const pubClient = new Redis(REDIS_URL, redisOptions);
@@ -108,14 +110,14 @@ subClient.on("connect", () => console.log("✅ Redis SubClient connected."));
 subClient.on("error", (err) => console.error("❌ Redis SubClient error:", err));
 
 // ───────────────────────── Middleware ─────────────────────────
-// 🔧 Trust proxy settings (for ngrok, load balancers, reverse proxies)
-// This enables Express to read X-Forwarded-* headers correctly
-app.set('trust proxy', true);
+// 🔧 Trust proxy settings
+// F-21: Set to loopback and private subnets instead of true to prevent IP spoofing via X-Forwarded-For
+app.set('trust proxy', 'loopback, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16');
 
 app.use(
   helmet({
     crossOriginResourcePolicy: false,
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: true,
   })
 );
 
@@ -124,20 +126,23 @@ app.use(
     origin: ORIGIN,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "ngrok-skip-browser-warning"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// 🛡️ Rate Limiting
+// 🛡️ Rate Limiting - F-12: Global rate limiter re-enabled
 const rateLimiter = require("./middleware/rateLimiter");
-// TEMP: Disabled for development - re-enable for production
-// app.use(rateLimiter);
+app.use(rateLimiter);
 
-app.use(express.json({ limit: "50mb" })); // ✅ Increased limit for image uploads
+// Upload routes need a larger body limit, mount them before the global 1mb limit
+const authenticate = require("./middleware/authenticate");
+app.use('/api/upload', express.json({ limit: "50mb" }), authenticate, uploadRoutes);
+
+// Default JSON body limit: F-33 (Moved from 50mb to 1mb for non-upload endpoints)
+app.use(express.json({ limit: "1mb" })); 
 app.use(morgan("dev"));
 
-// Admin + public routes that don't depend on req.io
-app.use("/api/admin", adminRoutes);
+// F-36: Move adminRoutes down until after `req.io` is established so admin routes can send socket events
 app.use("/api/public", publicRoutes);
 
 // Attach io + presence to req (for routes/middleware)
@@ -148,6 +153,9 @@ app.use((req, _res, next) => {
   req.redisClient = redisClient; // Attach Redis client for caching
   next();
 });
+
+// Admin routes configured after io so req.io is injected
+app.use("/api/admin", adminRoutes);
 
 // Health routes
 app.get("/", (_req, res) => res.json({ ok: true, service: "community-talk" }));
@@ -290,7 +298,11 @@ io.on("connection", async (socket) => {
 
   // Only emit "online" once per logical user
   if (isFirstConnection) {
-    io.emit("presence:update", { userId: uid, status: "online" });
+    if (socket.user?.communityIds) {
+      for (const cid of socket.user.communityIds) {
+        io.to(`community:${cid}`).emit("presence:update", { userId: uid, status: "online" });
+      }
+    }
   }
 
   // Manual community join/leave
@@ -516,7 +528,11 @@ io.on("connection", async (socket) => {
     const { isLastConnection } = await presence.disconnect(uid);
 
     if (isLastConnection) {
-      io.emit("presence:update", { userId: uid, status: "offline" });
+      if (socket.user?.communityIds) {
+        for (const cid of socket.user.communityIds) {
+          io.to(`community:${cid}`).emit("presence:update", { userId: uid, status: "offline" });
+        }
+      }
 
       // Clean up community-level presence
       const userCommunities = await presence.listCommunitiesForUser(uid);
@@ -562,7 +578,7 @@ app.use("/api/events", (req, _res, next) => {
   next();
 });
 app.use("/api/events", authenticate, eventRoutes);
-app.use('/api/upload', uploadRoutes);
+// F-04: Secure upload routes via auth AND moved them UP above global JSON parser
 
 // 🔒 SECURITY FIX: Test push endpoint now requires authentication
 app.post("/api/test-push", authenticate, async (req, res) => {

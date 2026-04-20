@@ -2,10 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const prisma = require("../prisma/client");
-const authenticate = require("../middleware/authenticate");
-
-// All routes require a valid JWT
-router.use(authenticate);
+const crypto = require("crypto");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DATA SELECTION HELPERS
@@ -169,17 +166,33 @@ router.post("/profile", async (req, res) => {
         });
       }
 
-      // Handle Photos (Replace Strategy)
+      // F-26: Handle Photos (Replace Strategy) with domain validation
       if (photos && Array.isArray(photos)) {
         await tx.datingPhoto.deleteMany({ where: { datingProfileId: profile.id } });
-        await tx.datingPhoto.createMany({
-          data: photos.map((p, idx) => ({
-            datingProfileId: profile.id,
-            url: typeof p === 'string' ? p : p.url,
-            isMain: idx === 0,
-            order: idx
-          }))
-        });
+        
+        const validPhotos = [];
+        for (let idx = 0; idx < photos.length; idx++) {
+          const p = photos[idx];
+          const urlStr = typeof p === 'string' ? p : p.url;
+          try {
+            const u = new URL(urlStr);
+            if (!['res.cloudinary.com', 'ik.imagekit.io'].includes(u.hostname)) {
+              throw new Error("Invalid domain");
+            }
+            validPhotos.push({
+              datingProfileId: profile.id,
+              url: urlStr,
+              isMain: idx === 0,
+              order: idx
+            });
+          } catch(e) {
+            console.warn("[Dating Photos] Rejecting untrusted or invalid photo URL:", urlStr);
+          }
+        }
+        
+        if (validPhotos.length > 0) {
+          await tx.datingPhoto.createMany({ data: validPhotos });
+        }
       }
 
       return profile;
@@ -226,6 +239,14 @@ router.get("/pool", async (req, res) => {
 
     if (!myProfile) return res.status(400).json({ error: "Create a profile first" });
 
+    // F-29: Verify Terms of Service Acceptance
+    const tosAccepted = await prisma.moderationLog.findFirst({
+      where: { targetId: userId, action: 'tos_consent' }
+    });
+    if (!tosAccepted) {
+      return res.status(403).json({ error: "You must accept the Dating Terms of Service before entering the pool." });
+    }
+
     // 🚀 PERFORMANCE: Parallelize swipe and block queries
     const [swipedRecords, blocksGiven, blocksReceived] = await Promise.all([
       prisma.datingSwipe.findMany({
@@ -271,7 +292,8 @@ router.get("/pool", async (req, res) => {
         id: { notIn: excludeIds },
         isProfileVisible: true,
         isPaused: false, // Replaced isSuspended
-        // approvalStatus: 'APPROVED', // Optional: Uncomment to enforce moderation
+        // F-35: Enforce Moderation Approval
+        approvalStatus: 'APPROVED',
         // Match Age
         birthDate: {
           gte: minDate,
@@ -329,8 +351,12 @@ router.get("/pool", async (req, res) => {
       // 🔒 birthDate, lat, lng, userId intentionally omitted
     }));
 
-    // Shuffle results
-    const shuffled = transformed.sort(() => 0.5 - Math.random());
+    // F-44: Shuffle results using a cryptographically secure shuffle (Fisher-Yates)
+    const shuffled = [...transformed];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = crypto.randomInt(0, i + 1);
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
 
     res.json(shuffled);
 
@@ -356,40 +382,30 @@ router.post("/swipe", async (req, res) => {
     const myProfile = await prisma.datingProfile.findUnique({ where: { userId } });
     if (!myProfile) return res.status(400).json({ error: "No profile" });
 
+    // F-29: Verify Terms of Service Acceptance for the swiper
+    const tosAccepted = await prisma.moderationLog.findFirst({
+      where: { targetId: userId, action: 'tos_consent' }
+    });
+    if (!tosAccepted) {
+      return res.status(403).json({ error: "You must accept the Dating Terms of Service before swiping." });
+    }
+
     // 0. CHECK SINGLE DAY SWIPE LIMIT (Spam prevention & Monetization)
-    // Rolling 24h Window
+    // F-24: Fixed Rate Limit bypass by using Redis instead of DB counts
     const DAILY_LIMIT = 5;
-    const rollingWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000); // 24 hours ago
-
-    // Debug: Log incoming type
-    console.log(`[SWIPE REQUEST] User: ${userId} Type: ${type}`);
-
+    const rateLimitKey = `ratelimit:date:${userId}`;
     let debugInfo = {};
 
     if (type === 'LIKE' || type === 'SUPERLIKE') {
-      const todayLikes = await prisma.datingSwipe.count({
-        where: {
-          swiperId: myProfile.id,
-          type: { in: ['LIKE', 'SUPERLIKE'] }, // Only count likes
-          createdAt: {
-            gte: rollingWindowStart
-          }
-        }
-      });
+      const count = await req.redisClient.incr(rateLimitKey);
+      if (count === 1) {
+        await req.redisClient.expire(rateLimitKey, 24 * 60 * 60); // Reset after 24h
+      }
 
-      debugInfo = {
-        count: todayLikes,
-        limit: DAILY_LIMIT,
-        windowStart: rollingWindowStart.toISOString(),
-        isReached: todayLikes >= DAILY_LIMIT
-      };
+      debugInfo = { count, limit: DAILY_LIMIT };
+      res.set('X-Debug-Swipe-Limit', `${count}/${DAILY_LIMIT}`);
 
-      // Add Debug Header so user sees it in frontend logs
-      res.set('X-Debug-Swipe-Limit', `${todayLikes}/${DAILY_LIMIT}`);
-      console.log(`[LIKE CHECK] Count: ${todayLikes}/${DAILY_LIMIT} (Window: ${rollingWindowStart.toISOString()})`);
-
-      if (todayLikes >= DAILY_LIMIT) {
-        console.log(`[LIKE LIMIT REACHED] Blocked`);
+      if (count > DAILY_LIMIT) {
         return res.status(429).json({
           error: "Daily like limit reached",
           message: "You've liked 5 people today. Save some love for tomorrow or upgrade!",
@@ -414,47 +430,38 @@ router.post("/swipe", async (req, res) => {
 
     if (existing) return res.json({ message: "Already swiped", debug: debugInfo });
 
-    // 2. Create Swipe Record
+    // 2. Wrap Match Creation in Transaction constraint (F-27: Prevent Race Condition duplicates)
     let match = null;
     try {
-      const swipe = await prisma.datingSwipe.create({
-        data: {
-          swiperId: myProfile.id,
-          targetId,
-          type
-        }
-      });
-
-      // 3. If PASS, simple return
-      if (type === 'DISLIKE') {
-        return res.json({ message: "Swiped left", isMatch: false, debug: debugInfo });
-      }
-
-      // 4. CHECK MATCH (If LIKE/SUPERLIKE)
-      // Does target already like me?
-      const mutualSwipe = await prisma.datingSwipe.findUnique({
-        where: {
-          swiperId_targetId: {
-            swiperId: targetId,
-            targetId: myProfile.id
-          }
-        }
-      });
-
-      if (mutualSwipe && (mutualSwipe.type === 'LIKE' || mutualSwipe.type === 'SUPERLIKE')) {
-        // IT'S A MATCH! 🎉
-        // Sort IDs to ensure unique constraint on relations (profile1Id < profile2Id)
-        const [p1, p2] = [myProfile.id, targetId].sort();
-
-        // Create Match Record
-        match = await prisma.datingMatch.create({
-          data: {
-            profile1Id: p1,
-            profile2Id: p2,
-            isActive: true
-          }
+      match = await prisma.$transaction(async (tx) => {
+        await tx.datingSwipe.create({
+          data: { swiperId: myProfile.id, targetId, type }
         });
 
+        if (type === 'DISLIKE') return null;
+
+        const mutualSwipe = await tx.datingSwipe.findUnique({
+          where: { swiperId_targetId: { swiperId: targetId, targetId: myProfile.id } }
+        });
+
+        if (mutualSwipe && (mutualSwipe.type === 'LIKE' || mutualSwipe.type === 'SUPERLIKE')) {
+          const [p1, p2] = [myProfile.id, targetId].sort();
+
+          let existingMatch = await tx.datingMatch.findFirst({
+            where: { profile1Id: p1, profile2Id: p2 }
+          });
+
+          if (!existingMatch) {
+            existingMatch = await tx.datingMatch.create({
+              data: { profile1Id: p1, profile2Id: p2, isActive: true }
+            });
+          }
+          return existingMatch;
+        }
+        return null;
+      });
+
+      if (match) {
         // Fetch partner info
         const partnerProfile = await prisma.datingProfile.findUnique({
           where: { id: targetId },
@@ -463,7 +470,7 @@ router.post("/swipe", async (req, res) => {
 
         // Emit Socket Event (if IO available)
         if (req.io) {
-          // Need Target's userId to send socket (datingProfile doesn't have it directly in select above? wait I need to fetch it)
+          // Need Target's userId to send socket
           const targetUser = await prisma.datingProfile.findUnique({ where: { id: targetId }, select: { userId: true } });
           if (targetUser) {
             req.io.to(targetUser.userId).emit("match:new", {
@@ -472,7 +479,6 @@ router.post("/swipe", async (req, res) => {
               partnerId: myProfile.id
             });
           }
-          // Notify Me (Client handles the immediate response, but socket ensures consistency)
         }
 
         return res.json({
@@ -763,20 +769,18 @@ router.post("/consent", async (req, res) => {
       return res.status(400).json({ error: "tosVersion is required." });
     }
 
-    // Store consent as a system moderation log entry for audit trail
-    // We use action: "tos_consent" so it can be queried by admins
+    // F-43: Store consent without tying moderatorId to userId to prevent cascade deletion
+    // F-28: Do not store user IP to protect stalk/PII leakage
     await prisma.moderationLog.create({
       data: {
         action: 'tos_consent',
         targetType: 'user',
         targetId: userId,
-        moderatorId: userId, // Self-action — same ID in both fields
         reason: `Dating ToS v${tosVersion} accepted`,
         details: {
           tosVersion,
           agreedAt: agreedAt || new Date().toISOString(),
           platform: platform || 'unknown',
-          ip: req.ip || null,
         },
         userId,
       }
