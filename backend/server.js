@@ -135,7 +135,6 @@ const rateLimiter = require("./middleware/rateLimiter");
 app.use(rateLimiter);
 
 // Upload routes need a larger body limit, mount them before the global 1mb limit
-const authenticate = require("./middleware/authenticate");
 app.use('/api/upload', express.json({ limit: "50mb" }), authenticate, uploadRoutes);
 
 // Default JSON body limit: F-33 (Moved from 50mb to 1mb for non-upload endpoints)

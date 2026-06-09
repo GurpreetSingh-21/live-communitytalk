@@ -44,6 +44,7 @@ jest.mock('../prisma/client', () => ({
   datingBlock:      { findMany: jest.fn().mockResolvedValue([]) },
   trustedDevice:    { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn() },
   report:           { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
+  moderationLog:    { findFirst: jest.fn().mockResolvedValue({ id: 'tos1' }) },
 }));
 
 const mockTx = {
