@@ -18,22 +18,28 @@ function getPgBouncerUrl() {
     return `${url}${separator}pgbouncer=true`;
 }
 
-const prisma = globalForPrisma.prisma || new PrismaClient({
+const _prisma = globalForPrisma.prisma || new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
     datasources: {
         db: { url: getPgBouncerUrl() },
     },
 });
 
-// Log slow queries (>100ms)
-prisma.$use(async (params, next) => {
-    const before = Date.now();
-    const result = await next(params);
-    const after = Date.now();
-    if (after - before > 100) {
-        console.log(`[PRISMA SLOW] ${params.model}.${params.action} took ${after - before}ms`);
-    }
-    return result;
+// Log slow queries (>100ms) — uses $extends (Prisma v5+ replacement for $use)
+const prisma = _prisma.$extends({
+    query: {
+        $allModels: {
+            async $allOperations({ model, operation, args, query }) {
+                const before = Date.now();
+                const result = await query(args);
+                const after = Date.now();
+                if (after - before > 100) {
+                    console.log(`[PRISMA SLOW] ${model}.${operation} took ${after - before}ms`);
+                }
+                return result;
+            },
+        },
+    },
 });
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma;
