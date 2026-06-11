@@ -30,13 +30,13 @@ async function sendVerificationEmail(userEmail, verificationCode) {
     console.log(`📧 [Email] Sending verification code to ${maskEmail(userEmail)}...`);
     
     const { data, error } = await resend.emails.send({
-      from: 'CommunityTalk <noreply@debugdragons.com>',
+      from: 'Campustry <noreply@debugdragons.com>',
       to: [userEmail],
-      subject: 'Your CommunityTalk Verification Code',
+      subject: 'Your Campustry Verification Code',
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; text-align: center; padding: 20px;">
           <div style="border: 1px solid #ddd; border-radius: 10px; padding: 30px; max-width: 400px; margin: auto;">
-            <h2 style="color: #333;">Welcome to CommunityTalk!</h2>
+            <h2 style="color: #333;">Welcome to Campustry!</h2>
             <p style="color: #555;">Your verification code is:</p>
             <p style="font-size: 36px; font-weight: bold; color: #6366F1; letter-spacing: 5px; margin: 20px 0;">
               ${verificationCode}
@@ -81,14 +81,14 @@ async function sendNewDeviceEmail(userEmail, deviceModel, verificationCode) {
     console.log(`📧 [Email] Sending New Device Verification to ${maskEmail(userEmail)}...`);
     
     const { data, error } = await resend.emails.send({
-      from: 'CommunityTalk Security <noreply@debugdragons.com>',
+      from: 'Campustry Security <noreply@debugdragons.com>',
       to: [userEmail],
       subject: 'Unrecognized Device Sign-In Attempt',
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; text-align: center; padding: 20px;">
           <div style="border: 1px solid #ddd; border-radius: 10px; padding: 30px; max-width: 400px; margin: auto;">
             <h2 style="color: #D32F2F;">New Device Detected!</h2>
-            <p style="color: #555;">A new device (${deviceModel || "Unknown Device"}) attempted to log into your CommunityTalk account.</p>
+            <p style="color: #555;">A new device (${deviceModel || "Unknown Device"}) attempted to log into your Campustry account.</p>
             <p style="color: #555;">To authorize this device, please enter the following verification code:</p>
             <p style="font-size: 36px; font-weight: bold; color: #D32F2F; letter-spacing: 5px; margin: 20px 0;">
               ${verificationCode}

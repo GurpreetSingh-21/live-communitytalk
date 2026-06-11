@@ -783,6 +783,7 @@ router.post("/consent", async (req, res) => {
           platform: platform || 'unknown',
         },
         userId,
+        moderatorId: userId,
       }
     });
 

@@ -131,7 +131,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       const pendingUri = await AsyncStorage.getItem(key);
 
       if (pendingUri) {
-        console.log("[AuthContext] 🔄 Found pending avatar upload, processing...", pendingUri.substring(0, 50));
+        if (__DEV__) console.log("[AuthContext] 🔄 Found pending avatar upload, processing...", pendingUri.substring(0, 50));
 
         // Convert URI to base64
         let base64Data: string;
@@ -154,7 +154,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
           if (extMatch) fileExtension = extMatch[1];
         }
 
-        console.log("[AuthContext] 📤 Uploading avatar to server...");
+        if (__DEV__) console.log("[AuthContext] 📤 Uploading avatar to server...");
         
         // Upload to correct endpoint
         const res = await api.post('/api/user/avatar', {
@@ -165,10 +165,10 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         // Update state if successful
         const newUrl = res.data?.avatar || res.data?.user?.avatar;
         if (newUrl) {
-          console.log("[AuthContext] ✅ Avatar auto-uploaded successfully!", newUrl);
+          if (__DEV__) console.log("[AuthContext] ✅ Avatar auto-uploaded successfully!", newUrl);
           setUser((prev: any) => prev ? ({ ...prev, avatar: newUrl }) : null);
           await AsyncStorage.removeItem(key);
-          console.log("[AuthContext] 🧹 Cleaned up pending avatar from storage");
+          if (__DEV__) console.log("[AuthContext] 🧹 Cleaned up pending avatar from storage");
         } else {
           console.warn("[AuthContext] ⚠️ Upload succeeded but no avatar URL returned");
         }
@@ -271,7 +271,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
           try {
             const data = await request("/bootstrap");
             applyAuthState(data?.user || null, data?.communities || []);
-            console.log("[AuthContext] Legacy bootstrap succeeded.");
+            if (__DEV__) console.log("[AuthContext] Legacy bootstrap succeeded.");
             return;
           } catch (e) {
             console.error("[AuthContext] Legacy bootstrap failed.");
@@ -301,7 +301,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
       if (token) {
         // --- AUTHENTICATED PATH ---
-        console.log("[AuthContext] Token found, initiating bootstrap...");
+        if (__DEV__) console.log("[AuthContext] Token found, initiating bootstrap...");
         try {
           await refreshSocketAuth(token);
         } catch (err) {
@@ -311,7 +311,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         await registerForPushNotificationsAsync();
       } else {
         // --- UNAUTHENTICATED PATH (FIXED) ---
-        console.log("[AuthContext] No token found, setting state to unauthed.");
+        if (__DEV__) console.log("[AuthContext] No token found, setting state to unauthed.");
         applyAuthState(null, []);
       }
     } catch (e: any) { // ⭐ ENSURE CATCH BLOCK IS ROBUST
@@ -367,55 +367,55 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       }
 
       // 🔐 E2EE: Generate keypair and upload public key on login
-      console.log(`\n🔐 [E2EE Auth] ==========================================`);
-      console.log(`🔐 [E2EE Auth] 🚀 Starting E2EE initialization on login`);
+      if (__DEV__) console.log(`\n🔐 [E2EE Auth] ==========================================`);
+      if (__DEV__) console.log(`🔐 [E2EE Auth] 🚀 Starting E2EE initialization on login`);
       try {
         const userId = (userObj as any)?.id || (userObj as any)?._id;
         if (userId) {
           const uid = String(userId);
-          console.log(`🔐 [E2EE Auth] 👤 User ID: ${uid.substring(0, 8)}...`);
+          if (__DEV__) console.log(`🔐 [E2EE Auth] 👤 User ID: ${uid.substring(0, 8)}...`);
 
           // 1) If server has an identity backup, try restoring that FIRST (new device / reinstall)
-          console.log(`🔐 [E2EE Auth] 📥 Checking for server backup...`);
+          if (__DEV__) console.log(`🔐 [E2EE Auth] 📥 Checking for server backup...`);
           const remoteBackup = await fetchIdentityBackup();
           if (remoteBackup && remoteBackup.version === 2 && remoteBackup.secretKeyB64) {
-            console.log(`🔐 [E2EE Auth] ✅ Found backup on server (version ${remoteBackup.version})`);
-            console.log(`🔐 [E2EE Auth] 🔄 Restoring identity from backup...`);
+            if (__DEV__) console.log(`🔐 [E2EE Auth] ✅ Found backup on server (version ${remoteBackup.version})`);
+            if (__DEV__) console.log(`🔐 [E2EE Auth] 🔄 Restoring identity from backup...`);
             const restored = await restoreIdentityFromAutoBackup(uid, remoteBackup);
             if (restored) {
-              console.log(`🔐 [E2EE Auth] 📤 Uploading restored public key to server...`);
+              if (__DEV__) console.log(`🔐 [E2EE Auth] 📤 Uploading restored public key to server...`);
               await uploadPublicKey(restored.publicKey);
-              console.log(`🔐 [E2EE Auth] ✅ Public key uploaded successfully`);
+              if (__DEV__) console.log(`🔐 [E2EE Auth] ✅ Public key uploaded successfully`);
             } else {
-              console.log(`🔐 [E2EE Auth] ⚠️ Backup restore failed, generating new keys`);
+              if (__DEV__) console.log(`🔐 [E2EE Auth] ⚠️ Backup restore failed, generating new keys`);
               const { publicKey } = await getOrCreateKeyPair(uid);
               await uploadPublicKey(publicKey);
             }
           } else {
-            console.log(`🔐 [E2EE Auth] ℹ️ No backup found on server (new user or first device)`);
-            console.log(`🔐 [E2EE Auth] 🔑 Getting or creating keypair...`);
+            if (__DEV__) console.log(`🔐 [E2EE Auth] ℹ️ No backup found on server (new user or first device)`);
+            if (__DEV__) console.log(`🔐 [E2EE Auth] 🔑 Getting or creating keypair...`);
             const { publicKey } = await getOrCreateKeyPair(uid);
-            console.log(`🔐 [E2EE Auth] 📤 Uploading public key to server...`);
+            if (__DEV__) console.log(`🔐 [E2EE Auth] 📤 Uploading public key to server...`);
             await uploadPublicKey(publicKey);
-            console.log(`🔐 [E2EE Auth] ✅ Public key uploaded successfully`);
+            if (__DEV__) console.log(`🔐 [E2EE Auth] ✅ Public key uploaded successfully`);
 
             // Create automatic backup on first login for this device
-            console.log(`🔐 [E2EE Auth] 💾 Creating automatic backup...`);
+            if (__DEV__) console.log(`🔐 [E2EE Auth] 💾 Creating automatic backup...`);
             const blob = await createAutoIdentityBackup(uid);
             if (blob) {
-              console.log(`🔐 [E2EE Auth] 📤 Uploading backup to server...`);
+              if (__DEV__) console.log(`🔐 [E2EE Auth] 📤 Uploading backup to server...`);
               await uploadIdentityBackup(blob);
-              console.log(`🔐 [E2EE Auth] ✅ Backup uploaded successfully`);
+              if (__DEV__) console.log(`🔐 [E2EE Auth] ✅ Backup uploaded successfully`);
             } else {
-              console.log(`🔐 [E2EE Auth] ⚠️ Backup creation failed (non-fatal)`);
+              if (__DEV__) console.log(`🔐 [E2EE Auth] ⚠️ Backup creation failed (non-fatal)`);
             }
           }
 
           // Ensure prekey bundle exists for session establishment
-          console.log(`🔐 [E2EE Auth] 📦 Ensuring prekey bundle is uploaded...`);
+          if (__DEV__) console.log(`🔐 [E2EE Auth] 📦 Ensuring prekey bundle is uploaded...`);
           await ensureBundleUploaded(uid);
-          console.log(`🔐 [E2EE Auth] ✅ Prekey bundle ready`);
-          console.log(`🔐 [E2EE Auth] ==========================================\n`);
+          if (__DEV__) console.log(`🔐 [E2EE Auth] ✅ Prekey bundle ready`);
+          if (__DEV__) console.log(`🔐 [E2EE Auth] ==========================================\n`);
         } else {
           console.warn(`🔐 [E2EE Auth] ❌ Skipping key generation - no user ID found`);
         }
@@ -447,6 +447,9 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
 
   /* --------------------- Sign Out --------------------- */
   const signOut = useCallback(async () => {
+    try {
+      await api.post('/api/logout'); // Invalidate session token on server
+    } catch { } // Non-fatal — clear local state regardless
     await clearAuthState();
   }, [clearAuthState]);
 

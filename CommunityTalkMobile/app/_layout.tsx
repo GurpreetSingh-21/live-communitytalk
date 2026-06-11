@@ -50,7 +50,7 @@ function AppLayout() {
     if (isLoading || hasViewedOnboarding === null) return;
 
     // Define routes that are accessible without being logged in
-    const publicRoutes = ["landing", "register", "verify-email"];
+    const publicRoutes = ["landing", "register", "verify-email", "forgot-password"];
 
     // Routes that should be accessible to both auth states (don't redirect)
     const neutralRoutes = ["modal", "onboarding"];
@@ -86,6 +86,7 @@ function AppLayout() {
       <Stack.Screen name="landing" />
       <Stack.Screen name="register" />
       <Stack.Screen name="verify-email" />
+      <Stack.Screen name="forgot-password" />
 
       <Stack.Screen
         name="modal"
@@ -123,7 +124,7 @@ export default function RootLayout() {
     (async () => {
       try {
         const token = await registerForPushNotificationsAsync();
-        console.log("Registered push token:", token);
+        if (__DEV__) console.log("Registered push token:", token);
       } catch (e) {
         console.warn("Push registration failed:", e);
       }

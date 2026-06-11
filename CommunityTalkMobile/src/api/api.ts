@@ -24,7 +24,7 @@ if (__DEV__) {
 
 export const api = axios.create({
   baseURL: BASE,
-  timeout: 300000, // 5 minutes (via Cloudinary, huge files)
+  timeout: 30000, // 30 seconds for normal requests
   headers: {
     "Content-Type": "application/json",
     "X-Requested-With": "XMLHttpRequest",
@@ -106,13 +106,15 @@ api.interceptors.response.use(
       const url = `${res.config.baseURL || ""}${res.config.url || ""}`;
       const size = JSON.stringify(res.data).length;
 
-      console.log(
-        `⚡ [API] ${res.config.method?.toUpperCase()} ${url} → ${res.status} (${duration}ms, ${(size / 1024).toFixed(1)}KB)`
-      );
+      if (__DEV__) {
+        console.log(
+          `⚡ [API] ${res.config.method?.toUpperCase()} ${url} → ${res.status} (${duration}ms, ${(size / 1024).toFixed(1)}KB)`
+        );
 
-      // Warn on slow requests
-      if (duration > 1000) {
-        console.warn(`🐌 [API SLOW] Request took ${duration}ms: ${url}`);
+        // Warn on slow requests
+        if (duration > 1000) {
+          console.warn(`🐌 [API SLOW] Request took ${duration}ms: ${url}`);
+        }
       }
     }
     return res;
@@ -141,7 +143,7 @@ api.interceptors.response.use(
 
     // 📊 PERFORMANCE: Log failed request timing
     const requestStart = (error.config as any)?._requestStart;
-    if (requestStart) {
+    if (requestStart && __DEV__) {
       const duration = Date.now() - requestStart;
       console.log(`❌ [API ERROR] Request failed after ${duration}ms: ${triedUrl}`);
     }

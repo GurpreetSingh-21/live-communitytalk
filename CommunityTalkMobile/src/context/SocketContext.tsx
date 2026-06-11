@@ -254,25 +254,25 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
         const ids = Array.from(myCommunityIds);
         if (ids.length > 0) {
           socket.emit?.("subscribe:communities", { ids });
-          console.log("🟣 Subscribed to communities:", ids.length);
+          if (__DEV__) console.log("🟣 Subscribed to communities:", ids.length);
         }
 
         if (eventsRoom) {
-          console.log("🟢 Joined events room:", eventsRoom);
+          if (__DEV__) console.log("🟢 Joined events room:", eventsRoom);
         }
       };
 
       /* ------------------ EVENT HANDLERS ------------------ */
 
       const onConnect = () => {
-        console.log("🔌 Socket connected:", socket?.id);
+        if (__DEV__) console.log("🔌 Socket connected:", socket?.id);
         setReady(true); // Ensure ready is true
         bindRooms(); // Re-bind global rooms
         refreshUnread();
       };
 
       const onDisconnect = () => {
-        console.log("⚠️ Socket disconnected");
+        if (__DEV__) console.log("⚠️ Socket disconnected");
         setReady(false); // Update state so consumers know we lost connection
       };
 
@@ -357,7 +357,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
         next === "active" &&
         isAuthed
       ) {
-        console.log("📱 App resumed → refresh unread");
+        if (__DEV__) console.log("📱 App resumed → refresh unread");
         refreshUnread();
       }
       appState.current = next;
@@ -377,7 +377,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
     clientMessageId: string
   ) => {
     try {
-      console.log("🚀 [BG-UPLOAD] Starting Base64 Upload:", fileName);
+      if (__DEV__) console.log("🚀 [BG-UPLOAD] Starting Base64 Upload:", fileName);
 
       // 1. Read file as Base64 to avoid FormData network hangs on Simulator
       const base64 = await FileSystem.readAsStringAsync(fileUri, {
@@ -393,7 +393,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
         timeout: 90000, // 90 seconds - handles Render free tier cold starts
       });
 
-      console.log("✅ [BG-UPLOAD] Uploaded:", uploadRes.data.url);
+      if (__DEV__) console.log("✅ [BG-UPLOAD] Uploaded:", uploadRes.data.url);
       const secureUrl = uploadRes.data?.url || fileUri;
 
       // 3. Create Message
@@ -406,7 +406,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
       };
 
       await api.post(`/api/messages`, payload);
-      console.log("✅ [BG-UPLOAD] Message Created in DB");
+      if (__DEV__) console.log("✅ [BG-UPLOAD] Message Created in DB");
 
     } catch (err) {
       console.error("❌ [BG-UPLOAD] Failed:", err);

@@ -36,46 +36,46 @@ type ModalContext = "communities" | "default";
 
 /* ───────────────────────── Navigation helpers ───────────────────────── */
 export const safeClose = () => {
-  console.log("🔵 safeClose called");
+  if (__DEV__) console.log("🔵 safeClose called");
 
   try {
     // Try to dismiss modal first
     if (typeof router.canDismiss === "function") {
       const canDismiss = router.canDismiss();
-      console.log("🔵 canDismiss:", canDismiss);
+      if (__DEV__) console.log("🔵 canDismiss:", canDismiss);
 
       if (canDismiss && typeof router.dismiss === "function") {
-        console.log("🔵 Dismissing modal");
+        if (__DEV__) console.log("🔵 Dismissing modal");
         router.dismiss();
         return;
       }
     }
   } catch (err) {
-    console.log("🔵 Dismiss failed:", err);
+    if (__DEV__) console.log("🔵 Dismiss failed:", err);
   }
 
   try {
     // Try to go back
     if (typeof router.canGoBack === "function") {
       const canGoBack = router.canGoBack();
-      console.log("🔵 canGoBack:", canGoBack);
+      if (__DEV__) console.log("🔵 canGoBack:", canGoBack);
 
       if (canGoBack) {
-        console.log("🔵 Going back");
+        if (__DEV__) console.log("🔵 Going back");
         router.back();
         return;
       }
     }
   } catch (err) {
-    console.log("🔵 Back failed:", err);
+    if (__DEV__) console.log("🔵 Back failed:", err);
   }
 
   // Last resort: navigate to tabs
-  console.log("🔵 Fallback: replacing to /(tabs)");
+  if (__DEV__) console.log("🔵 Fallback: replacing to /(tabs)");
   try {
     router.replace("/(tabs)");
   } catch (err) {
-    console.log("🔵 Replace failed:", err);
+    if (__DEV__) console.log("🔵 Replace failed:", err);
     // Absolute last resort
     router.push("/(tabs)");
   }
@@ -83,27 +83,27 @@ export const safeClose = () => {
 
 /** Leave the modal and navigate somewhere without breaking the back stack */
 const navigateFromModal = (to: "/global/communities" | "/(tabs)/explore") => {
-  console.log("🟢 navigateFromModal called with:", to);
+  if (__DEV__) console.log("🟢 navigateFromModal called with:", to);
 
   // Close the modal first, then navigate
   try {
     if (typeof router.canDismiss === "function" && router.canDismiss()) {
-      console.log("🟢 Dismissing modal before navigation");
+      if (__DEV__) console.log("🟢 Dismissing modal before navigation");
       if (typeof router.dismiss === "function") {
         router.dismiss();
       }
       // Use setTimeout to ensure modal is dismissed before navigating
       setTimeout(() => {
-        console.log("🟢 Navigating to:", to);
+        if (__DEV__) console.log("🟢 Navigating to:", to);
         router.push(to);
       }, 150);
     } else {
       // If not in a modal, just navigate normally
-      console.log("🟢 Direct navigation to:", to);
+      if (__DEV__) console.log("🟢 Direct navigation to:", to);
       router.push(to);
     }
   } catch (err) {
-    console.log("🟢 Navigation error:", err);
+    if (__DEV__) console.log("🟢 Navigation error:", err);
     // Fallback: just try to navigate
     router.push(to);
   }
@@ -411,6 +411,19 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
               autoCapitalize="none"
             />
 
+            {/* Forgot Password */}
+            <TouchableOpacity
+              onPress={() => {
+                safeClose();
+                setTimeout(() => router.push("/forgot-password"), 150);
+              }}
+              style={{ alignSelf: 'flex-end', marginBottom: 16, marginTop: -8 }}
+            >
+              <Text style={{ color: colors.primary, fontSize: 14, fontFamily: Fonts.regular }}>
+                Forgot password?
+              </Text>
+            </TouchableOpacity>
+
             {!!error && (
               <MotiView
                 from={{ opacity: 0, height: 0 }}
@@ -489,7 +502,7 @@ export default function ModalScreen() {
   const isLoading = auth?.isLoading ?? true;
   const colors = Colors[scheme];
 
-  console.log("📱 [Modal] Rendering - isAuthed:", isAuthed, "isLoading:", isLoading);
+  if (__DEV__) console.log("📱 [Modal] Rendering - isAuthed:", isAuthed, "isLoading:", isLoading);
 
   // Show loading state while auth is initializing
   if (isLoading) {
@@ -503,11 +516,11 @@ export default function ModalScreen() {
 
   // not signed in → show login
   if (!isAuthed) {
-    console.log("📱 [Modal] Showing LoginGateway");
+    if (__DEV__) console.log("📱 [Modal] Showing LoginGateway");
     return (
       <LoginGateway
         onDone={() => {
-          console.log("🟣 Login completed, refreshing bootstrap");
+          if (__DEV__) console.log("🟣 Login completed, refreshing bootstrap");
           Promise.resolve(auth?.refreshBootstrap?.() || auth?.bootstrap?.()).finally(() => {
             safeClose();
           });
@@ -516,10 +529,10 @@ export default function ModalScreen() {
     );
   }
 
-  console.log("📱 [Modal] Showing Quick Actions");
+  if (__DEV__) console.log("📱 [Modal] Showing Quick Actions");
 
   const handleClose = () => {
-    console.log("🔴 Quick Actions close button pressed");
+    if (__DEV__) console.log("🔴 Quick Actions close button pressed");
     safeClose();
   };
 

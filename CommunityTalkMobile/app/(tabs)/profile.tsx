@@ -188,7 +188,7 @@ const ProfileHeader = ({
   const gradientColors = [theme.muted, theme.border] as const;
   const initials = item.name.slice(0, 2).toUpperCase() || "CT";
   const avatarUri = item.avatar;
-  console.log("avatarUri:", avatarUri);
+  if (__DEV__) console.log("avatarUri:", avatarUri);
 
   return (
     <View style={{ marginBottom: 24, overflow: 'hidden' }}>
@@ -670,11 +670,13 @@ export default function ProfileScreen(): React.JSX.Element {
       const fullName =
         (u.fullName || "").trim() || (u.email || "Student").split("@")[0];
 
-      console.log("=== LOAD DEBUG ===");
-      console.log("API user data:", u);
-      console.log("u.avatar:", u.avatar);
-      console.log("auth?.user?.avatar:", auth?.user?.avatar);
-      console.log("==================");
+      if (__DEV__) {
+        console.log("=== LOAD DEBUG ===");
+        console.log("API user data:", u);
+        console.log("u.avatar:", u.avatar);
+        console.log("auth?.user?.avatar:", auth?.user?.avatar);
+        console.log("==================");
+      }
 
       setProfile((p) => ({
         ...p,
@@ -740,33 +742,35 @@ export default function ProfileScreen(): React.JSX.Element {
         fileExtension: extension,
       });
 
-      console.log("=== UPLOAD DEBUG ===");
-      console.log("Full response data:", JSON.stringify(data, null, 2));
-      console.log("data.avatar:", data.avatar);
-      console.log("typeof data.avatar:", typeof data.avatar);
-      console.log("===================");
+      if (__DEV__) {
+        console.log("=== UPLOAD DEBUG ===");
+        console.log("Full response data:", JSON.stringify(data, null, 2));
+        console.log("data.avatar:", data.avatar);
+        console.log("typeof data.avatar:", typeof data.avatar);
+        console.log("===================");
+      }
 
       if (data.avatar) {
         // 1. Update Context
-        console.log("Updating AuthContext with:", data.avatar);
+        if (__DEV__) console.log("Updating AuthContext with:", data.avatar);
         if (updateAvatar) {
           updateAvatar(data.avatar);
-          console.log("AuthContext updated");
+          if (__DEV__) console.log("AuthContext updated");
         }
 
         // 2. Update Local State with timestamp to FORCE refresh
         const newUrl = `${data.avatar}?t=${Date.now()}`;
-        console.log("Setting local profile state with:", newUrl);
+        if (__DEV__) console.log("Setting local profile state with:", newUrl);
         setProfile((prevProfile) => {
-          console.log("Previous profile:", prevProfile);
+          if (__DEV__) console.log("Previous profile:", prevProfile);
           const updated = { ...prevProfile, avatar: newUrl };
-          console.log("Updated profile:", updated);
+          if (__DEV__) console.log("Updated profile:", updated);
           return updated;
         });
 
         Alert.alert("Success", "Profile picture updated!");
       } else {
-        console.log("❌ No avatar in response");
+        if (__DEV__) console.log("❌ No avatar in response");
         Alert.alert("Notice", "Upload finished but no URL returned.");
       }
     } catch (error: any) {
