@@ -65,11 +65,11 @@ export default function InviteFriendsScreen() {
     return full || 'student';
   }, [user?.fullName]);
 
-  const APP_LINK = `https://communitytalk.app/@${username}`;
+  const APP_LINK = `https://campustry.app/@${username}`;
 
   const inviteMessage = useMemo(
     () =>
-      `Hey! I’m connected on CommunityTalk to our campus.\n\n` +
+      `Hey! I’m connected on Campustry to our campus.\n\n` +
       `Sign up with my link and get 2 FREE dating swipes: ${APP_LINK}\n\n` +
       `See you there!`,
     [APP_LINK],
@@ -160,7 +160,7 @@ export default function InviteFriendsScreen() {
           </Text>
 
           <Text style={{ fontSize: 16, color: textSecondary, textAlign: 'center', lineHeight: 26, maxWidth: '85%' }}>
-            Help bring your campus to CommunityTalk. Everyone wins when the network grows.
+            Help bring your campus to Campustry. Everyone wins when the network grows.
           </Text>
         </View>
 
@@ -183,7 +183,7 @@ export default function InviteFriendsScreen() {
                 Your Link
               </Text>
               <Text numberOfLines={1} style={{ fontSize: 15, fontFamily: Fonts.bold, color: textPrimary }}>
-                communitytalk.app/@{username}
+                campustry.app/@{username}
               </Text>
             </View>
 

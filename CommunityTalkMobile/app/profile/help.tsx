@@ -103,7 +103,7 @@ export default function HelpAndSupportScreen() {
       ``,
       `Thanks!`,
     ].join('\n');
-    openEmail('Help with CommunityTalk account', bodyLines);
+    openEmail('Help with Campustry account', bodyLines);
   };
 
   const handleCodeHelp = () => {
@@ -123,7 +123,7 @@ export default function HelpAndSupportScreen() {
     Alert.alert(
       'Safety & urgent issues',
       [
-        'CommunityTalk is not an emergency service.',
+        'Campustry is not an emergency service.',
         '',
         'For anything that feels unsafe or urgent:',
         '• Contact campus security or local authorities first.',
@@ -213,7 +213,7 @@ export default function HelpAndSupportScreen() {
                 fontFamily: Fonts.bold,
               }}
             >
-              Need help with CommunityTalk?
+              Need help with Campustry?
             </Text>
           </View>
 
@@ -410,7 +410,7 @@ export default function HelpAndSupportScreen() {
                   Safety & community guidelines
                 </Text>
                 <Text style={{ color: textSecondary, fontSize: 13 }} numberOfLines={2}>
-                  Learn how we want people to use CommunityTalk and what to do if you
+                  Learn how we want people to use Campustry and what to do if you
                   see something off.
                 </Text>
               </View>
@@ -455,7 +455,7 @@ export default function HelpAndSupportScreen() {
               marginBottom: 4,
             }}
           >
-            CommunityTalk is not 911
+            Campustry is not 911
           </Text>
           <Text
             style={{

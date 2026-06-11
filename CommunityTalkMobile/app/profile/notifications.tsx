@@ -154,8 +154,8 @@ export default function NotificationSettingsScreen() {
       Alert.alert(
         "Open settings",
         Platform.OS === "android"
-          ? "Open your system settings → Notifications → CommunityTalk"
-          : "Open Settings → Notifications → CommunityTalk"
+          ? "Open your system settings → Notifications → Campustry"
+          : "Open Settings → Notifications → Campustry"
       );
     }
   };
@@ -176,7 +176,7 @@ export default function NotificationSettingsScreen() {
           // Prevent 401 spam — user not logged in
           Alert.alert(
             "Login required",
-            "You must be logged in to enable push notifications for CommunityTalk."
+            "You must be logged in to enable push notifications for Campustry."
           );
           await savePrefs({ ...prefs, pushEnabled: false });
           return;
@@ -423,7 +423,7 @@ export default function NotificationSettingsScreen() {
                   Push notifications
                 </Text>
                 <Text style={{ color: textSecondary, fontSize: 13, lineHeight: 18 }}>
-                  Turn all CommunityTalk notifications on/off from the app.
+                  Turn all Campustry notifications on/off from the app.
                 </Text>
               </View>
             </View>
@@ -598,7 +598,7 @@ export default function NotificationSettingsScreen() {
             fontSize: 11,
           }}
         >
-          These settings control how CommunityTalk uses notifications. Your system
+          These settings control how Campustry uses notifications. Your system
           settings may still override them.
         </Text>
       </ScrollView>
