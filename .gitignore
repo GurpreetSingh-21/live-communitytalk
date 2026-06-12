@@ -1,3 +1,11 @@
 *.apk
 *.aab
 CommunityTalkMobile/build-*.apk
+
+# Environment files — NEVER commit secrets
+backend/.env
+CommunityTalkMobile/.env
+.env
+.env.local
+.env.production
+

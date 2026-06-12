@@ -162,34 +162,7 @@ app.get("/health", (_req, res) =>
   res.status(200).json({ ok: true, uptime: process.uptime() })
 );
 
-// 🔍 DEBUG: Socket rooms inspection endpoint
-app.get("/debug/sockets", (_req, res) => {
-  if (!io) return res.json({ error: "io not initialized" });
-
-  const sockets = [];
-  for (const [id, socket] of io.sockets.sockets) {
-    sockets.push({
-      id,
-      userId: socket.user?.id,
-      rooms: Array.from(socket.rooms),
-      communityIds: socket.user?.communityIds || [],
-    });
-  }
-
-  const rooms = {};
-  for (const [roomName, socketIds] of io.sockets.adapter.rooms) {
-    // Skip socket ID rooms (socket.io creates a room for each socket ID)
-    if (!io.sockets.sockets.has(roomName)) {
-      rooms[roomName] = socketIds.size;
-    }
-  }
-
-  res.json({
-    connectedSockets: sockets.length,
-    sockets,
-    rooms,
-  });
-});
+// /debug/sockets removed — was unauthenticated and exposed user data
 
 // ───────────────────────── Socket.IO ─────────────────────────
 io = new Server(server, {
@@ -235,7 +208,7 @@ io.use(async (socket, next) => {
       return next(new Error("Invalid token"));
     }
 
-    console.log("✅ [Socket Auth] Token decoded:", decoded);
+    // Token decoded successfully (log removed for production security)
 
     // ✅ Prisma Auth
     const user = await prisma.user.findUnique({ where: { id: decoded.id } });
@@ -272,8 +245,7 @@ io.on("connection", async (socket) => {
   const communities = socket.user?.communityIds || [];
   if (!uid) return;
 
-  console.log(`🔌 ${uid} connected (${socket.id})`);
-  console.log(`   User communities from Prisma:`, communities);
+  if (process.env.NODE_ENV !== 'production') console.log(`🔌 ${uid} connected (${socket.id})`);
 
   // Track online presence (Redis-backed)
   const { isFirstConnection } = await presence.connect(uid);
@@ -566,16 +538,7 @@ app.use("/api/safety", authenticate, safetyRoutes);
 app.use("/api/reactions", authenticate, reactionRoutes);
 // Two-Factor Authentication routes
 app.use("/api/2fa", twoFactorRoutes);
-// Events routes with pre-auth logging
-app.use("/api/events", (req, _res, next) => {
-  console.log("🧭 [/api/events pre-auth]");
-  console.log("→ originalUrl:", req.originalUrl);
-  console.log("→ method:", req.method);
-  console.log("→ headers.authorization:", req.headers?.authorization);
-  console.log("→ headers.Authorization:", req.headers?.Authorization);
-  console.log("→ x-access-token:", req.headers?.["x-access-token"]);
-  next();
-});
+// Events routes
 app.use("/api/events", authenticate, eventRoutes);
 // F-04: Secure upload routes via auth AND moved them UP above global JSON parser
 
