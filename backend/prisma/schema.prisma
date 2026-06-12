@@ -360,11 +360,16 @@ model DatingProfile {
   collegeSlug String   // e.g., 'baruch', 'hunter'
   major       String?
   year        StudyYear? // Freshman, Sophomore, etc.
+  gradYear    String?    // e.g., "Class of 2026"
+  greekLife   String?    // e.g., "Alpha Phi"
 
   // ── Details ──
   lookingFor      LookingFor[] // Relationship, Casual, etc.
   hobbies         String[]     // Tags: "Gym", "Music", "Coding"
+  interests       String[]     // "Vibe" / Interest Badges
+  prompts         Json?        // Array of { question, answer }
   instagramHandle String?      // For verification/display
+  spotifyTopArtists String[]   // Custom top 3 artists list for MVP
 
   // ── Location ──
   // We can store lat/long for distance calculation

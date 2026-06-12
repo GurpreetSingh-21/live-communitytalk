@@ -27,8 +27,13 @@ export interface DatingProfile {
     bio: string;
     major: string;
     year: string;
+    gradYear: string | null;
+    greekLife: string | null;
     collegeSlug: string;
     hobbies: string[];
+    interests: string[];
+    prompts: any[];
+    spotifyTopArtists: string[];
     photos: DatingPhoto[];
     preference: DatingPreference | null;
     isPaused: boolean;
@@ -39,7 +44,12 @@ export interface UpdateProfilePayload {
     bio?: string;
     major?: string;
     year?: string;
+    gradYear?: string | null;
+    greekLife?: string | null;
     hobbies?: string[];
+    interests?: string[];
+    prompts?: any[];
+    spotifyTopArtists?: string[];
     photos?: { url: string; isMain: boolean }[];
     preferences?: Partial<DatingPreference>;
     pauseProfile?: boolean;
@@ -94,7 +104,8 @@ const DatingAPI = {
     uploadPhoto: async (base64: string): Promise<string | null> => {
         try {
             const response = await api.post('/api/upload/base64', {
-                file: `data:image/jpeg;base64,${base64}`,
+                image: `data:image/jpeg;base64,${base64}`,
+                fileName: `dating_photo_${Date.now()}.jpg`,
                 folder: 'community_talk_dating',
             });
             return response.data.url;

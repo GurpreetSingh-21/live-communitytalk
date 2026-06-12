@@ -7,7 +7,7 @@ const speakeasy = require("speakeasy");
 
 const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
-const { sendVerificationEmail, sendNewDeviceEmail } = require("../services/emailService");
+const { sendVerificationEmail, sendNewDeviceEmail, sendPasswordResetEmail } = require("../services/emailService");
 
 require("dotenv").config();
 
@@ -578,6 +578,127 @@ router.post("/verify-code", async (req, res) => {
       error:
         "An error occurred during verification. Please try again later.",
     });
+  }
+});
+
+/* -------------------------- FORGOT PASSWORD -------------------------- */
+router.post("/forgot-password", async (req, res) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    if (!email) return res.status(400).json({ error: "Email is required" });
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      // Return 200 to prevent email enumeration
+      return res.status(200).json({ message: "If the email exists, a reset code has been sent." });
+    }
+
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const expires = new Date(Date.now() + 15 * 60000); // 15 mins
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        verificationCode: resetCode,
+        verificationCodeExpires: expires,
+        verificationCodeAttempts: 0
+      }
+    });
+
+    await sendPasswordResetEmail(user.email, resetCode).catch(console.error);
+
+    return res.status(200).json({ message: "If the email exists, a reset code has been sent." });
+  } catch (error) {
+    console.error("POST /forgot-password error:", error);
+    return res.status(500).json({ error: "Server Error" });
+  }
+});
+
+/* ------------------------ VERIFY RESET CODE -------------------------- */
+router.post("/verify-reset-code", async (req, res) => {
+  try {
+    const { email, code } = req.body;
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!normalizedEmail || !code) {
+      return res.status(400).json({ error: "Email and code are required." });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    if (user.verificationCodeAttempts >= 5) {
+      return res.status(400).json({ error: "Max attempts reached. Request a new code." });
+    }
+
+    if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
+      return res.status(400).json({ error: "Verification code has expired." });
+    }
+
+    if (!user.verificationCode || user.verificationCode !== code) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { verificationCodeAttempts: { increment: 1 } }
+      });
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
+
+    return res.status(200).json({ message: "Code verified successfully." });
+  } catch (error) {
+    console.error("POST /verify-reset-code error:", error);
+    return res.status(500).json({ error: "Server Error" });
+  }
+});
+
+/* -------------------------- RESET PASSWORD --------------------------- */
+router.post("/reset-password", async (req, res) => {
+  try {
+    const { email, code, newPassword } = req.body;
+    const normalizedEmail = normalizeEmail(email);
+
+    if (!normalizedEmail || !code || !newPassword) {
+      return res.status(400).json({ error: "Email, code, and new password are required." });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: "Password must be at least 8 characters" });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+    if (!user) return res.status(404).json({ error: "User not found." });
+
+    if (user.verificationCodeAttempts >= 5) {
+      return res.status(400).json({ error: "Max attempts reached. Request a new code." });
+    }
+
+    if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
+      return res.status(400).json({ error: "Verification code has expired." });
+    }
+
+    if (!user.verificationCode || user.verificationCode !== code) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { verificationCodeAttempts: { increment: 1 } }
+      });
+      return res.status(400).json({ error: "Invalid verification code." });
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hash,
+        verificationCode: null,
+        verificationCodeExpires: null,
+        verificationCodeAttempts: 0,
+      }
+    });
+
+    return res.status(200).json({ message: "Password reset successfully." });
+  } catch (error) {
+    console.error("POST /reset-password error:", error);
+    return res.status(500).json({ error: "Server Error" });
   }
 });
 
