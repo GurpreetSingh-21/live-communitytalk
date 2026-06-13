@@ -247,7 +247,7 @@ const UserProfileModal: React.FC<UserProfileModalProps> = ({
               : isDanger 
               ? '#ED4245' 
               : (isDark ? colors.textMuted : colors.textSecondary),
-            fontFamily: Fonts.medium,
+            fontFamily: Fonts.regular,
             fontSize: 14,
             letterSpacing: -0.2,
           }}

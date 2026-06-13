@@ -951,7 +951,8 @@ export default function CommunityScreen() {
     <KeyboardAvoidingView
       className="flex-1"
       behavior={Platform.select({ ios: "padding", android: undefined })}
-      style={{ backgroundColor: colors.bg }}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      style={{ flex: 1, backgroundColor: colors.bg }}
     >
       <Stack.Screen options={{ header: () => null }} />
 
@@ -1029,6 +1030,7 @@ export default function CommunityScreen() {
                       data={messages}
                       keyExtractor={(m) => String(m._id)}
                       renderItem={renderMessage}
+                      // @ts-ignore
                       estimatedItemSize={100}
                       onContentSizeChange={handleChatContentSizeChange}
                       onScroll={handleChatScroll}
@@ -1125,6 +1127,7 @@ export default function CommunityScreen() {
                   data={members}
                   keyExtractor={(m) => String(m._id)}
                   renderItem={({ item }) => <MemberRowCard item={item} />}
+                  // @ts-ignore
                   estimatedItemSize={84}
                   onEndReachedThreshold={0.3}
                   onEndReached={loadMoreMembers}

@@ -161,14 +161,25 @@ router.post("/register", async (req, res) => {
           // We can just update them using standard JS Date
           const expires = new Date(Date.now() + 3600000); // 1 hour
 
+          const hash = await bcrypt.hash(password, 10);
           const updated = await tx.user.update({
             where: { id: exists.id },
             data: {
+              fullName,
+              password: hash,
+              collegeName: collegeDoc.name,
+              collegeSlug: collegeDoc.key,
+              religionKey: religionCommunity.key,
               verificationCode,
               verificationCodeExpires: expires,
               verificationCodeAttempts: 0
             }
           });
+
+          // Delete old pending memberships and recreate them with the new choices
+          await tx.member.deleteMany({ where: { userId: exists.id } });
+          await upsertMembership({ tx, user: updated, communityId: collegeCommunity.id });
+          await upsertMembership({ tx, user: updated, communityId: religionCommunity.id });
 
           userForEmail = updated;
           isResend = true;

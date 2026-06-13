@@ -264,7 +264,7 @@ export async function createAutoIdentityBackup(userId: string): Promise<AutoBack
     return null;
   }
   console.log(`🔐 [E2EE Backup] 📦 Creating automatic backup for user ${userId.substring(0, 8)}...`);
-  const backup = { version: 2, secretKeyB64 };
+  const backup: AutoBackupBlob = { version: 2, secretKeyB64 };
   console.log(`🔐 [E2EE Backup] ✅ Backup blob created (version 2, auto)`);
   return backup;
 }

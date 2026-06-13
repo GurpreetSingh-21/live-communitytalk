@@ -2040,8 +2040,8 @@ export default function CommunityScreen() {
       <KeyboardAvoidingView
         className="flex-1"
         behavior={Platform.select({ ios: "padding", android: undefined })}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
-        style={{ backgroundColor: isDark ? colors.bg : '#F7F8FA' }}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+        style={{ flex: 1, backgroundColor: isDark ? colors.bg : '#F7F8FA' }}
       >
         <Stack.Screen options={{ header: () => null }} />
 

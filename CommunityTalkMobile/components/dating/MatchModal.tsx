@@ -118,8 +118,8 @@ export default function MatchModal({ visible, onClose, matchData }: MatchModalPr
                         <View
                             key={i}
                             style={[styles.sparkle, {
-                                top: pos.top,
-                                left: pos.left,
+                                top: pos.top as any,
+                                left: pos.left as any,
                                 width: pos.size,
                                 height: pos.size,
                                 borderRadius: pos.size / 2,
