@@ -33,7 +33,7 @@ community_avatars/
 
 4. The script will:
    - Upload the image to Cloudinary under `community_avatars/colleges/baruch`
-   - Update the `Community.imageUrl` field in the database
+   - Use `updateMany` to update the `Community.imageUrl` field in the database for **all** matching communities (this is important because there are sometimes multiple/duplicate community entries with the same name, e.g., 25 "India" communities).
    - The mobile app will show the new avatar on the next pull-to-refresh
 
 ## Cloudinary Folder Structure

@@ -61,33 +61,30 @@ async function uploadAndSetAvatar({ localFile, cloudinaryFolder, publicId, match
   const imageUrl = result.secure_url;
   console.log(`   ✅ Uploaded! URL: ${imageUrl}`);
 
-  // 2. Find matching community in DB (case-insensitive name search)
-  let community = null;
+  // 2. Find and update all matching communities in DB (case-insensitive name search)
+  let updatedCount = 0;
   if (matchBy.name) {
-    community = await prisma.community.findFirst({
-      where: {
-        name: { contains: matchBy.name, mode: 'insensitive' }
-      }
+    const result = await prisma.community.updateMany({
+      where: { name: { contains: matchBy.name, mode: 'insensitive' } },
+      data: { imageUrl }
     });
+    updatedCount = result.count;
   } else if (matchBy.key) {
-    community = await prisma.community.findFirst({
-      where: { key: matchBy.key }
+    const result = await prisma.community.updateMany({
+      where: { key: matchBy.key },
+      data: { imageUrl }
     });
+    updatedCount = result.count;
   }
 
-  if (!community) {
+  if (updatedCount === 0) {
     console.warn(`   ⚠️  No community found matching: ${JSON.stringify(matchBy)}`);
-    return { publicId: fullPublicId, imageUrl, communityUpdated: false };
+    return { publicId: fullPublicId, imageUrl, updatedCount: 0 };
   }
 
-  // 3. Update the community's imageUrl in the database
-  await prisma.community.update({
-    where: { id: community.id },
-    data: { imageUrl }
-  });
-  console.log(`   🗃️  DB updated → Community "${community.name}" (id: ${community.id})`);
+  console.log(`   🗃️  DB updated → ${updatedCount} community(s) matching "${matchBy.name || matchBy.key}"`);
 
-  return { publicId: fullPublicId, imageUrl, communityId: community.id, communityName: community.name };
+  return { publicId: fullPublicId, imageUrl, updatedCount, communityName: matchBy.name || matchBy.key };
 }
 
 async function main() {
