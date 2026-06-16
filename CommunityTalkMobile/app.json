@@ -10,11 +10,11 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.communitytalk.mobile",
+      "bundleIdentifier": "com.campustry.app",
       "buildNumber": "1",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": true,
+        "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "This app uses the camera for verifying your profile and taking photos for messages.",
         "NSMicrophoneUsageDescription": "This app uses the microphone to record voice messages in chats.",
         "NSPhotoLibraryUsageDescription": "This app accesses your photos to let you share images in chats and update your profile.",
@@ -23,7 +23,7 @@
       }
     },
     "android": {
-      "package": "com.communitytalk.mobile",
+      "package": "com.campustry.app",
       "edgeToEdgeEnabled": false,
       "predictiveBackGestureEnabled": false,
       "googleServicesFile": "./google-services.json",

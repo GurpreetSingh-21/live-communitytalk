@@ -255,11 +255,8 @@ io.on("connection", async (socket) => {
   for (const cid of communities) {
     const roomName = communityRoom(cid);
     socket.join(roomName);
-    console.log(`   ✅ Auto-joined room: ${roomName}`);
     await presence.joinCommunity(uid, cid);
   }
-
-  console.log(`   All socket rooms:`, Array.from(socket.rooms));
 
   // Initial room info for client
   socket.emit("rooms:init", {
@@ -279,17 +276,10 @@ io.on("connection", async (socket) => {
   // Manual community join/leave
   socket.on("community:join", async (cid) => {
     const roomName = communityRoom(cid);
-    console.log(`🔵 [BACKEND] User ${uid} joining community room: ${roomName}`);
-    console.log(`   Before join - Socket rooms:`, Array.from(socket.rooms));
-
     socket.join(roomName);
-
-    console.log(`   After join - Socket rooms:`, Array.from(socket.rooms));
-    console.log(`   Verification - InRoom: ${socket.rooms.has(roomName)}`);
 
     // ✅ Sync socket user state so typing checks pass
     if (socket.user && socket.user.communityIds && !socket.user.communityIds.includes(cid)) {
-      console.log(`🔄 [BACKEND] Adding ${cid} to socket.user.communityIds for ${uid}`);
       socket.user.communityIds.push(cid);
     }
 
@@ -298,12 +288,8 @@ io.on("connection", async (socket) => {
 
   socket.on("community:leave", async (cid) => {
     const roomName = communityRoom(cid);
-    console.log(`🔴 [BACKEND] User ${uid} leaving community room: ${roomName}`);
-    console.log(`   Before leave - Socket rooms:`, Array.from(socket.rooms));
-
     socket.leave(roomName);
 
-    console.log(`   After leave - Socket rooms:`, Array.from(socket.rooms));
     await presence.leaveCommunity(uid, cid);
   });
 
@@ -323,8 +309,7 @@ io.on("connection", async (socket) => {
       await presence.joinCommunity(uid, cid);
     }
 
-    console.log(`🔷 [BACKEND] User ${uid} bulk-subscribed to ${ids.length} communities`);
-    console.log(`   Rooms after bulk subscribe:`, Array.from(socket.rooms));
+
   });
 
   // 🔥 Secure message handler with XSS protection
@@ -367,7 +352,7 @@ io.on("connection", async (socket) => {
           sender: DOMPurify.sanitize(replyTo.sender),
           content: DOMPurify.sanitize(replyTo.content.substring(0, 200)), // Truncate preview
         };
-        console.log('📩 [SOCKET REPLY] Processing reply to:', sanitizedReplyTo);
+
       }
 
       // Save message (Prisma)
@@ -449,30 +434,15 @@ io.on("connection", async (socket) => {
   // ⌨️ Typing Indicator - Community
   socket.on("community:typing", ({ communityId, isTyping }) => {
     try {
-      console.log(`⌨️ [BACKEND] Received typing event: user=${uid}, community=${communityId} (${typeof communityId}), isTyping=${isTyping}`);
-
-      // Ensure communityIds exists
-      const userCommunities = socket.user.communityIds || [];
-      const isMember = userCommunities.includes(communityId);
-
-      // DEBUG: Check if user is actually in the room
+      const isMember = (socket.user.communityIds || []).includes(communityId);
       const roomName = communityRoom(communityId);
-      const inRoom = socket.rooms.has(roomName);
-      console.log(`🔍 [BACKEND] Debug: Room=${roomName}, InRoom=${inRoom}, IsMember=${isMember}`);
-      console.log(`   Socket Rooms:`, Array.from(socket.rooms));
-
       if (isMember) {
-        console.log(`✅ [BACKEND] User is member, broadcasting to room: ${roomName}`);
         socket.to(roomName).emit("user:typing", {
           userId: uid,
           fullName: socket.user.fullName,
           communityId,
           isTyping
         });
-        console.log(`📤 [BACKEND] Emitted user:typing event`);
-      } else {
-        console.log(`❌ [BACKEND] User is NOT a member of community ${communityId}`);
-        console.log(`   User's communities:`, userCommunities);
       }
     } catch (err) {
       console.error("💥 Community typing error:", err);
@@ -510,7 +480,7 @@ io.on("connection", async (socket) => {
       await presence.leaveCommunities(uid, userCommunities);
     }
 
-    console.log(`❌ ${uid} disconnected (${socket.id})`);
+
   });
 });
 
