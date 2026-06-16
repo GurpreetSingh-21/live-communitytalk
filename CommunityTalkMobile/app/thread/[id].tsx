@@ -28,6 +28,7 @@ import { Colors, Fonts } from "@/constants/theme";
 import { useColorScheme as useAppColorScheme } from "@/hooks/use-color-scheme";
 import { ChatComposer } from "@/components/ChatComposer";
 import { ChatMessageItem } from "@/components/ChatMessageItem";
+import { MascotEmptyState } from "@/components/MascotEmptyState";
 
 
 /* ───────── Theme Adapter ───────── */
@@ -1059,6 +1060,10 @@ export default function CommunityScreen() {
                               </View>
                             )}
                           </TouchableOpacity>
+                        ) : messages.length === 0 ? (
+                          <View style={{ paddingTop: 80 }}>
+                            <MascotEmptyState title="Start the chat!" subtitle="Be the first to drop a message in this thread." />
+                          </View>
                         ) : (
                           <View style={{ paddingVertical: 20, alignItems: "center" }}>
                             <View style={{ alignItems: "center" }}>

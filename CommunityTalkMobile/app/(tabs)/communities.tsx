@@ -40,6 +40,7 @@ import { AuthContext } from '@/src/context/AuthContext';
 import { api } from '@/src/api/api';
 import { useSocket } from '@/src/context/SocketContext';
 import { Colors, Fonts } from '@/constants/theme';
+import { MascotEmptyState } from '@/components/MascotEmptyState';
 
 /* ───────────────── Types ───────────────── */
 
@@ -710,15 +711,10 @@ export default function CommunitiesScreen(): React.JSX.Element {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={theme.text} />}
         contentContainerStyle={{ paddingTop: 200, paddingBottom: insets.bottom + 40 }}
         ListEmptyComponent={
-          <View className="items-center mt-20">
-            <Text className="text-2xl">🏛️</Text>
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 18, marginTop: 8, color: theme.text }}>
-              No Communities
-            </Text>
-            <Text style={{ color: theme.textMuted, marginTop: 4, textAlign: 'center', paddingHorizontal: 24, fontSize: 14, fontFamily: Fonts.regular }}>
-              {searchQuery ? 'No communities match your search' : 'Join a community to get started'}
-            </Text>
-          </View>
+          <MascotEmptyState 
+            title="It's quiet in here..." 
+            subtitle={searchQuery ? 'No communities match your search' : 'Explore and join communities to get the conversation started.'} 
+          />
         }
       />
 

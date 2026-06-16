@@ -10,6 +10,7 @@ import {
   Platform,
   LogBox,
   ScrollView,
+  Image,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -368,18 +369,36 @@ function LoginGateway({ onDone }: { onDone: () => void }) {
             transition={{ type: 'spring', damping: 20 }}
             style={{ alignItems: 'center', marginBottom: 40 }}
           >
-            <View style={{
-              width: 80, height: 80, borderRadius: 24,
-              backgroundColor: colors.primary,
-              alignItems: 'center', justifyContent: 'center',
-              marginBottom: 24,
-              shadowColor: colors.primary,
-              shadowOffset: { width: 0, height: 10 },
-              shadowOpacity: 0.3,
-              shadowRadius: 20,
-            }}>
-              <Text style={{ fontSize: 40 }}>✨</Text>
-            </View>
+            <MotiView
+              from={{ translateY: 4, rotateZ: '-5deg' }}
+              animate={{ translateY: -4, rotateZ: '5deg' }}
+              transition={{
+                loop: true,
+                type: 'timing',
+                duration: 2500,
+                easing: Easing.inOut(Easing.ease),
+              }}
+              style={{ marginBottom: 24 }}
+            >
+              <View style={{
+                width: 100, height: 100, borderRadius: 50,
+                backgroundColor: '#FFFFFF',
+                borderWidth: 4,
+                borderColor: scheme === 'dark' ? '#333' : '#FFF',
+                alignItems: 'center', justifyContent: 'center',
+                overflow: 'hidden',
+                shadowColor: colors.text,
+                shadowOffset: { width: 0, height: 12 },
+                shadowOpacity: 0.15,
+                shadowRadius: 20,
+              }}>
+                <Image 
+                  source={require('../assets/images/mascot_cat.png')} 
+                  style={{ width: '100%', height: '100%' }} 
+                  resizeMode="cover" 
+                />
+              </View>
+            </MotiView>
             <Text style={{ fontSize: 32, fontFamily: Fonts.bold, color: colors.text, marginBottom: 8 }}>
               Welcome back
             </Text>

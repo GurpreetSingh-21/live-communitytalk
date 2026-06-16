@@ -48,6 +48,7 @@ import { useSocket } from '@/src/context/SocketContext';
 import { decryptMessage } from '@/src/utils/e2ee';
 import { fetchPublicKey } from '@/src/api/e2eeApi';
 import { Colors, Fonts } from '@/constants/theme';
+import { MascotEmptyState } from '@/components/MascotEmptyState';
 
 // 🚀 PERFORMANCE: In-memory cache for public keys
 const PUBLIC_KEY_CACHE = new Map<string, string>();
@@ -1030,15 +1031,10 @@ export default function DMsScreen(): React.JSX.Element {
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor={theme.text} />}
         contentContainerStyle={{ paddingTop: 220, paddingBottom: insets.bottom + 100 }}
         ListEmptyComponent={
-          <View style={{ alignItems: 'center', marginTop: 80, opacity: 0.6 }}>
-            <Ionicons name="chatbubbles-outline" size={48} color={theme.text} />
-            <Text style={{ fontFamily: Fonts.bold, fontSize: 18, marginTop: 12, color: theme.text }}>
-              No conversations
-            </Text>
-            <Text style={{ fontSize: 14, marginTop: 4, textAlign: 'center', paddingHorizontal: 32, color: theme.textMuted, fontFamily: Fonts.regular }}>
-              {searchQuery ? 'Try a different search' : 'Tap "+" to start messaging'}
-            </Text>
-          </View>
+          <MascotEmptyState 
+            title="No conversations" 
+            subtitle={searchQuery ? 'Try a different search' : 'Say hi to someone and spark a connection!'} 
+          />
         }
       />
 

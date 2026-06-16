@@ -173,41 +173,19 @@ const ProfileHeader = ({
 }) => {
   const theme = isDark ? Colors.dark : Colors.light;
 
-  const animatedContentStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateY: interpolate(scrollY.value, [-200, 0], [-50, 0], "clamp") },
-    ],
-    opacity: interpolate(scrollY.value, [0, 50], [1, 0], "clamp"),
-  }));
-  const animatedBackgroundStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: interpolate(scrollY.value, [-200, 0], [1.5, 1], "clamp") },
-    ],
-  }));
-
-  const gradientColors = [theme.muted, theme.border] as const;
   const initials = item.name.slice(0, 2).toUpperCase() || "CT";
   const avatarUri = item.avatar;
   if (__DEV__) console.log("avatarUri:", avatarUri);
 
   return (
-    <View style={{ marginBottom: 24, overflow: 'hidden' }}>
-      <Animated.View
-        style={[animatedBackgroundStyle, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }]}
-      >
-        <LinearGradient colors={gradientColors} style={{ width: '100%', height: '100%' }} />
-      </Animated.View>
-
-      <Animated.View
-        style={[
-          animatedContentStyle,
-          {
-            paddingTop: insets.top + 60,
-            paddingBottom: 24,
-            paddingHorizontal: 24,
-            alignItems: 'center',
-          },
-        ]}
+    <View style={{ paddingBottom: 16, backgroundColor: theme.background }}>
+      <View
+        style={{
+          paddingTop: insets.top + 60,
+          paddingBottom: 24,
+          paddingHorizontal: 24,
+          alignItems: 'center',
+        }}
       >
         <Pressable
           onPress={onEditAvatar}
@@ -323,7 +301,7 @@ const ProfileHeader = ({
             </View>
           ))}
         </View>
-      </Animated.View>
+      </View>
     </View>
   );
 };
@@ -332,7 +310,7 @@ const SettingsRow = ({
   item,
 }: {
   item: SettingRowData;
-  isDark: boolean; // kept for compatibility if needed, but we use hook now or pass theme? Better to use hook inside if we want context, but parent passes isDark.
+  isDark: boolean;
 }) => {
   const isDark = useDeviceColorScheme() === 'dark';
   const theme = isDark ? Colors.dark : Colors.light;
@@ -535,7 +513,7 @@ const AuthedProfileView = ({
           <Pressable
             onPress={handleLogout}
             style={{
-              backgroundColor: theme.surface, // Clean surface
+              backgroundColor: theme.surface,
               padding: 18,
               borderRadius: 20,
               flexDirection: 'row',
@@ -543,7 +521,7 @@ const AuthedProfileView = ({
               gap: 16,
               marginHorizontal: 16,
               borderWidth: 1,
-              borderColor: Colors.light.danger + '20', // Subtle red border
+              borderColor: Colors.light.danger + '20',
               shadowColor: Colors.light.danger,
               shadowOpacity: 0.05,
               shadowRadius: 8,
@@ -681,7 +659,7 @@ export default function ProfileScreen(): React.JSX.Element {
       setProfile((p) => ({
         ...p,
         name: fullName,
-        avatar: u.avatar || p.avatar, // ✅ Preserve existing avatar if API returns null/undefined
+        avatar: u.avatar || p.avatar,
         bio: u.bio || null,
         stats: {
           communities: communities.length || 0,
@@ -751,14 +729,12 @@ export default function ProfileScreen(): React.JSX.Element {
       }
 
       if (data.avatar) {
-        // 1. Update Context
         if (__DEV__) console.log("Updating AuthContext with:", data.avatar);
         if (updateAvatar) {
           updateAvatar(data.avatar);
           if (__DEV__) console.log("AuthContext updated");
         }
 
-        // 2. Update Local State with timestamp to FORCE refresh
         const newUrl = `${data.avatar}?t=${Date.now()}`;
         if (__DEV__) console.log("Setting local profile state with:", newUrl);
         setProfile((prevProfile) => {
@@ -802,7 +778,7 @@ export default function ProfileScreen(): React.JSX.Element {
           style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: insets.top }}
         >
           <Text style={{ fontSize: 24, fontFamily: Fonts.bold, color: theme.text }}>
-            You’re not signed in
+            You're not signed in
           </Text>
           <Pressable
             onPress={() => router.push("/modal?context=auth")}

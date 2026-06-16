@@ -11,6 +11,7 @@ import { AuthContext } from '@/src/context/AuthContext';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '@/src/api/api';
 import { Colors, Fonts } from '@/constants/theme';
+import { MascotEmptyState } from '@/components/MascotEmptyState';
 
 type EventItem = {
   _id: string;
@@ -259,13 +260,11 @@ export default function ExploreScreen() {
   );
 
   const Empty = !loading ? (
-    <View style={{ alignItems: 'center', paddingVertical: 96 }}>
-      <LinearGradient
-        colors={[theme.muted, theme.border]}
-        style={{ height: 96, width: 96, borderRadius: 24, marginBottom: 16 }}
+    <View style={{ paddingTop: 60 }}>
+      <MascotEmptyState 
+        title="Nothing scheduled yet" 
+        subtitle="Check back soon for upcoming campus events." 
       />
-      <Text style={{ fontSize: 18, fontFamily: Fonts.bold, color: theme.text }}>Nothing scheduled yet</Text>
-      <Text style={{ marginTop: 4, color: theme.textMuted, fontFamily: Fonts.regular }}>Check back soon.</Text>
     </View>
   ) : null;
 

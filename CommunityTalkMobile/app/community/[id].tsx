@@ -1887,20 +1887,22 @@ export default function CommunityScreen() {
                   activeOpacity={0.9}
                   style={{ position: 'relative' }}
                 >
-                  <View
-                    style={{
-                      backgroundColor: colors.primary,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      borderRadius: 12,
-                      borderTopRightRadius: isFirstOfGroup ? 12 : 4,
-                      borderBottomRightRadius: isLastOfGroup ? 12 : 4,
-                    }}
-                  >
+                  <>
                     {deleted ? (
-                      <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, fontStyle: "italic" }}>
-                        Message deleted
-                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: colors.primary,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 12,
+                          borderTopRightRadius: isFirstOfGroup ? 12 : 4,
+                          borderBottomRightRadius: isLastOfGroup ? 12 : 4,
+                        }}
+                      >
+                        <Text style={{ color: "rgba(255,255,255,0.7)", fontSize: 14, fontStyle: "italic" }}>
+                          Message deleted
+                        </Text>
+                      </View>
                     ) : item.type === 'photo' || (item.content?.match(/\.(jpeg|jpg|gif|png|webp)/i) && item.content?.includes('cloudinary.com')) ? (
                       <View style={{ position: 'relative' }}>
                         <TouchableOpacity
@@ -1908,7 +1910,9 @@ export default function CommunityScreen() {
                           onPress={() => handleImagePress(item.content)}
                           onLongPress={() => handleLongPress(item)}
                           style={{
-                            borderRadius: 10,
+                            borderRadius: 12,
+                            borderTopRightRadius: isFirstOfGroup ? 12 : 4,
+                            borderBottomRightRadius: isLastOfGroup ? 12 : 4,
                             overflow: 'hidden',
                           }}
                         >
@@ -1926,10 +1930,13 @@ export default function CommunityScreen() {
                           style={{
                             width: 220,
                             height: 150,
-                            borderRadius: 10,
+                            borderRadius: 12,
+                            borderTopRightRadius: isFirstOfGroup ? 12 : 4,
+                            borderBottomRightRadius: isLastOfGroup ? 12 : 4,
                             backgroundColor: 'rgba(0,0,0,0.3)',
                             alignItems: 'center',
-                            justifyContent: 'center'
+                            justifyContent: 'center',
+                            overflow: 'hidden',
                           }}
                         >
                           <View style={{
@@ -1945,13 +1952,24 @@ export default function CommunityScreen() {
                         </TouchableOpacity>
                       </View>
                     ) : (
-                      <View style={{ position: 'relative' }}>
-                        <Text style={{ color: "#FFFFFF", fontSize: 15, lineHeight: 20 }}>
-                          {item.content}
-                        </Text>
+                      <View
+                        style={{
+                          backgroundColor: colors.primary,
+                          paddingHorizontal: 12,
+                          paddingVertical: 8,
+                          borderRadius: 12,
+                          borderTopRightRadius: isFirstOfGroup ? 12 : 4,
+                          borderBottomRightRadius: isLastOfGroup ? 12 : 4,
+                        }}
+                      >
+                        <View style={{ position: 'relative' }}>
+                          <Text style={{ color: "#FFFFFF", fontSize: 15, lineHeight: 20 }}>
+                            {item.content}
+                          </Text>
+                        </View>
                       </View>
                     )}
-                  </View>
+                  </>
                 </TouchableOpacity>
 
                 {/* WhatsApp-style Reactions - Below bubble, right-aligned */}
