@@ -276,6 +276,7 @@ export default function ForgotPasswordScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [resetToken, setResetToken] = useState<string | null>(null);
 
   /* ── Step 1: Send reset email ── */
   const handleSendCode = async () => {
@@ -308,10 +309,11 @@ export default function ForgotPasswordScreen() {
     setError(null);
     setBusy(true);
     try {
-      await api.post("/api/verify-reset-code", {
+      const res = await api.post("/api/verify-reset-code", {
         email: email.trim().toLowerCase(),
         code,
       });
+      setResetToken(res.data.resetToken);
       setStep("newPassword");
     } catch (e: any) {
       const msg = e?.response?.data?.error || "Invalid or expired code. Try again.";
@@ -335,8 +337,7 @@ export default function ForgotPasswordScreen() {
     setBusy(true);
     try {
       await api.post("/api/reset-password", {
-        email: email.trim().toLowerCase(),
-        code,
+        resetToken,
         newPassword,
       });
       Alert.alert(

@@ -63,10 +63,10 @@ router.get("/", async (req, res) => {
     try {
       const cached = await req.redisClient.get(cacheKey);
       if (cached) {
-        console.log(`[DM Inbox] 💾 Cache HIT for user ${currentUserId.substring(0, 8)}`);
+        if (process.env.NODE_ENV !== 'production') console.log(`[DM Inbox] 💾 Cache HIT for user ${currentUserId.substring(0, 8)}`);
         return res.json(JSON.parse(cached));
       }
-      console.log(`[DM Inbox] 💾 Cache MISS for user ${currentUserId.substring(0, 8)}`);
+      if (process.env.NODE_ENV !== 'production') console.log(`[DM Inbox] 💾 Cache MISS for user ${currentUserId.substring(0, 8)}`);
     } catch (cacheErr) {
       console.warn('[DM Inbox] Cache read failed:', cacheErr);
     }
@@ -188,7 +188,7 @@ router.get("/", async (req, res) => {
     // 🚀 PERFORMANCE: Save to Redis cache (30 second TTL)
     try {
       await req.redisClient.setex(cacheKey, 30, JSON.stringify(normalized));
-      console.log(`[DM Inbox] 💾 Cached ${normalized.length} conversations for 30s`);
+      if (process.env.NODE_ENV !== 'production') console.log(`[DM Inbox] 💾 Cached ${normalized.length} conversations for 30s`);
     } catch (cacheErr) {
       console.warn('[DM Inbox] Cache save failed:', cacheErr);
     }
@@ -219,7 +219,7 @@ router.get("/:memberId", async (req, res) => {
     if (req.redisClient) {
       const cached = await req.redisClient.get(cacheKey);
       if (cached) {
-        console.log(`✅ [Cache HIT] DM messages ${me.slice(0,8)}-${them.slice(0,8)}`);
+        if (process.env.NODE_ENV !== 'production') console.log(`✅ [Cache HIT] DM messages ${me.slice(0,8)}-${them.slice(0,8)}`);
         return res.json(JSON.parse(cached));
       }
     }
@@ -267,7 +267,7 @@ router.get("/:memberId", async (req, res) => {
     // 💾 Cache for 2 minutes
     if (req.redisClient) {
       await req.redisClient.setex(cacheKey, 120, JSON.stringify(response));
-      console.log(`💾 [Cache MISS] Cached DM messages ${me.slice(0,8)}-${them.slice(0,8)}`);
+      if (process.env.NODE_ENV !== 'production') console.log(`💾 [Cache MISS] Cached DM messages ${me.slice(0,8)}-${them.slice(0,8)}`);
     }
 
     return res.json(response);
@@ -288,12 +288,6 @@ const handleSend = async (req, res) => {
     const count = await req.redisClient.incr(dmKey);
     if (count === 1) await req.redisClient.expire(dmKey, 60); // 1-min window
     if (count > 15) return res.status(429).json({ error: "You are sending messages too fast. Please slow down." });
-
-    // 🛡️ SAFETY: Spam Repetition
-    const ALLOWED_CONTENT = RateLimiter.checkRepetition(from, req.body.content || "", 3);
-    if (!ALLOWED_CONTENT) {
-      return res.status(429).json({ error: "Please avoid repeating the same message." });
-    }
 
     if (!to) return res.status(400).json({ error: "Invalid recipient id" });
     if (String(to) === String(from)) return res.status(400).json({ error: "Cannot message yourself" });
@@ -508,7 +502,7 @@ router.delete("/:partnerId", async (req, res) => {
           } while (cursor !== '0');
         }
 
-        console.log(`[DM Routes] 🧹 Invalidated inbox and message caches for both users`);
+        if (process.env.NODE_ENV !== 'production') console.log(`[DM Routes] 🧹 Invalidated inbox and message caches for both users`);
       } catch (cacheErr) {
         console.warn('[DM Routes] Cache invalidation failed:', cacheErr);
       }
@@ -518,7 +512,7 @@ router.delete("/:partnerId", async (req, res) => {
     req.io?.to(String(me)).emit("dm:conversation_deleted", { partnerId });
     req.io?.to(String(partnerId)).emit("dm:conversation_deleted", { partnerId: me });
 
-    console.log(`[DM Routes] ✅ Deleted conversation between ${me} and ${partnerId} (${result.count} messages)`);
+    if (process.env.NODE_ENV !== 'production') console.log(`[DM Routes] ✅ Deleted conversation between ${me} and ${partnerId} (${result.count} messages)`);
     
     return res.json({ 
       success: true,

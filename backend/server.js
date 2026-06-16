@@ -143,7 +143,7 @@ app.use(
 );
 
 // 🛡️ Rate Limiting - F-12: Global rate limiter re-enabled
-const rateLimiter = require("./middleware/rateLimiter");
+const { limiter: rateLimiter } = require("./middleware/rateLimiter");
 app.use(rateLimiter);
 
 // Upload routes need a larger body limit, mount them before the global 1mb limit
@@ -202,10 +202,12 @@ io.use(async (socket, next) => {
       socket.handshake.auth?.token ||
       (socket.handshake.headers?.authorization || "").split(" ")[1];
 
-    console.log(
-      "🔑 [Socket Auth] Handshake token:",
-      token ? token.slice(0, 15) + "..." : "❌ None"
-    );
+    if (process.env.NODE_ENV !== 'production') {
+      console.log(
+        "🔑 [Socket Auth] Handshake token:",
+        token ? token.slice(0, 15) + "..." : "❌ None"
+      );
+    }
 
     if (!token) return next(new Error("No token provided"));
 

@@ -324,10 +324,9 @@ router.get("/pool", async (req, res) => {
           gender: { in: interestedGenders }
         }),
         // Match Reciprocal Gender (I am what Candidate wants)
-        // TEMP DISABLED: This filter is too strict for testing
-        // preference: {
-        //   interestedInGender: { has: myProfile.gender }
-        // },
+        preference: {
+          interestedInGender: { has: myProfile.gender }
+        },
         // College Scope (Optional)
         ...(prefs.showToPeopleOnCampusOnly && {
           collegeSlug: myProfile.collegeSlug
@@ -367,7 +366,7 @@ router.get("/pool", async (req, res) => {
       gradYear:    profile.gradYear || null,
       greekLife:   profile.greekLife || null,
       collegeSlug: profile.collegeSlug,
-      collegeName: 'Queens College',
+      collegeName: profile.collegeName || profile.collegeSlug || 'Unknown',
       hobbies:     profile.hobbies || [],
       interests:   profile.interests || [],
       prompts:     profile.prompts || [],

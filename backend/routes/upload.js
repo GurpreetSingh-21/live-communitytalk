@@ -96,15 +96,13 @@ const upload = multer({
 
 // 4. Secure Upload Route
 router.post('/', (req, res, next) => {
-  console.log('🔍 [UPLOAD] Request received');
-  console.log('Headers:', req.headers);
-  console.log('Body type:', typeof req.body);
+  if (process.env.NODE_ENV !== 'production') console.log('🔍 [UPLOAD] Request received');
   next();
 }, upload.single('file'), (req, res) => {
   try {
-    console.log('📥 [UPLOAD] After multer - req.file:', req.file ? 'EXISTS' : 'NULL');
+    if (process.env.NODE_ENV !== 'production') console.log('📥 [UPLOAD] After multer - req.file:', req.file ? 'EXISTS' : 'NULL');
     if (!req.file) {
-      console.log('❌ [UPLOAD] No file in request');
+      if (process.env.NODE_ENV !== 'production') console.log('❌ [UPLOAD] No file in request');
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
@@ -124,7 +122,7 @@ router.post('/', (req, res, next) => {
       publicId: req.file.filename
     };
 
-    console.log(`✅ File uploaded (${frontendType}):`, attachmentData.name);
+    if (process.env.NODE_ENV !== 'production') console.log(`✅ File uploaded (${frontendType}):`, attachmentData.name);
     res.json(attachmentData);
 
   } catch (error) {
@@ -153,6 +151,13 @@ router.post('/base64', async (req, res) => {
 
     if (!image || typeof image !== 'string') {
       return res.status(400).json({ error: "No image data provided" });
+    }
+
+    // Size guard: reject base64 payloads over 10MB (decoded size)
+    const MAX_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+    const base64Data = image.includes(',') ? image.split(',')[1] : image;
+    if (Buffer.byteLength(base64Data, 'base64') > MAX_SIZE_BYTES) {
+      return res.status(413).json({ error: "Image too large. Max 10MB." });
     }
 
     // CRIT-3 FIX: Validate MIME type from data URI before sending to Cloudinary

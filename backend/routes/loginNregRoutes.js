@@ -7,6 +7,7 @@ const speakeasy = require("speakeasy");
 
 const prisma = require("../prisma/client");
 const authenticate = require("../middleware/authenticate");
+const { authLimiter } = require("../middleware/rateLimiter");
 const { sendVerificationEmail, sendNewDeviceEmail, sendPasswordResetEmail } = require("../services/emailService");
 
 require("dotenv").config();
@@ -251,7 +252,7 @@ router.post("/register", async (req, res) => {
 
 /* --------------------------------- LOGIN --------------------------------- */
 /* --------------------------------- LOGIN --------------------------------- */
-router.post("/login", async (req, res) => {
+router.post("/login", authLimiter, async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     const password = String(req.body?.password || "");
@@ -593,7 +594,7 @@ router.post("/verify-code", async (req, res) => {
 });
 
 /* -------------------------- FORGOT PASSWORD -------------------------- */
-router.post("/forgot-password", async (req, res) => {
+router.post("/forgot-password", authLimiter, async (req, res) => {
   try {
     const email = normalizeEmail(req.body?.email);
     if (!email) return res.status(400).json({ error: "Email is required" });
@@ -626,7 +627,7 @@ router.post("/forgot-password", async (req, res) => {
 });
 
 /* ------------------------ VERIFY RESET CODE -------------------------- */
-router.post("/verify-reset-code", async (req, res) => {
+router.post("/verify-reset-code", authLimiter, async (req, res) => {
   try {
     const { email, code } = req.body;
     const normalizedEmail = normalizeEmail(email);
@@ -688,7 +689,7 @@ router.post("/verify-reset-code", async (req, res) => {
 });
 
 /* -------------------------- RESET PASSWORD --------------------------- */
-router.post("/reset-password", async (req, res) => {
+router.post("/reset-password", authLimiter, async (req, res) => {
   try {
     const { resetToken, newPassword } = req.body;
 
