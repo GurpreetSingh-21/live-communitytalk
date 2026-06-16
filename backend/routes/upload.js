@@ -14,53 +14,74 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// 2. Storage Engine (Enhanced for Audio, Video, PDF)
+// HIGH-6 SECURITY FIX: Storage Engine — explicit resource_type, never 'auto'
 const storage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: async (req, file) => {
-    // Determine the resource type based on mimetype
-    let resourceType = 'image'; // Default
+    // HIGH-6: Explicitly determine resource_type — never use 'auto'
+    // 'auto' allows Cloudinary to serve attacker-controlled HTML as text/html (stored XSS)
     const isVideo = file.mimetype.startsWith('video/');
     const isAudio = file.mimetype.startsWith('audio/');
     const isPdf = file.mimetype === 'application/pdf';
 
+    let resourceType = 'image'; // Default
     if (isVideo || isAudio) {
       resourceType = 'video'; // Cloudinary handles audio under 'video'
     } else if (isPdf) {
-      resourceType = 'raw';   // Use 'raw' for documents to prevent conversion issues
+      resourceType = 'raw';   // Use 'raw' for documents
     }
 
-    // Determine folder based on context set in query string (e.g. ?context=dating)
+    // Determine folder based on context query param (e.g. ?context=dating)
     const context = req.query.context === 'dating' ? 'dating' : 'chat';
     const folderName = `community_talk_${context}_uploads`;
 
+    // Sanitize original filename to prevent path traversal
+    const safeName = path.parse(file.originalname).name.replace(/[^a-zA-Z0-9._-]/g, '_');
+
     return {
       folder: folderName,
-      resource_type: resourceType,
-      public_id: `${Date.now()}-${path.parse(file.originalname).name}`,
-      // For raw files (PDFs), we want to keep the original extension
+      resource_type: resourceType, // SECURITY: explicit, never 'auto'
+      public_id: `${Date.now()}-${safeName}`,
       format: isPdf ? 'pdf' : undefined,
     };
   },
 });
 
-// 3. Validation Middleware
+// HIGH-6 SECURITY FIX: Validation Middleware
+// Note: file.mimetype comes from the client Content-Type — not trustworthy alone.
+// We explicitly block dangerous types even if they pass the allowlist check.
 const fileFilter = (req, file, cb) => {
+  // SECURITY: Explicit blocklist for types that can execute in a browser
+  const blockedMimes = [
+    'image/svg+xml',          // SVG can contain embedded JavaScript
+    'text/html',
+    'text/javascript',
+    'application/javascript',
+    'application/x-javascript',
+    'application/xhtml+xml',
+    'application/xml',
+    'text/xml',
+  ];
+
+  if (blockedMimes.includes(file.mimetype)) {
+    return cb(new Error('File type not allowed for security reasons.'), false);
+  }
+
   const allowedMimes = [
-    // Images
+    // Images — SVG intentionally excluded (can embed JS)
     'image/jpeg', 'image/png', 'image/gif', 'image/webp',
     // Videos
     'video/mp4', 'video/webm', 'video/quicktime',
     // Documents
     'application/pdf',
     // Audio
-    'audio/mpeg', 'audio/wav', 'audio/x-m4a', 'audio/mp4', 'audio/aac'
+    'audio/mpeg', 'audio/wav', 'audio/x-m4a', 'audio/mp4', 'audio/aac',
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Invalid file type. Allowed: Images, Videos, PDFs, Audio.'), false);
+    cb(new Error('Invalid file type. Allowed: Images (jpg/png/gif/webp), Videos, PDFs, Audio.'), false);
   }
 };
 
@@ -120,59 +141,80 @@ const { uploadToImageKit } = require("../services/imagekitService");
  * Uploads a base64 image (used for Dating Photos to avoid FormData issues on RN)
  * Uses ImageKit (same as User Avatar)
  */
+// CRIT-3 SECURITY FIX: base64 upload now validates MIME type and uses explicit resource_type
 router.post('/base64', async (req, res) => {
   try {
     const { image, fileName, folder } = req.body;
 
-    if (!image) {
+    // Defence-in-depth auth check (router is already mounted behind authenticate in server.js)
+    if (!req.user?.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    if (!image || typeof image !== 'string') {
       return res.status(400).json({ error: "No image data provided" });
     }
 
-    const name = fileName || `upload_${Date.now()}.jpg`;
-
-    // Upload to Cloudinary (Base64)
-    // Cloudinary supports base64 directly: "data:image/jpeg;base64,..."
-    // or just the raw base64 string if configured? Usually needs data URI scheme.
-
-    // Ensure data URI
+    // CRIT-3 FIX: Validate MIME type from data URI before sending to Cloudinary
+    // This prevents uploading HTML/JS/SVG files that Cloudinary would serve publicly
     let fileStr = image;
-    if (!fileStr.startsWith('data:')) {
-      // Guess mime type or default to jpeg?
-      // Ideally frontend sends full data URI. 
-      // If just base64, assume jpeg for now or try to detect.
+    let detectedMime = null;
+
+    if (fileStr.startsWith('data:')) {
+      // Extract MIME from data URI: data:<mime>;base64,<data>
+      const dataUriMatch = fileStr.match(/^data:([a-zA-Z0-9][a-zA-Z0-9!#$&\-^_]+\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-^_.+]+);base64,/);
+      if (!dataUriMatch) {
+        return res.status(400).json({ error: "Invalid data URI format" });
+      }
+      detectedMime = dataUriMatch[1].toLowerCase();
+    } else {
+      // Raw base64 without data URI — assume jpeg (safest default)
+      detectedMime = 'image/jpeg';
       fileStr = `data:image/jpeg;base64,${image}`;
     }
+
+    // CRIT-3: Strict allowlist — only image types for base64 uploads
+    const allowedImageMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    // Explicitly block dangerous types even if not in allowlist
+    const blockedMimes = ['image/svg+xml', 'text/html', 'text/javascript', 'application/javascript', 'application/xhtml+xml'];
+
+    if (blockedMimes.includes(detectedMime)) {
+      return res.status(400).json({ error: "File type not allowed for security reasons" });
+    }
+    if (!allowedImageMimes.includes(detectedMime)) {
+      return res.status(400).json({ error: "Invalid image type. Allowed: jpeg, png, gif, webp" });
+    }
+
+    // Sanitize fileName to prevent path traversal
+    const safeName = (fileName || `upload_${Date.now()}.jpg`)
+      .replace(/[^a-zA-Z0-9._-]/g, '_')
+      .substring(0, 100);
 
     // Determine folder from context if not provided
     const contextParam = req.query.context === 'dating' ? 'dating' : 'chat';
     const defaultFolder = `community_talk_${contextParam}_uploads`;
+    // Validate user-supplied folder doesn't escape intended directory
+    const safeFolder = folder && /^[a-zA-Z0-9_/-]+$/.test(folder) ? folder : defaultFolder;
 
     const uploadResponse = await cloudinary.uploader.upload(fileStr, {
-      folder: folder || defaultFolder,
-      resource_type: "auto", // Handle video/image automatically
-      public_id: `${Date.now()}-${path.parse(fileName || 'upload').name}`,
+      folder: safeFolder,
+      resource_type: 'image', // CRIT-3 FIX: explicit 'image', never 'auto'
+      public_id: `${Date.now()}-${path.parse(safeName).name}`,
     });
 
-    if (!uploadResponse || !uploadResponse.secure_url) {
+    if (!uploadResponse?.secure_url) {
       throw new Error("Failed to get download URL from Cloudinary");
     }
 
-    console.log(`✅ Base64 File uploaded via Cloudinary:`, name);
-
-    // Determine type
-    let type = 'file';
-    if (uploadResponse.resource_type === 'image') type = 'photo';
-    if (uploadResponse.resource_type === 'video') type = 'video';
-
     return res.json({
       url: uploadResponse.secure_url,
-      type: type,
-      name: name,
-      fileId: uploadResponse.public_id
+      type: 'photo',
+      name: safeName,
+      fileId: uploadResponse.public_id,
     });
 
   } catch (error) {
-    console.error("❌ Base64 Upload Error:", error);
+    console.error("❌ Base64 Upload Error:", error.message);
     return res.status(500).json({ error: "Upload failed" });
   }
 });

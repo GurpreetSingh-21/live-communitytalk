@@ -356,15 +356,13 @@ router.get("/", async (req, res) => {
       });
     }
 
-    // Non-paginated (legacy behavior?) - limited or all? 
-    // Mongoose code without paginated flag did `find(filter)`.
-    // It's safer to limit it to avoid dumping 10k communities if database grows.
-    // But for now we match behavior or set a reasonable default if not specified? 
-    // Mongoose find() returns all. Let's return all but keep memory in mind.
+    // MED-5 SECURITY FIX: Hard cap non-paginated queries to 200 items
+    // Prevents database DoS if the collection grows large and a client omits the paginated flag.
     const items = await prisma.community.findMany({
       where,
       select,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
+      take: 200 // Hard cap
     });
     const mapped = items.map(c => ({ ...c, _id: c.id }));
 

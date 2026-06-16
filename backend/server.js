@@ -114,10 +114,22 @@ subClient.on("error", (err) => console.error("❌ Redis SubClient error:", err))
 // F-21: Set to loopback and private subnets instead of true to prevent IP spoofing via X-Forwarded-For
 app.set('trust proxy', 'loopback, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16');
 
+// MED-1 SECURITY FIX: Hardened Helmet CSP + CORP
 app.use(
   helmet({
-    crossOriginResourcePolicy: false,
-    contentSecurityPolicy: true,
+    crossOriginResourcePolicy: { policy: "same-site" },
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https://ik.imagekit.io", "https://res.cloudinary.com"],
+        connectSrc: ["'self'", "wss:", "https://api.imagekit.io"],
+        objectSrc: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   })
 );
 
@@ -139,7 +151,8 @@ app.use('/api/upload', express.json({ limit: "50mb" }), authenticate, uploadRout
 
 // Default JSON body limit: F-33 (Moved from 50mb to 1mb for non-upload endpoints)
 app.use(express.json({ limit: "1mb" })); 
-app.use(morgan("dev"));
+// LOW-2 SECURITY FIX: Only log full URLs in dev
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 // F-36: Move adminRoutes down until after `req.io` is established so admin routes can send socket events
 app.use("/api/public", publicRoutes);
@@ -275,15 +288,29 @@ io.on("connection", async (socket) => {
 
   // Manual community join/leave
   socket.on("community:join", async (cid) => {
-    const roomName = communityRoom(cid);
-    socket.join(roomName);
+    try {
+      // HIGH-4 SECURITY FIX: DB Membership check before joining room
+      const membership = await prisma.member.findUnique({
+        where: { userId_communityId: { userId: uid, communityId: cid } }
+      });
 
-    // ✅ Sync socket user state so typing checks pass
-    if (socket.user && socket.user.communityIds && !socket.user.communityIds.includes(cid)) {
-      socket.user.communityIds.push(cid);
+      if (!membership || !["active", "owner"].includes(membership.memberStatus)) {
+        socket.emit("error", { message: "Not a member of this community" });
+        return;
+      }
+
+      const roomName = communityRoom(cid);
+      socket.join(roomName);
+
+      // ✅ Sync socket user state so typing checks pass
+      if (socket.user && socket.user.communityIds && !socket.user.communityIds.includes(cid)) {
+        socket.user.communityIds.push(cid);
+      }
+
+      await presence.joinCommunity(uid, cid);
+    } catch (err) {
+      console.error("community:join error:", err);
     }
-
-    await presence.joinCommunity(uid, cid);
   });
 
   socket.on("community:leave", async (cid) => {
@@ -297,19 +324,33 @@ io.on("connection", async (socket) => {
   socket.on("subscribe:communities", async ({ ids }) => {
     if (!Array.isArray(ids)) return;
 
-    for (const cid of ids) {
-      const roomName = communityRoom(cid);
-      socket.join(roomName);
+    try {
+      // HIGH-4 SECURITY FIX: Validate membership for all requested IDs
+      const memberships = await prisma.member.findMany({
+        where: {
+          userId: uid,
+          communityId: { in: ids },
+          memberStatus: { in: ["active", "owner"] }
+        },
+        select: { communityId: true }
+      });
 
-      // Update socket user state so typing/membership checks pass
-      if (socket.user?.communityIds && !socket.user.communityIds.includes(cid)) {
-        socket.user.communityIds.push(cid);
+      const validCids = memberships.map(m => m.communityId);
+
+      for (const cid of validCids) {
+        const roomName = communityRoom(cid);
+        socket.join(roomName);
+
+        // Update socket user state so typing/membership checks pass
+        if (socket.user?.communityIds && !socket.user.communityIds.includes(cid)) {
+          socket.user.communityIds.push(cid);
+        }
+
+        await presence.joinCommunity(uid, cid);
       }
-
-      await presence.joinCommunity(uid, cid);
+    } catch (err) {
+      console.error("subscribe:communities error:", err);
     }
-
-
   });
 
   // 🔥 Secure message handler with XSS protection

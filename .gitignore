@@ -9,3 +9,6 @@ CommunityTalkMobile/.env
 .env.local
 .env.production
 
+# LOW-6/7 SECURITY FIX: Ignore debug and test artifacts
+debug_*.json
+*load-test-results*

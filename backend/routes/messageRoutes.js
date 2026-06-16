@@ -488,8 +488,15 @@ router.post("/:messageId/reactions", async (req, res) => {
     const { messageId } = req.params;
     const { emoji } = req.body || {};
 
-    if (!emoji || typeof emoji !== "string")
+    if (!emoji || typeof emoji !== "string") {
       return res.status(400).json({ error: "emoji is required" });
+    }
+
+    // MED-4 SECURITY FIX: Validate emoji format and length to prevent large payload broadcasting
+    // 8 chars is enough for complex compound emojis (e.g., 👨‍👩‍👧‍👦 is 11 chars, but let's allow up to 15 to be safe)
+    if (emoji.length > 15 || !/^\p{Emoji}/u.test(emoji)) {
+      return res.status(400).json({ error: "Invalid emoji format" });
+    }
 
     const doc = await prisma.message.findUnique({ where: { id: messageId } });
     if (!doc) return res.status(404).json({ error: "Message not found" });

@@ -636,25 +636,51 @@ router.post("/verify-reset-code", async (req, res) => {
     }
 
     const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (!user) return res.status(404).json({ error: "User not found." });
+
+    // MED-3 SECURITY FIX: Return identical error regardless of whether the user exists.
+    // Previously a 404 "User not found" confirmed that an email was not registered (email enumeration).
+    if (!user || !user.verificationCode || user.verificationCode !== code) {
+      // Increment attempts if user exists with wrong code
+      if (user && user.verificationCode && user.verificationCode !== code) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { verificationCodeAttempts: { increment: 1 } }
+        });
+      }
+      return res.status(400).json({ error: "Invalid or expired verification code." });
+    }
 
     if (user.verificationCodeAttempts >= 5) {
       return res.status(400).json({ error: "Max attempts reached. Request a new code." });
     }
 
     if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
-      return res.status(400).json({ error: "Verification code has expired." });
+      return res.status(400).json({ error: "Invalid or expired verification code." });
     }
 
-    if (!user.verificationCode || user.verificationCode !== code) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { verificationCodeAttempts: { increment: 1 } }
-      });
-      return res.status(400).json({ error: "Invalid verification code." });
-    }
+    // MED-2 SECURITY FIX: Consume the reset code immediately after verification.
+    // Previously the code remained in the DB until reset-password was called,
+    // creating a window where an intercepted code could be replayed independently.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        verificationCode: null,
+        verificationCodeExpires: null,
+        verificationCodeAttempts: 0,
+      }
+    });
 
-    return res.status(200).json({ message: "Code verified successfully." });
+    // Issue a short-lived signed token to carry proof of verification between steps
+    const resetToken = jwt.sign(
+      { id: user.id, action: "password_reset", email: normalizedEmail },
+      JWT_SECRET,
+      { expiresIn: "5m" }
+    );
+
+    return res.status(200).json({
+      message: "Code verified successfully.",
+      resetToken, // Frontend must pass this to /reset-password
+    });
   } catch (error) {
     console.error("POST /verify-reset-code error:", error);
     return res.status(500).json({ error: "Server Error" });
@@ -664,45 +690,63 @@ router.post("/verify-reset-code", async (req, res) => {
 /* -------------------------- RESET PASSWORD --------------------------- */
 router.post("/reset-password", async (req, res) => {
   try {
-    const { email, code, newPassword } = req.body;
-    const normalizedEmail = normalizeEmail(email);
+    const { resetToken, newPassword } = req.body;
 
-    if (!normalizedEmail || !code || !newPassword) {
-      return res.status(400).json({ error: "Email, code, and new password are required." });
+    // MED-2 FIX: Accept resetToken (short-lived JWT) from verify-reset-code instead of
+    // re-verifying email+code (which was already consumed in verify-reset-code).
+    // Fallback: also support legacy email+code for clients that haven't updated.
+    let userId;
+
+    if (resetToken) {
+      // New flow: verify the signed reset token from verify-reset-code
+      let decoded;
+      try {
+        decoded = jwt.verify(resetToken, JWT_SECRET);
+      } catch (jwtErr) {
+        return res.status(401).json({ error: "Invalid or expired reset session. Please restart the reset process." });
+      }
+      if (decoded.action !== "password_reset") {
+        return res.status(401).json({ error: "Invalid reset token." });
+      }
+      userId = decoded.id;
+    } else {
+      // Legacy fallback: email + code (kept for older mobile client versions)
+      const { email, code } = req.body;
+      const normalizedEmail = normalizeEmail(email);
+
+      if (!normalizedEmail || !code) {
+        return res.status(400).json({ error: "resetToken or (email + code) are required." });
+      }
+
+      const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+      // MED-3 FIX: Generic error — do not confirm whether email exists
+      if (!user || !user.verificationCode || user.verificationCode !== code) {
+        return res.status(400).json({ error: "Invalid or expired verification code." });
+      }
+      if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
+        return res.status(400).json({ error: "Invalid or expired verification code." });
+      }
+      userId = user.id;
     }
 
+    if (!newPassword || typeof newPassword !== "string") {
+      return res.status(400).json({ error: "New password is required." });
+    }
     if (newPassword.length < 8) {
       return res.status(400).json({ error: "Password must be at least 8 characters" });
-    }
-
-    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (!user) return res.status(404).json({ error: "User not found." });
-
-    if (user.verificationCodeAttempts >= 5) {
-      return res.status(400).json({ error: "Max attempts reached. Request a new code." });
-    }
-
-    if (user.verificationCodeExpires && user.verificationCodeExpires < new Date()) {
-      return res.status(400).json({ error: "Verification code has expired." });
-    }
-
-    if (!user.verificationCode || user.verificationCode !== code) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { verificationCodeAttempts: { increment: 1 } }
-      });
-      return res.status(400).json({ error: "Invalid verification code." });
     }
 
     const hash = await bcrypt.hash(newPassword, 10);
 
     await prisma.user.update({
-      where: { id: user.id },
+      where: { id: userId },
       data: {
         password: hash,
         verificationCode: null,
         verificationCodeExpires: null,
         verificationCodeAttempts: 0,
+        // HIGH-1 SECURITY FIX: Increment tokenVersion to invalidate all existing JWT sessions.
+        tokenVersion: { increment: 1 },
       }
     });
 

@@ -5,6 +5,17 @@ const authenticate = require('../middleware/authenticate');
 require('dotenv').config();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
+
+// HIGH-2 SECURITY FIX: Dedicated rate limiter for admin login
+// 5 attempts per 15 minutes to prevent brute-force attacks.
+const adminLoginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 
 // Middleware to check if user is admin or mod
 const requireModerator = async (req, res, next) => {
@@ -32,13 +43,16 @@ const requireModerator = async (req, res, next) => {
  * @desc    Login for admin/moderator
  * @access  Admin / Mod
  */
-router.post('/login', async (req, res) => {
-    console.log('[DEBUG] Admin login attempt:', { email: req.body.email, hasPassword: !!req.body.password });
+router.post('/login', adminLoginLimiter, async (req, res) => {
+    // HIGH-5 SECURITY FIX: Guard debug logs behind NODE_ENV
+    const isDev = process.env.NODE_ENV !== 'production';
+    if (isDev) console.log('[DEBUG] Admin login attempt for:', req.body.email?.substring(0, 3) + '***');
+    
     try {
         const { email, password } = req.body;
 
         if (!email || !password) {
-            console.log('[DEBUG] Missing email or password');
+            if (isDev) console.log('[DEBUG] Missing email or password');
             return res.status(400).json({ error: 'Please provide email and password' });
         }
 
@@ -54,8 +68,13 @@ router.post('/login', async (req, res) => {
             return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
         }
 
+        // MED-6 SECURITY FIX: Check account status
+        if (user.accountStatus === 'BANNED' || user.isActive === false || user.isPermanentlyDeleted) {
+            return res.status(403).json({ error: 'Access denied. Account is inactive or banned.' });
+        }
+
         const isMatch = await bcrypt.compare(password, user.password);
-        console.log('[DEBUG] Password match result:', isMatch);
+        // HIGH-5 SECURITY FIX: Never log password match result in production
         if (!isMatch) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -1165,7 +1184,9 @@ router.put('/users/:id/suspend', authenticate, requireModerator, async (req, res
             data: {
                 accountStatus: 'SUSPENDED',
                 suspendedUntil,
-                suspendedReason: reason || 'Suspended by administrator'
+                suspendedReason: reason || 'Suspended by administrator',
+                // HIGH-7 SECURITY FIX: Increment tokenVersion to invalidate existing sessions
+                tokenVersion: { increment: 1 }
             }
         });
 
@@ -1208,7 +1229,9 @@ router.put('/users/:id/ban', authenticate, requireModerator, async (req, res) =>
             data: {
                 accountStatus: 'BANNED',
                 bannedAt: new Date(),
-                bannedReason: reason || 'Banned by administrator'
+                bannedReason: reason || 'Banned by administrator',
+                // HIGH-7 SECURITY FIX: Increment tokenVersion to invalidate existing sessions
+                tokenVersion: { increment: 1 }
             }
         });
 
@@ -1252,7 +1275,9 @@ router.put('/users/:id/restore', authenticate, requireModerator, async (req, res
                 suspendedUntil: null,
                 suspendedReason: null,
                 bannedAt: null,
-                bannedReason: null
+                bannedReason: null,
+                // HIGH-7 SECURITY FIX: Increment tokenVersion to invalidate existing sessions
+                tokenVersion: { increment: 1 }
             }
         });
 
