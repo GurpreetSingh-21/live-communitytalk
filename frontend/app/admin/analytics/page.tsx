@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import axios from "axios";
+import { adminApi } from "@/lib/api";
 import { toast } from "sonner";
 import {
     Users2,
@@ -13,9 +13,6 @@ import {
     Layers,
     UserPlus,
 } from "lucide-react";
-
-// Use same API base as the rest of the dashboard
-const API_BASE_URL = "http://localhost:3000";
 
 type AnalyticsData = {
     users: {
@@ -47,14 +44,8 @@ export default function AnalyticsPage() {
 
     const fetchAnalytics = async () => {
         try {
-            const token = window.localStorage.getItem("adminToken");
-            // Support both dev and prod base URLs securely
-            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://communitytalkv1.onrender.com';
-            
-            const response = await axios.get(`${baseUrl}/api/admin/analytics/overview`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
-            setData(response.data);
+            const { data } = await adminApi.get("/api/admin/analytics/overview");
+            setData(data);
         } catch (error: any) {
             console.error("Failed to fetch analytics:", error);
             toast.error(error.response?.data?.error || "Failed to load analytics");

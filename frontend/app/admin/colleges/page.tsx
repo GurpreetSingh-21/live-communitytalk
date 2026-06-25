@@ -1,11 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import axios from "axios";
+import { adminApi } from "@/lib/api";
 import { toast } from "sonner";
 import { Building2, Plus, Loader2 } from "lucide-react";
-
-const API_BASE_URL = "http://localhost:3000";
 
 export default function CollegesPage() {
     const [name, setName] = useState("");
@@ -23,17 +21,12 @@ export default function CollegesPage() {
 
         setIsSubmitting(true);
         try {
-            const token = window.localStorage.getItem("adminToken");
-            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:3000' : 'https://communitytalkv1.onrender.com';
-            
             const domainsArray = emailDomains.split(",").map(d => d.trim()).filter(Boolean);
 
-            const { data } = await axios.post(`${baseUrl}/api/admin/colleges`, {
+            const { data } = await adminApi.post("/api/admin/colleges", {
                 name: name.trim(),
                 key: key.trim().toLowerCase(),
                 emailDomains: domainsArray
-            }, {
-                headers: { Authorization: `Bearer ${token}` }
             });
 
             toast.success(`College created! Auto-seeded ${data.autoSeededCount} templates.`);

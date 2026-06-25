@@ -48,6 +48,7 @@ type AdminUser = {
   email: string;
   role: "user" | "mod" | "admin";
   isActive: boolean; // Changed to required boolean for simplicity
+  collegeName?: string | null;
   collegeSlug?: string | null;
   religionKey?: string | null;
   hasDatingProfile?: boolean;
@@ -154,14 +155,18 @@ export default function AdminUsersPage() {
   // ----------------------------------------------------------------------
   // ⭐ MODERATION ACTIONS
   // ----------------------------------------------------------------------
-  const handleUserAction = async (userId: string, action: 'ban' | 'deactivate' | 'unban') => {
-    const verb = action === 'ban' ? 'permanently ban' : action === 'deactivate' ? 'mute/deactivate' : 'unban/reactivate';
+  const handleUserAction = async (userId: string, action: 'ban' | 'suspend' | 'restore' | 'delete') => {
+    const verb = action === 'ban' ? 'permanently ban' : action === 'suspend' ? 'mute/suspend' : action === 'delete' ? 'delete' : 'unban/reactivate';
     if (!window.confirm(`Are you sure you want to ${verb} user ${userId}?`)) return;
 
     setActionLoadingId(userId);
     try {
-      const endpoint = `/api/admin/people/${userId}/${action}`;
-      await adminApi.patch(endpoint);
+      const endpoint = `/api/admin/users/${userId}/${action}`;
+      if (action === 'delete') {
+          await adminApi.delete(endpoint);
+      } else {
+          await adminApi.put(endpoint);
+      }
       
       toast.success(`User successfully ${verb}d.`);
       await loadUsers(); // Refresh the entire list
@@ -203,7 +208,7 @@ export default function AdminUsersPage() {
                 size="sm"
                 variant="default"
                 className="text-[11px] h-8 bg-emerald-500 text-white hover:bg-emerald-600"
-                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'unban'); }}
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'restore'); }}
                 disabled={isWorking}
             >
                 {isWorking ? 'WORKING...' : 'UNBAN'}
@@ -217,7 +222,7 @@ export default function AdminUsersPage() {
                 size="sm"
                 variant="default"
                 className="text-[11px] h-8"
-                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'unban'); }}
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'restore'); }}
                 disabled={isWorking}
             >
                 {isWorking ? 'WORKING...' : 'ACTIVATE'}
@@ -232,7 +237,7 @@ export default function AdminUsersPage() {
                 size="sm"
                 variant="outline"
                 className="text-[11px] h-8 border-amber-300 text-amber-700 hover:bg-amber-50"
-                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'deactivate'); }}
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'suspend'); }}
                 disabled={isWorking}
             >
                 <Ban className="h-3.5 w-3.5 mr-1" />
@@ -242,12 +247,23 @@ export default function AdminUsersPage() {
             <Button
                 size="sm"
                 variant="destructive"
-                className="text-[11px] h-8"
+                className="text-[11px] h-8 bg-red-600 hover:bg-red-700"
                 onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'ban'); }}
                 disabled={isWorking}
             >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                <Ban className="h-3.5 w-3.5 mr-1" />
                 Ban
+            </Button>
+            {/* Delete User */}
+            <Button
+                size="sm"
+                variant="destructive"
+                className="text-[11px] h-8 bg-black text-white hover:bg-slate-800"
+                onClick={(e) => { e.stopPropagation(); handleUserAction(user._id, 'delete'); }}
+                disabled={isWorking}
+            >
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                Delete
             </Button>
         </div>
     );
@@ -527,7 +543,7 @@ export default function AdminUsersPage() {
                         <span className="flex items-center gap-1">
                           <School className="h-3.5 w-3.5 text-slate-400" />
                           <span className="font-medium text-slate-900">
-                            {u.collegeSlug || "Unknown college"}
+                            {u.collegeName || u.collegeSlug || "Unknown college"}
                           </span>
                         </span>
                         <span className="flex items-center gap-1 text-[11px] text-slate-500">

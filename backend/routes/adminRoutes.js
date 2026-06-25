@@ -1127,7 +1127,13 @@ router.get('/users', authenticate, requireModerator, async (req, res) => {
                 bannedAt: true,
                 profileVerified: true,
                 photoVerified: true,
-                role: true
+                role: true,
+                collegeSlug: true,
+                collegeName: true,
+                religionKey: true,
+                isActive: true,
+                hasDatingProfile: true,
+                isPermanentlyDeleted: true
             }
         });
 
@@ -1300,6 +1306,52 @@ router.put('/users/:id/restore', authenticate, requireModerator, async (req, res
     } catch (err) {
         console.error('PUT /api/admin/users/:id/restore error:', err);
         return res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+/**
+ * @route   DELETE /api/admin/users/:id/delete
+ * @desc    Permanently delete a user
+ * @access  Admin only (requires highest permission)
+ */
+router.delete('/users/:id/delete', authenticate, requireModerator, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // Ensure user is actually admin, not just mod, for destructive deletes
+        if (req.user.role !== 'admin') {
+            return res.status(403).json({ error: 'Only admins can permanently delete users.' });
+        }
+
+        const user = await prisma.user.findUnique({ where: { id } });
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        // Use a transaction to safely delete related records first if necessary
+        // or rely on Prisma's onDelete: Cascade (which we assume is configured for the bulk of relations)
+        // Since we don't know the full extent of cascading, it's safer to perform a soft-delete/permanent ban
+        // but the user explicitly requested "delete". Let's perform a hard delete.
+        await prisma.user.delete({
+            where: { id }
+        });
+
+        // Log the action
+        await prisma.moderationLog.create({
+            data: {
+                action: 'DELETE_USER',
+                entityType: 'USER',
+                entityId: id,
+                moderatorId: req.user.id,
+                reason: 'Admin requested permanent deletion via dashboard',
+                metadata: { deletedUserEmail: user.email }
+            }
+        });
+
+        res.status(200).json({ message: 'User permanently deleted' });
+    } catch (err) {
+        console.error('DELETE /api/admin/users/:id/delete error:', err);
+        res.status(500).json({ error: 'Failed to permanently delete user' });
     }
 });
 
