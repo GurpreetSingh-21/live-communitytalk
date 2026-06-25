@@ -3,103 +3,493 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
-// ───────────────────────── User / Person ─────────────────────────
 model User {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Identity
-  fullName String?
-  email    String  @unique
-  password String // Hashed
-  avatar   String  @default("/default-avatar.png")
-  bio      String?
-  publicKey String? // E2EE
-  // Encrypted backup blob for E2EE identity (private key), stored client-side encrypted
-  e2eeBackup Json?
-  // Signal-style bundle fields (signed prekey + one-time prekeys)
-  e2eeSignedPrekey       String?
-  e2eeSignedPrekeySig    String?
-  e2eeOneTimePrekeys     Json?
-  e2eeBundleVersion      Int       @default(1)
-  e2eeBundleUpdatedAt    DateTime?
-
-  // Account Status
-  emailVerified             Boolean @default(false)
-  role                      Role    @default(user) // user, mod, admin
-  isActive                  Boolean @default(true)
-  verificationCode          String?
-  verificationCodeExpires   DateTime?
-  verificationCodeAttempts  Int     @default(0)
-  tokenVersion              Int     @default(0)
-
-  // Moderation & Safety
-  reportsReceivedCount Int           @default(0)
-  isPermanentlyDeleted Boolean       @default(false)
-  accountStatus        AccountStatus @default(ACTIVE)
-  suspendedUntil       DateTime?
-  suspendedReason      String?
-  bannedAt             DateTime?
-  bannedReason         String?
-  strikeCount          Int           @default(0)
-  lastStrikeAt         DateTime?
-  
-  // Verification
-  profileVerified      Boolean       @default(false)
-  photoVerified        Boolean       @default(false)
-  verifiedAt           DateTime?
-  
-  // Rate Limiting (JSON for flexibility)
-  rateLimits           Json?
-
-  // Devices
-  trustedDevices       TrustedDevice[]
-
-  // College & Religion Scope
-  collegeName String?
-  collegeSlug String?
-  religionKey String?
-
-  // Preferences (JSON)
-  notificationPrefs Json? // pushEnabled, etc.
-  privacyPrefs      Json? // showOnlineStatus, etc.
-
-  // Push Tokens
-  pushTokens String[]
-
-  // Two Factor
-  twoFactorEnabled     Boolean  @default(false)
-  twoFactorSecret      String?
-  twoFactorBackupCodes String[]
-
-  // Relations
-  memberships    Member[]
-  messages       Message[]       @relation("UserMessages")
-  reactions      Reaction[]
-  directMessagesFrom DirectMessage[] @relation("DMFrom")
-  directMessagesTo   DirectMessage[] @relation("DMTo")
-  dmReactions    DirectMessageReaction[]
-  
-  // Dating
-  hasDatingProfile Boolean        @default(false)
-  datingProfile    DatingProfile?
-
-  // Reporting & Safety
-  reportsMade      Report[]      @relation("Reporter")
-  reportsAgainst   Report[]      @relation("Reported")
-  strikes          Strike[]
-  appeals          Appeal[]
-  photoReports     PhotoReport[] @relation("PhotoReporter")
-  moderationLogs   ModerationLog[] @relation("ModeratorActions")
-  verificationRequests VerificationRequest[]
+  id                       String                  @id @default(cuid())
+  createdAt                DateTime                @default(now())
+  updatedAt                DateTime                @updatedAt
+  fullName                 String?
+  email                    String                  @unique
+  password                 String
+  avatar                   String                  @default("/default-avatar.png")
+  bio                      String?
+  publicKey                String?
+  emailVerified            Boolean                 @default(false)
+  role                     Role                    @default(user)
+  isActive                 Boolean                 @default(true)
+  verificationCode         String?
+  verificationCodeExpires  DateTime?
+  tokenVersion             Int                     @default(0)
+  reportsReceivedCount     Int                     @default(0)
+  isPermanentlyDeleted     Boolean                 @default(false)
+  accountStatus            AccountStatus           @default(ACTIVE)
+  suspendedUntil           DateTime?
+  suspendedReason          String?
+  bannedAt                 DateTime?
+  bannedReason             String?
+  strikeCount              Int                     @default(0)
+  lastStrikeAt             DateTime?
+  profileVerified          Boolean                 @default(false)
+  photoVerified            Boolean                 @default(false)
+  verifiedAt               DateTime?
+  rateLimits               Json?
+  collegeName              String?
+  collegeSlug              String?
+  religionKey              String?
+  notificationPrefs        Json?
+  privacyPrefs             Json?
+  pushTokens               String[]
+  twoFactorEnabled         Boolean                 @default(false)
+  twoFactorSecret          String?
+  twoFactorBackupCodes     String[]
+  hasDatingProfile         Boolean                 @default(false)
+  e2eeBackup               Json?
+  e2eeBundleUpdatedAt      DateTime?
+  e2eeBundleVersion        Int                     @default(1)
+  e2eeOneTimePrekeys       Json?
+  e2eeSignedPrekey         String?
+  e2eeSignedPrekeySig      String?
+  verificationCodeAttempts Int                     @default(0)
+  resetToken               String?
+  resetTokenExpires        DateTime?
+  appeals                  Appeal[]
+  datingProfile            DatingProfile?
+  directMessagesFrom       DirectMessage[]         @relation("DMFrom")
+  directMessagesTo         DirectMessage[]         @relation("DMTo")
+  dmReactions              DirectMessageReaction[]
+  memberships              Member[]
+  messages                 Message[]               @relation("UserMessages")
+  moderationLogs           ModerationLog[]         @relation("ModeratorActions")
+  photoReports             PhotoReport[]           @relation("PhotoReporter")
+  reactions                Reaction[]
+  reportsAgainst           Report[]                @relation("Reported")
+  reportsMade              Report[]                @relation("Reporter")
+  strikes                  Strike[]
+  trustedDevices           TrustedDevice[]
+  verificationRequests     VerificationRequest[]
 
   @@map("users")
+}
+
+model College {
+  id           String    @id @default(cuid())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  name         String    @unique
+  key          String    @unique
+  emailDomains String[]
+  communityId  String
+  community    Community @relation(fields: [communityId], references: [id])
+
+  @@index([emailDomains])
+  @@map("colleges")
+}
+
+model Community {
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  name        String
+  type        CommunityType @default(custom)
+  key         String?
+  slug        String?       @unique
+  description String?
+  isPrivate   Boolean       @default(false)
+  tags        String[]
+  imageUrl    String?
+  createdBy   String?
+  colleges    College[]
+  members     Member[]
+  messages    Message[]
+
+  @@index([type, key])
+  @@map("communities")
+}
+
+model Member {
+  id           String       @id @default(cuid())
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  userId       String
+  communityId  String
+  name         String
+  avatar       String       @default("/default-avatar.png")
+  role         MemberRole   @default(member)
+  memberStatus MemberStatus @default(active)
+  fcmToken     String?
+  community    Community    @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId])
+  @@index([userId, memberStatus])
+  @@index([communityId, memberStatus])
+  @@map("members")
+}
+
+model Message {
+  id              String        @id @default(cuid())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  content         String
+  attachments     Json?
+  clientMessageId String?
+  status          MessageStatus @default(sent)
+  isDeleted       Boolean       @default(false)
+  deletedAt       DateTime?
+  editedAt        DateTime?
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  senderName      String
+  senderAvatar    String        @default("/default-avatar.png")
+  senderId        String
+  communityId     String
+  replyToId       String?
+  replyToSnapshot Json?
+  community       Community     @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  replyTo         Message?      @relation("ReplyTo", fields: [replyToId], references: [id])
+  replies         Message[]     @relation("ReplyTo")
+  sender          User          @relation("UserMessages", fields: [senderId], references: [id], onDelete: Cascade)
+  reactions       Reaction[]
+
+  @@index([communityId, createdAt(sort: Desc)])
+  @@index([senderId])
+  @@map("messages")
+}
+
+model Reaction {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  emoji     String
+  messageId String
+  userId    String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reactions")
+}
+
+model DirectMessage {
+  id                 String                  @id @default(cuid())
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
+  content            String?
+  type               DMType                  @default(text)
+  context            String                  @default("community")
+  attachments        Json?
+  isEncrypted        Boolean                 @default(false)
+  status             MessageStatus           @default(sent)
+  isDeleted          Boolean                 @default(false)
+  deletedAt          DateTime?
+  editedAt           DateTime?
+  deliveredAt        DateTime?
+  readAt             DateTime?
+  fromId             String
+  toId               String
+  recipientPublicKey String?
+  senderPublicKey    String?
+  from               User                    @relation("DMFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to                 User                    @relation("DMTo", fields: [toId], references: [id], onDelete: Cascade)
+  reactions          DirectMessageReaction[]
+
+  @@index([fromId, toId, createdAt])
+  @@index([toId, status])
+  @@map("direct_messages")
+}
+
+model DirectMessageReaction {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+  emoji     String
+  dmId      String
+  userId    String
+  dm        DirectMessage @relation(fields: [dmId], references: [id], onDelete: Cascade)
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("dm_reactions")
+}
+
+model DatingProfile {
+  id                String            @id @default(cuid())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  userId            String            @unique
+  firstName         String
+  birthDate         DateTime
+  gender            Gender
+  bio               String?           @db.VarChar(500)
+  height            Int?
+  collegeSlug       String
+  major             String?
+  year              StudyYear?
+  lookingFor        LookingFor[]
+  hobbies           String[]
+  instagramHandle   String?
+  latitude          Float?
+  longitude         Float?
+  isProfileVisible  Boolean           @default(true)
+  isPaused          Boolean           @default(false)
+  isPhotoVerified   Boolean           @default(false)
+  photoVerifiedAt   DateTime?
+  approvalStatus    ApprovalStatus    @default(PENDING)
+  rejectionReason   String?
+  score             Float             @default(0)
+  gradYear          String?
+  greekLife         String?
+  interests         String[]
+  prompts           Json?
+  spotifyTopArtists String[]
+  blocksReceived    DatingBlock[]     @relation("Blocked")
+  blocksGiven       DatingBlock[]     @relation("Blocker")
+  matches1          DatingMatch[]     @relation("MatchProfile1")
+  matches2          DatingMatch[]     @relation("MatchProfile2")
+  photos            DatingPhoto[]
+  preference        DatingPreference?
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  swipesMade        DatingSwipe[]     @relation("Swiper")
+  swipesReceived    DatingSwipe[]     @relation("Target")
+
+  @@index([collegeSlug])
+  @@index([gender])
+  @@index([userId])
+  @@map("dating_profiles")
+}
+
+model DatingPreference {
+  id                       String        @id @default(cuid())
+  datingProfileId          String        @unique
+  ageMin                   Int           @default(18)
+  ageMax                   Int           @default(30)
+  maxDistance              Int           @default(50)
+  interestedInGender       Gender[]
+  preferredColleges        String[]
+  showToPeopleOnCampusOnly Boolean       @default(false)
+  isDistanceVisible        Boolean       @default(true)
+  isCollegeVisible         Boolean       @default(true)
+  datingProfile            DatingProfile @relation(fields: [datingProfileId], references: [id], onDelete: Cascade)
+
+  @@map("dating_preferences")
+}
+
+model DatingPhoto {
+  id              String        @id @default(cuid())
+  createdAt       DateTime      @default(now())
+  datingProfileId String
+  url             String
+  thumbnail       String?
+  order           Int           @default(0)
+  status          PhotoStatus   @default(PENDING)
+  rejectionReason String?
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  aiFlags         Json?
+  isMain          Boolean       @default(false)
+  datingProfile   DatingProfile @relation(fields: [datingProfileId], references: [id], onDelete: Cascade)
+  reports         PhotoReport[]
+
+  @@index([datingProfileId])
+  @@index([status])
+  @@map("dating_photos")
+}
+
+model DatingSwipe {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+  swiperId  String
+  targetId  String
+  type      SwipeType
+  swiper    DatingProfile @relation("Swiper", fields: [swiperId], references: [id], onDelete: Cascade)
+  target    DatingProfile @relation("Target", fields: [targetId], references: [id], onDelete: Cascade)
+
+  @@unique([swiperId, targetId])
+  @@index([swiperId])
+  @@index([targetId])
+  @@map("dating_swipes")
+}
+
+model DatingMatch {
+  id          String        @id @default(cuid())
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  profile1Id  String
+  profile2Id  String
+  isActive    Boolean       @default(true)
+  unmatchedBy String?
+  channelId   String?
+  profile1    DatingProfile @relation("MatchProfile1", fields: [profile1Id], references: [id], onDelete: Cascade)
+  profile2    DatingProfile @relation("MatchProfile2", fields: [profile2Id], references: [id], onDelete: Cascade)
+
+  @@unique([profile1Id, profile2Id])
+  @@index([profile1Id])
+  @@index([profile2Id])
+  @@map("dating_matches")
+}
+
+model Report {
+  id          String         @id @default(cuid())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  reporterId  String
+  reportedId  String
+  reason      ReportReason
+  category    String?
+  details     String?
+  targetType  String
+  targetId    String?
+  screenshots String[]
+  status      ReportStatus   @default(PENDING)
+  priority    ReportPriority @default(NORMAL)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?
+  actionTaken String?
+  reported    User           @relation("Reported", fields: [reportedId], references: [id])
+  reporter    User           @relation("Reporter", fields: [reporterId], references: [id])
+
+  @@index([reportedId, status])
+  @@index([status, priority])
+  @@index([createdAt])
+  @@map("reports")
+}
+
+model DatingBlock {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+  blockerId String
+  blockedId String
+  blocked   DatingProfile @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  blocker   DatingProfile @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
+
+  @@unique([blockerId, blockedId])
+  @@index([blockerId])
+  @@index([blockedId])
+  @@map("dating_blocks")
+}
+
+model VerificationRequest {
+  id         String           @id @default(cuid())
+  userId     String
+  poseId     String
+  photoUrl   String
+  status     ApprovalStatus   @default(PENDING)
+  adminNote  String?
+  reviewedBy String?
+  reviewedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  pose       VerificationPose @relation(fields: [poseId], references: [id])
+  user       User             @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+  @@map("verification_requests")
+}
+
+model VerificationPose {
+  id                String                @id @default(cuid())
+  name              String
+  instruction       String
+  referenceImageUrl String
+  isActive          Boolean               @default(true)
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  requests          VerificationRequest[]
+
+  @@map("verification_poses")
+}
+
+model PhotoReport {
+  id         String            @id @default(cuid())
+  createdAt  DateTime          @default(now())
+  reporterId String
+  photoId    String
+  reason     PhotoReportReason
+  details    String?
+  status     ReportStatus      @default(PENDING)
+  reviewedBy String?
+  reviewedAt DateTime?
+  photo      DatingPhoto       @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  reporter   User              @relation("PhotoReporter", fields: [reporterId], references: [id])
+
+  @@index([photoId, status])
+  @@map("photo_reports")
+}
+
+model Strike {
+  id        String         @id @default(cuid())
+  createdAt DateTime       @default(now())
+  userId    String
+  reason    String
+  severity  StrikeSeverity @default(MINOR)
+  details   String?
+  reportId  String?
+  issuedBy  String
+  expiresAt DateTime?
+  active    Boolean        @default(true)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, active])
+  @@index([createdAt])
+  @@map("strikes")
+}
+
+model Appeal {
+  id          String       @id @default(cuid())
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  userId      String
+  type        AppealType
+  strikeId    String?
+  reportId    String?
+  reason      String
+  status      AppealStatus @default(PENDING)
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  reviewNotes String?
+  decision    String?
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status])
+  @@map("appeals")
+}
+
+model ModerationLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  action      String
+  targetType  String
+  targetId    String
+  moderatorId String
+  reason      String?
+  details     Json?
+  userId      String?
+  reportId    String?
+  strikeId    String?
+  moderator   User     @relation("ModeratorActions", fields: [moderatorId], references: [id])
+
+  @@index([targetType, targetId])
+  @@index([moderatorId])
+  @@index([createdAt])
+  @@map("moderation_logs")
+}
+
+model TrustedDevice {
+  id          String   @id @default(cuid())
+  userId      String
+  deviceId    String
+  deviceModel String?
+  ipAddress   String?
+  lastLoginAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, deviceId])
+  @@index([userId])
+  @@map("trusted_devices")
 }
 
 enum Role {
@@ -116,83 +506,10 @@ enum AccountStatus {
   DEACTIVATED
 }
 
-// ───────────────────────── Metadata / Directory ─────────────────────────
-model College {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  name         String   @unique
-  key          String   @unique // qc, baruch
-  emailDomains String[] 
-  
-  // Link to the community chat
-  communityId String
-  community   Community @relation(fields: [communityId], references: [id])
-
-  @@index([emailDomains])
-  @@map("colleges")
-}
-
-// ───────────────────────── Community ─────────────────────────
-model Community {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  name        String
-  type        CommunityType @default(custom) // college, religion, custom
-  key         String? // Stable identifier
-  slug        String? @unique
-  description String?
-  isPrivate   Boolean @default(false)
-  tags        String[]
-  imageUrl    String? // Community flag/logo image (Cloudinary URL)
-
-  createdBy   String? // ID of creator (optional)
-
-  // Relations
-  members  Member[]
-  messages Message[]
-  colleges College[]
-
-  @@index([type, key])
-  @@map("communities")
-}
-
 enum CommunityType {
   college
   religion
   custom
-}
-
-// ───────────────────────── Member (Join table) ─────────────────────────
-model Member {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  userId      String
-  communityId String
-
-  // Profile overrides
-  name   String // Display name in this community
-  avatar String @default("/default-avatar.png")
-
-  role         MemberRole   @default(member)
-  memberStatus MemberStatus @default(active)
-
-  // Token
-  fcmToken String?
-
-  // Relations
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, communityId]) // One membership per user per community
-  @@index([userId, memberStatus]) // CRITICAL: Speed up "my communities" query
-  @@index([communityId, memberStatus])
-  @@map("members")
 }
 
 enum MemberRole {
@@ -205,52 +522,8 @@ enum MemberStatus {
   active
   invited
   banned
-  online // Legacy?
-  owner // Legacy?
-}
-
-// ───────────────────────── Messages (Community) ─────────────────────────
-model Message {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  content     String
-  attachments Json? // Array of { url, type, name, size }
-
-  // Meta
-  clientMessageId String?
-  status          MessageStatus @default(sent)
-  isDeleted       Boolean       @default(false)
-  deletedAt       DateTime?
-  editedAt        DateTime?
-  deliveredAt     DateTime?
-  readAt          DateTime?
-
-  // Sender info (snapshot)
-  senderName   String // Captured at send time
-  senderAvatar String @default("/default-avatar.png") // 🚀 PERFORMANCE: Denormalized for fast queries
-
-  // Relations
-  senderId    String
-  communityId String
-  
-  sender    User      @relation("UserMessages", fields: [senderId], references: [id], onDelete: Cascade)
-  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
-
-  // Reply
-  replyToId   String?
-  replyTo     Message?  @relation("ReplyTo", fields: [replyToId], references: [id])
-  replies     Message[] @relation("ReplyTo")
-  
-  // Reply snapshot (for performance/simplicity, as per Mongo schema)
-  replyToSnapshot Json? // { messageId, sender, content }
-
-  reactions Reaction[]
-
-  @@index([communityId, createdAt(sort: Desc)])
-  @@index([senderId])  // 🚀 PERFORMANCE: Optimize sender queries
-  @@map("messages")
+  online
+  owner
 }
 
 enum MessageStatus {
@@ -261,58 +534,6 @@ enum MessageStatus {
   deleted
 }
 
-model Reaction {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  emoji String
-
-  messageId String
-  userId    String
-  
-  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("reactions")
-}
-
-// ───────────────────────── Direct Messages ─────────────────────────
-model DirectMessage {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  content     String?
-  type        DMType  @default(text)
-  context     String  @default("community") // "community" or "dating"
-  attachments Json?
-  isEncrypted Boolean @default(false)  // E2EE flag - true if content is encrypted
-
-  // E2EE metadata: store which keys were used at encrypt time to avoid decrypt failures
-  // when users rotate keys (new device / reinstall / restore).
-  senderPublicKey    String?
-  recipientPublicKey String?
-
-  status      MessageStatus @default(sent)
-  isDeleted   Boolean       @default(false)
-  deletedAt   DateTime?
-  editedAt    DateTime?
-  deliveredAt DateTime?
-  readAt      DateTime?
-
-  fromId String
-  toId   String
-
-  from User @relation("DMFrom", fields: [fromId], references: [id], onDelete: Cascade)
-  to   User @relation("DMTo", fields: [toId], references: [id], onDelete: Cascade)
-
-  reactions DirectMessageReaction[]
-
-  @@index([fromId, toId, createdAt])
-  @@index([toId, status])  // 🚀 PERFORMANCE: Optimize unread count queries
-  @@map("direct_messages")
-}
-
 enum DMType {
   text
   photo
@@ -321,191 +542,6 @@ enum DMType {
   file
 }
 
-model DirectMessageReaction {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  emoji String
-
-  dmId   String
-  userId String
-  
-  dm     DirectMessage @relation(fields: [dmId], references: [id], onDelete: Cascade)
-  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("dm_reactions")
-}
-
-// ───────────────────────── Dating ─────────────────────────
-// ───────────────────────── Dating Feature Schema ─────────────────────────
-
-// Enhanced Dating Profile
-model DatingProfile {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // ── Connection to Core User ──
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  // ── Identity & Bio ──
-  firstName   String   // Real first name (Required)
-  birthDate   DateTime // For age calculation (Required 18+)
-  gender      Gender
-  bio         String?  @db.VarChar(500)
-  height      Int?     // In cm or inches (storage normalized)
-  
-  // ── College/Education (CUNY context) ──
-  collegeSlug String   // e.g., 'baruch', 'hunter'
-  major       String?
-  year        StudyYear? // Freshman, Sophomore, etc.
-  gradYear    String?    // e.g., "Class of 2026"
-  greekLife   String?    // e.g., "Alpha Phi"
-
-  // ── Details ──
-  lookingFor      LookingFor[] // Relationship, Casual, etc.
-  hobbies         String[]     // Tags: "Gym", "Music", "Coding"
-  interests       String[]     // "Vibe" / Interest Badges
-  prompts         Json?        // Array of { question, answer }
-  instagramHandle String?      // For verification/display
-  spotifyTopArtists String[]   // Custom top 3 artists list for MVP
-
-  // ── Location ──
-  // We can store lat/long for distance calculation
-  latitude  Float?
-  longitude Float?
-  
-  // ── Status & Verification ──
-  isProfileVisible  Boolean   @default(true) // "Show me on dating"
-  isPaused          Boolean   @default(false)
-  
-  isPhotoVerified   Boolean   @default(false) // Blue tick?
-  photoVerifiedAt   DateTime?
-  
-  approvalStatus    ApprovalStatus @default(PENDING) // Manual/AI approval of text/bio
-  rejectionReason   String?
-
-  score             Float     @default(0) // Profile completeness score
-
-  // ── Relations ──
-  photos      DatingPhoto[]
-  preference  DatingPreference?
-  
-  swipesMade    DatingSwipe[] @relation("Swiper")
-  swipesReceived DatingSwipe[] @relation("Target")
-  
-  matches1    DatingMatch[] @relation("MatchProfile1")
-  matches2    DatingMatch[] @relation("MatchProfile2")
-  
-  blocksGiven    DatingBlock[] @relation("Blocker")
-  blocksReceived DatingBlock[] @relation("Blocked")
-
-  @@index([collegeSlug])
-  @@index([gender])
-  @@index([userId])
-  @@map("dating_profiles")
-}
-
-// Dating Preferences (Filters)
-model DatingPreference {
-  id        String   @id @default(cuid())
-  
-  datingProfileId String @unique
-  datingProfile   DatingProfile @relation(fields: [datingProfileId], references: [id], onDelete: Cascade)
-
-  // Filters
-  ageMin       Int @default(18)
-  ageMax       Int @default(30)
-  
-  maxDistance  Int @default(50) // in km/miles
-  
-  interestedInGender Gender[] // Array of genders interested in
-  
-  preferredColleges  String[] // Array of college slugs (or empty for all)
-  
-  // Privacy
-  showToPeopleOnCampusOnly Boolean @default(false)
-  isDistanceVisible        Boolean @default(true)
-  isCollegeVisible         Boolean @default(true)
-
-  @@map("dating_preferences")
-}
-
-// Photos with Moderation
-model DatingPhoto {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  datingProfileId String
-  datingProfile   DatingProfile @relation(fields: [datingProfileId], references: [id], onDelete: Cascade)
-
-  url       String
-  thumbnail String?
-  order     Int      @default(0)
-  
-  status          PhotoStatus @default(PENDING)
-  rejectionReason String?
-  reviewedBy      String?  // Admin user ID
-  reviewedAt      DateTime?
-  
-  // AI placeholders (for future)
-  aiFlags         Json?
-  
-  isMain    Boolean     @default(false)
-  
-  reports   PhotoReport[]
-
-  @@index([datingProfileId])
-  @@index([status])
-  @@map("dating_photos")
-}
-
-// The "Swipe" Action
-model DatingSwipe {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  swiperId String
-  swiper   DatingProfile @relation("Swiper", fields: [swiperId], references: [id], onDelete: Cascade)
-
-  targetId String
-  target   DatingProfile @relation("Target", fields: [targetId], references: [id], onDelete: Cascade)
-
-  type     SwipeType // LIKE, DISLIKE, SUPERLIKE
-
-  @@unique([swiperId, targetId]) // Can only swipe once per person
-  @@index([swiperId])
-  @@index([targetId])
-  @@map("dating_swipes")
-}
-
-// Successful Match
-model DatingMatch {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt // Last activity
-
-  // Determine Profile1 < Profile2 by ID sorts to ensure uniqueness constraint
-  profile1Id String
-  profile1   DatingProfile @relation("MatchProfile1", fields: [profile1Id], references: [id], onDelete: Cascade)
-
-  profile2Id String
-  profile2   DatingProfile @relation("MatchProfile2", fields: [profile2Id], references: [id], onDelete: Cascade)
-
-  isActive   Boolean @default(true) // becomes false if unmatched
-  unmatchedBy String? // ID of who unmatched
-  
-  // Link to a conversation/thread
-  channelId String? 
-
-  @@unique([profile1Id, profile2Id])
-  @@index([profile1Id])
-  @@index([profile2Id])
-  @@map("dating_matches")
-}
-
-// Enums
 enum Gender {
   MALE
   FEMALE
@@ -549,46 +585,6 @@ enum SwipeType {
   SUPERLIKE
 }
 
-// ───────────────────────── Reports ─────────────────────────
-model Report {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  // Reporter
-  reporterId String
-  reporter   User   @relation("Reporter", fields: [reporterId], references: [id])
-
-  // Reported User
-  reportedId String
-  reported   User   @relation("Reported", fields: [reportedId], references: [id])
-  
-  // Report Details
-  reason       ReportReason
-  category     String?      // Subcategory
-  details      String?
-  targetType   String       // "profile", "photo", "message", "behavior"
-  targetId     String?
-  
-  // Evidence
-  screenshots  String[]     // URLs to uploaded screenshots
-  
-  // Status
-  status       ReportStatus   @default(PENDING)
-  priority     ReportPriority @default(NORMAL)
-  
-  // Review
-  reviewedBy   String?
-  reviewedAt   DateTime?
-  reviewNotes  String?
-  actionTaken  String?      // "warning", "strike", "suspend", "ban", "dismissed"
-  
-  @@index([reportedId, status])
-  @@index([status, priority])
-  @@index([createdAt])
-  @@map("reports")
-}
-
 enum ReportReason {
   HARASSMENT
   FAKE_PROFILE
@@ -615,84 +611,6 @@ enum ReportPriority {
   URGENT
 }
 
-// Blocking
-model DatingBlock {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-
-  blockerId String
-  blocker   DatingProfile @relation("Blocker", fields: [blockerId], references: [id], onDelete: Cascade)
-
-  blockedId String
-  blocked   DatingProfile @relation("Blocked", fields: [blockedId], references: [id], onDelete: Cascade)
-
-  @@unique([blockerId, blockedId])
-  @@index([blockerId])
-  @@index([blockedId])
-  @@map("dating_blocks")
-}
-
-// ───────────────────────── Verification ─────────────────────────
-model VerificationRequest {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  
-  poseId    String
-  pose      VerificationPose @relation(fields: [poseId], references: [id])
-  photoUrl  String   // The selfie they took
-  
-  status    ApprovalStatus @default(PENDING)
-  adminNote String?
-  
-  reviewedBy String? // Admin ID
-  reviewedAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([status])
-  @@map("verification_requests")
-}
-
-model VerificationPose {
-  id          String @id @default(cuid())
-  name        String // e.g. "Peace Sign"
-  instruction String // "Hold up two fingers like a peace sign"
-  referenceImageUrl String 
-  isActive    Boolean @default(true)
-  
-  requests    VerificationRequest[]
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("verification_poses")
-}
-
-// ───────────────────────── Photo Reports ─────────────────────────
-model PhotoReport {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  
-  reporterId String
-  reporter   User @relation("PhotoReporter", fields: [reporterId], references: [id])
-  
-  photoId    String
-  photo      DatingPhoto @relation(fields: [photoId], references: [id], onDelete: Cascade)
-  
-  reason     PhotoReportReason
-  details    String?
-  status     ReportStatus @default(PENDING)
-  
-  reviewedBy String?
-  reviewedAt DateTime?
-  
-  @@index([photoId, status])
-  @@map("photo_reports")
-}
-
 enum PhotoReportReason {
   NUDITY
   NOT_REAL_PERSON
@@ -702,65 +620,10 @@ enum PhotoReportReason {
   OTHER
 }
 
-// ───────────────────────── Strikes ─────────────────────────
-model Strike {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  
-  userId    String
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  reason    String
-  severity  StrikeSeverity @default(MINOR)
-  details   String?
-  
-  // Linked to report/incident
-  reportId  String?
-  
-  // Issued by
-  issuedBy  String  // Admin user ID
-  
-  // Expiration (strikes can expire after X months)
-  expiresAt DateTime?
-  active    Boolean @default(true)
-  
-  @@index([userId, active])
-  @@index([createdAt])
-  @@map("strikes")
-}
-
 enum StrikeSeverity {
-  MINOR    // Warning
-  MODERATE // Temporary suspension
-  SEVERE   // Long suspension or ban consideration
-}
-
-// ───────────────────────── Appeals ─────────────────────────
-model Appeal {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
-  userId    String
-  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // What they're appealing
-  type      AppealType
-  strikeId  String?
-  reportId  String?
-  
-  reason    String
-  status    AppealStatus @default(PENDING)
-  
-  // Review
-  reviewedBy   String?
-  reviewedAt   DateTime?
-  reviewNotes  String?
-  decision     String?  // "approved", "denied", "partial"
-  
-  @@index([userId, status])
-  @@index([status])
-  @@map("appeals")
+  MINOR
+  MODERATE
+  SEVERE
 }
 
 enum AppealType {
@@ -775,49 +638,4 @@ enum AppealStatus {
   UNDER_REVIEW
   APPROVED
   DENIED
-}
-
-// ───────────────────────── Moderation Logs ─────────────────────────
-model ModerationLog {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  
-  // What happened
-  action       String   // "photo_approved", "user_banned", "report_reviewed", etc.
-  targetType   String   // "user", "photo", "report"
-  targetId     String
-  
-  // Who did it
-  moderatorId  String
-  moderator    User @relation("ModeratorActions", fields: [moderatorId], references: [id])
-  
-  // Context
-  reason       String?
-  details      Json?
-  
-  // Link to related entities
-  userId       String?
-  reportId     String?
-  strikeId     String?
-  
-  @@index([targetType, targetId])
-  @@index([moderatorId])
-  @@index([createdAt])
-  @@map("moderation_logs")
-}
-
-// ───────────────────────── Security & Device Tracking ─────────────────────────
-model TrustedDevice {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  deviceId    String
-  deviceModel String?
-  ipAddress   String?
-  lastLoginAt DateTime @default(now())
-  createdAt   DateTime @default(now())
-
-  @@unique([userId, deviceId])
-  @@index([userId])
-  @@map("trusted_devices")
 }

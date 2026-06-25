@@ -168,6 +168,8 @@ app.use((req, _res, next) => {
 
 // Admin routes configured after io so req.io is injected
 app.use("/api/admin", adminRoutes);
+app.use("/api/admin", require("./routes/templateRoutes"));
+app.use("/api/admin/analytics", require("./routes/analyticsRoutes"));
 
 // Health routes
 app.get("/", (_req, res) => res.json({ ok: true, service: "community-talk" }));

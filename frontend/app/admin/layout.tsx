@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
@@ -10,6 +10,8 @@ import {
   Users2,
   Layers,
   LogOut,
+  LineChart,
+  Building2,
 } from "lucide-react";
 
 type NavItem = {
@@ -20,6 +22,12 @@ type NavItem = {
 };
 
 const navItems: NavItem[] = [
+  {
+    href: "/admin/analytics",
+    label: "Analytics",
+    description: "Monitor user growth, engagement, and platform health",
+    icon: LineChart,
+  },
   {
     href: "/admin/reports",
     label: "Reports",
@@ -39,6 +47,12 @@ const navItems: NavItem[] = [
     icon: Users2,
   },
   {
+    href: "/admin/colleges",
+    label: "Colleges",
+    description: "Manage colleges and auto-seed communities",
+    icon: Building2,
+  },
+  {
     href: "/admin/communities",
     label: "Communities",
     description: "Manage college, religion, and custom communities",
@@ -47,6 +61,12 @@ const navItems: NavItem[] = [
 ];
 
 function getPageSubtitle(pathname: string): string {
+  if (pathname.startsWith("/admin/analytics")) {
+    return "Track platform growth, daily active users, and message volume.";
+  }
+  if (pathname.startsWith("/admin/colleges")) {
+    return "Add new colleges to the platform and automatically generate their localized communities.";
+  }
   if (pathname.startsWith("/admin/reports")) {
     return "Investigate multi-reported users and handle auto-deletion risk accounts.";
   }
@@ -65,6 +85,15 @@ function getPageSubtitle(pathname: string): string {
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const token = window.localStorage.getItem("adminToken");
+      if (!token && !pathname.includes("/admin/login")) {
+        router.push("/admin/login");
+      }
+    }
+  }, [pathname, router]);
 
   const handleLogout = () => {
     if (typeof window !== "undefined") {
