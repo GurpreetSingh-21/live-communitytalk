@@ -5,28 +5,32 @@ import Image from "next/image";
 
 const features = [
     {
-        id: 1,
+        id: "features-verified",
+        anchor: "verified",
         title: "Verified Students Only",
         description: "Connect with real, verified students from your campus and beyond. No bots, no spam—just authentic connections.",
         image: "/verified-3d.png",
         imagePosition: "right" as const,
     },
     {
-        id: 2,
+        id: "features-community",
+        anchor: "community",
         title: "Campus Communities",
         description: "Join clubs, study groups, and interest-based communities. From chess club to coding bootcamps, find your tribe.",
         image: "/communities-3d.png",
         imagePosition: "left" as const,
     },
     {
-        id: 3,
+        id: "features-safety",
+        anchor: "safety",
         title: "Private & Secure",
         description: "Your conversations are encrypted end-to-end. What you share stays between you and your friends.",
         image: "/security-3d.png",
         imagePosition: "right" as const,
     },
     {
-        id: 4,
+        id: "features-events",
+        anchor: "events",
         title: "Events & Meetups",
         description: "Discover campus events, study sessions, and social gatherings. Never miss what's happening around you.",
         image: "/events-all-3d.png",
@@ -69,7 +73,8 @@ export function Features() {
                     {features.map((feature, index) => (
                         <div
                             key={feature.id}
-                            className="grid lg:grid-cols-2 gap-16 items-center"
+                            id={feature.anchor}
+                            className="grid lg:grid-cols-2 gap-16 items-center scroll-mt-32"
                         >
                             {/* Image (conditionally ordered) */}
                             <motion.div

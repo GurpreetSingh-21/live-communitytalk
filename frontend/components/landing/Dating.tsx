@@ -112,15 +112,19 @@ export function Dating() {
                             ))}
                         </motion.div>
 
-                        <motion.button
+                        <motion.a
+                            href="#features"
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
                             transition={{ duration: 0.6, delay: 0.4 }}
-                            className="px-8 py-4 bg-[#FF7F6E] text-white rounded-2xl font-bold text-lg shadow-xl hover:shadow-2xl hover:scale-105 transition-all"
+                            className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-[#FF7F6E] to-[#FF9E91] text-white rounded-2xl font-bold text-lg shadow-xl hover:shadow-[#FF7F6E]/30 hover:scale-105 hover:-translate-y-1 transition-all group"
                         >
-                            Start Finding Matches
-                        </motion.button>
+                            Meet Students Now
+                            <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                            </svg>
+                        </motion.a>
                     </div>
                 </div>
             </div>

@@ -33,7 +33,7 @@ export function Hero() {
                         >
                             Your Campus.{" "}
                             <span className="text-[#2D5A47] relative inline-block">
-                                Your Chemistry.
+                                Your Chemistry ❤️
                                 <svg
                                     className="absolute -bottom-2 left-0 w-full h-3 text-[#FF7F6E]"
                                     viewBox="0 0 200 12"
@@ -71,9 +71,9 @@ export function Hero() {
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                                 </svg>
                             </button>
-                            <button className="px-8 py-4 bg-white border-2 border-[#2D5A47]/20 text-[#2D5A47] rounded-2xl font-bold text-lg hover:border-[#2D5A47] hover:shadow-md transition-all">
+                            <a href="#features" className="px-8 py-4 bg-white border-2 border-[#2D5A47]/20 text-[#2D5A47] rounded-2xl font-bold text-lg hover:border-[#2D5A47] hover:shadow-md transition-all">
                                 Learn More
-                            </button>
+                            </a>
                         </motion.div>
 
                         {/* Social Proof */}
@@ -84,8 +84,15 @@ export function Hero() {
                             className="flex items-center gap-6 pt-8"
                         >
                             <div className="flex -space-x-3">
-                                {[1, 2, 3, 4].map((i) => (
-                                    <div key={i} className="w-10 h-10 rounded-full bg-gradient-to-br from-[#2D5A47] to-[#FF7F6E] border-2 border-white" />
+                                {[
+                                    { emoji: "👨‍🎓", bg: "bg-[#FFB5A7]" },
+                                    { emoji: "👩‍🔬", bg: "bg-[#A7FFEB]" },
+                                    { emoji: "🧑‍💻", bg: "bg-[#FFE0A7]" },
+                                    { emoji: "👩‍🎨", bg: "bg-[#C4A7FF]" }
+                                ].map((avatar, i) => (
+                                    <div key={i} className={`w-10 h-10 rounded-full ${avatar.bg} border-2 border-white flex items-center justify-center text-lg shadow-sm relative`} style={{ zIndex: 40 - i }}>
+                                        {avatar.emoji}
+                                    </div>
                                 ))}
                             </div>
                             <div>
