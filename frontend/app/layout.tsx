@@ -3,6 +3,7 @@ import { Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import KeepAlive from "@/components/KeepAlive";
+import { Analytics } from "@vercel/analytics/react";
 
 const jakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
@@ -30,6 +31,7 @@ export default function RootLayout({
         <KeepAlive />
         <Toaster position="top-center" richColors />
         {children}
+        <Analytics />
       </body>
     </html>
   );
