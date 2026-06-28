@@ -14,34 +14,36 @@ router.use(authenticate);
  */
 router.post("/avatar", async (req, res) => {
   try {
-    const { imageData, fileExtension } = req.body;
+    const { imageData, fileExtension, avatarUrl } = req.body;
     const userId = req.user.id;
 
-    if (!imageData) {
-      return res.status(400).json({ error: "No image data provided" });
-    }
+    let finalUrl = avatarUrl;
 
-    // 1. Prepare file name
-    const fileName = `avatar_${userId}_${Date.now()}.${fileExtension || "jpg"}`;
-
-    // 2. Upload to ImageKit
-    const uploadResponse = await uploadToImageKit(imageData, fileName);
-
-    if (!uploadResponse || !uploadResponse.url) {
-      throw new Error("Failed to get download URL from ImageKit");
+    if (!finalUrl) {
+      if (!imageData) {
+        return res.status(400).json({ error: "No image data or avatarUrl provided" });
+      }
+      // 1. Prepare file name
+      const fileName = `avatar_${userId}_${Date.now()}.${fileExtension || "jpg"}`;
+      // 2. Upload to ImageKit
+      const uploadResponse = await uploadToImageKit(imageData, fileName);
+      if (!uploadResponse || !uploadResponse.url) {
+        throw new Error("Failed to get download URL from ImageKit");
+      }
+      finalUrl = uploadResponse.url;
     }
 
     // 3. Update User in DB
     const updatedUser = await prisma.user.update({
       where: { id: userId },
-      data: { avatar: uploadResponse.url },
+      data: { avatar: finalUrl },
     });
 
     // 4. SYNC: Update all Membership records for this user
     try {
       await prisma.member.updateMany({
         where: { userId: userId },
-        data: { avatar: uploadResponse.url }
+        data: { avatar: finalUrl }
       });
     } catch (syncErr) {
       console.warn("Avatar sync warning:", syncErr);
@@ -51,10 +53,12 @@ router.post("/avatar", async (req, res) => {
     if (req.redisClient) {
       const bootstrapKey = `bootstrap:${userId}`;
       const profileKey = `user:profile:${userId}`;
+      const sessionKey = `user:session:${userId}`;
       try {
         await req.redisClient.del(bootstrapKey);
         await req.redisClient.del(profileKey);
-        console.log(`🧹 [Cache] Invalidated ${bootstrapKey} & ${profileKey}`);
+        await req.redisClient.del(sessionKey);
+        console.log(`🧹 [Cache] Invalidated ${bootstrapKey}, ${profileKey} & ${sessionKey}`);
       } catch (err) {
         console.warn("Failed to invalidate cache:", err);
       }

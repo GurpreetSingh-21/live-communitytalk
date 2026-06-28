@@ -308,7 +308,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
           console.warn("[AuthContext] Socket connection failed (non-fatal):", err);
         }
         await refreshBootstrap();
-        await registerForPushNotificationsAsync();
+        registerForPushNotificationsAsync().catch(err => console.warn("[AuthContext] Push init non-fatal error:", err));
       } else {
         // --- UNAUTHENTICATED PATH (FIXED) ---
         if (__DEV__) console.log("[AuthContext] No token found, setting state to unauthed.");
@@ -357,7 +357,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       await setAccessToken(token);
       await refreshSocketAuth(token);
       const userObj = await refreshBootstrap();
-      await registerForPushNotificationsAsync(); // SAFE
+      registerForPushNotificationsAsync().catch(err => console.warn("[AuthContext] Push init non-fatal error:", err));
 
       // 🔄 Upload pending avatar immediately after login
       if (userObj?.email) {
@@ -378,7 +378,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
           // 1) If server has an identity backup, try restoring that FIRST (new device / reinstall)
           if (__DEV__) console.log(`🔐 [E2EE Auth] 📥 Checking for server backup...`);
           const remoteBackup = await fetchIdentityBackup();
-          if (remoteBackup && remoteBackup.version === 2 && remoteBackup.secretKeyB64) {
+          if (remoteBackup && (remoteBackup.version === 2 || remoteBackup.version === 3)) {
             if (__DEV__) console.log(`🔐 [E2EE Auth] ✅ Found backup on server (version ${remoteBackup.version})`);
             if (__DEV__) console.log(`🔐 [E2EE Auth] 🔄 Restoring identity from backup...`);
             const restored = await restoreIdentityFromAutoBackup(uid, remoteBackup);
@@ -386,6 +386,13 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
               if (__DEV__) console.log(`🔐 [E2EE Auth] 📤 Uploading restored public key to server...`);
               await uploadPublicKey(restored.publicKey);
               if (__DEV__) console.log(`🔐 [E2EE Auth] ✅ Public key uploaded successfully`);
+
+              // Auto-migrate v2 legacy backups to v3 Zero-Knowledge encrypted backups
+              if (remoteBackup.version === 2) {
+                if (__DEV__) console.log(`🔐 [E2EE Auth] 🔄 Upgrading legacy v2 backup to v3 Zero-Knowledge...`);
+                const newBlob = await createAutoIdentityBackup(uid);
+                if (newBlob) await uploadIdentityBackup(newBlob);
+              }
             } else {
               if (__DEV__) console.log(`🔐 [E2EE Auth] ⚠️ Backup restore failed, generating new keys`);
               const { publicKey } = await getOrCreateKeyPair(uid);

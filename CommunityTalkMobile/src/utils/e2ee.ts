@@ -241,16 +241,35 @@ export async function ensureKeyPair(userId: string): Promise<{ publicKey: string
   return await forceRegenerateKeyPair(userId);
 }
 
-// ───────────────────────── Automatic Identity Backup (no user passphrase) ─────────────────────────
+// ───────────────────────── Zero-Knowledge Identity Backup (Version 3) ─────────────────────────
 export type AutoBackupBlob = {
-  version: 2;
-  secretKeyB64: string;
+  version: 2 | 3;
+  secretKeyB64?: string; // version 2 legacy
+  nonceB64?: string; // version 3
+  ciphertextB64?: string; // version 3
+  saltB64?: string; // version 3
 };
 
+const getMasterWrappingKeyName = (userId: string) => `e2ee_master_wrap_${userId}`;
+
 /**
- * Create a simple automatic backup of the user's identity private key.
- * NOTE: This means the backend can theoretically read DMs if compromised,
- * but it keeps restore 100% automatic for users.
+ * Retrieves or generates a 32-byte Zero-Knowledge wrapping key stored securely in hardware SecureStore.
+ * This key never leaves the client device.
+ */
+async function getOrGenerateWrappingKey(userId: string): Promise<Uint8Array> {
+  const keyName = getMasterWrappingKeyName(userId);
+  let b64 = await SecureStore.getItemAsync(keyName);
+  if (!b64) {
+    const randomBytes = nacl.randomBytes(32);
+    b64 = encodeBase64(randomBytes);
+    await SecureStore.setItemAsync(keyName, b64);
+  }
+  return decodeBase64(b64);
+}
+
+/**
+ * Create a Zero-Knowledge encrypted backup (v3) of the user's identity private key.
+ * Server stores opaque ciphertext and cannot read DMs even if compromised.
  */
 export async function createAutoIdentityBackup(userId: string): Promise<AutoBackupBlob | null> {
   if (!userId) {
@@ -263,26 +282,61 @@ export async function createAutoIdentityBackup(userId: string): Promise<AutoBack
     console.log(`🔐 [E2EE Backup] ❌ No secret key found for user ${userId.substring(0, 8)}`);
     return null;
   }
-  console.log(`🔐 [E2EE Backup] 📦 Creating automatic backup for user ${userId.substring(0, 8)}...`);
-  const backup: AutoBackupBlob = { version: 2, secretKeyB64 };
-  console.log(`🔐 [E2EE Backup] ✅ Backup blob created (version 2, auto)`);
+  console.log(`🔐 [E2EE Backup] 📦 Creating Zero-Knowledge encrypted backup (v3) for user ${userId.substring(0, 8)}...`);
+
+  const wrappingKey = await getOrGenerateWrappingKey(userId);
+  const nonce = nacl.randomBytes(24);
+  const secretKeyBytes = decodeBase64(secretKeyB64);
+
+  const ciphertext = nacl.secretbox(secretKeyBytes, nonce, wrappingKey);
+
+  const backup: AutoBackupBlob = {
+    version: 3,
+    nonceB64: encodeBase64(nonce),
+    ciphertextB64: encodeBase64(ciphertext),
+    saltB64: "zk_secure_store_v1",
+  };
+
+  console.log(`🔐 [E2EE Backup] ✅ Zero-Knowledge Backup blob created (version 3)`);
   return backup;
 }
 
 /**
- * Restore identity private key from an automatic backup blob (no passphrase).
+ * Restore identity private key from a backup blob (supports both v3 encrypted and v2 legacy).
  */
 export async function restoreIdentityFromAutoBackup(
   userId: string,
   blob: AutoBackupBlob
 ): Promise<{ publicKey: string; secretKey: string } | null> {
-  if (!userId || !blob || !blob.secretKeyB64) {
+  if (!userId || !blob) {
     console.log(`🔐 [E2EE Backup] ❌ Invalid restore parameters`);
     return null;
   }
   try {
-    console.log(`🔐 [E2EE Backup] 🔄 Restoring identity from backup for user ${userId.substring(0, 8)}...`);
-    const secretKeyB64 = blob.secretKeyB64;
+    console.log(`🔐 [E2EE Backup] 🔄 Restoring identity from backup (v${blob.version}) for user ${userId.substring(0, 8)}...`);
+    let secretKeyB64: string | undefined = blob.secretKeyB64;
+
+    if (blob.version === 3) {
+      if (!blob.nonceB64 || !blob.ciphertextB64) {
+        console.error(`🔐 [E2EE Backup] ❌ Missing nonce or ciphertext for v3 backup`);
+        return null;
+      }
+      const wrappingKey = await getOrGenerateWrappingKey(userId);
+      const nonce = decodeBase64(blob.nonceB64);
+      const ciphertext = decodeBase64(blob.ciphertextB64);
+      const decrypted = nacl.secretbox.open(ciphertext, nonce, wrappingKey);
+      if (!decrypted) {
+        console.error(`🔐 [E2EE Backup] ❌ Decryption failed (wrapping key mismatch on v3 backup)`);
+        return null;
+      }
+      secretKeyB64 = encodeBase64(decrypted);
+    }
+
+    if (!secretKeyB64) {
+      console.error(`🔐 [E2EE Backup] ❌ No valid secretKey decoded from backup`);
+      return null;
+    }
+
     const secretKeyBytes = decodeBase64(secretKeyB64);
     const kp = nacl.box.keyPair.fromSecretKey(secretKeyBytes);
     const publicKeyB64 = encodeBase64(kp.publicKey);

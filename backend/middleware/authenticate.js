@@ -123,10 +123,34 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ error: "Malformed token", code: "MALFORMED_TOKEN" });
     }
 
-    // Load user
-    const userDoc = await prisma.user.findUnique({
-      where: { id: decoded.id },
-    });
+    // 🚀 PERFORMANCE FIX: Cache user session in Redis for 120s to prevent hot-spot queries
+    const sessionCacheKey = `user:session:${decoded.id}`;
+    let userDoc = null;
+
+    if (req.redisClient) {
+      try {
+        const cachedSession = await req.redisClient.get(sessionCacheKey);
+        if (cachedSession) {
+          userDoc = JSON.parse(cachedSession);
+        }
+      } catch (cacheErr) {
+        if (process.env.NODE_ENV !== 'production') console.log('[DEBUG] Auth session cache get error:', cacheErr.message);
+      }
+    }
+
+    if (!userDoc) {
+      userDoc = await prisma.user.findUnique({
+        where: { id: decoded.id },
+      });
+
+      if (userDoc && req.redisClient) {
+        try {
+          await req.redisClient.setex(sessionCacheKey, 120, JSON.stringify(userDoc));
+        } catch (cacheErr) {
+          if (process.env.NODE_ENV !== 'production') console.log('[DEBUG] Auth session cache set error:', cacheErr.message);
+        }
+      }
+    }
 
     if (!userDoc) {
       return res.status(401).json({ error: "User not found", code: "USER_NOT_FOUND" });

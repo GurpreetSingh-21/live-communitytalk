@@ -132,7 +132,28 @@ router.post('/', (req, res, next) => {
 });
 
 // Import ImageKit service
-const { uploadToImageKit } = require("../services/imagekitService");
+const { uploadToImageKit, getAuthenticationParameters } = require("../services/imagekitService");
+
+/**
+ * GET /api/upload/imagekit-auth
+ * Returns authentication parameters for direct mobile-to-ImageKit uploads
+ */
+router.get('/imagekit-auth', (req, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const authParams = getAuthenticationParameters();
+    return res.json({
+      ...authParams,
+      publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
+      urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT,
+    });
+  } catch (error) {
+    console.error("❌ ImageKit Auth Error:", error);
+    return res.status(500).json({ error: "Failed to generate upload credentials" });
+  }
+});
 
 /**
  * POST /api/upload/base64

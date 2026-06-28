@@ -38,6 +38,7 @@ import * as ImagePicker from "expo-image-picker";
 import { AuthContext } from "@/src/context/AuthContext";
 import { api } from "@/src/api/api";
 import { useSocket } from "@/src/context/SocketContext";
+import { uploadDirectToImageKit } from "@/src/utils/imagekitUpload";
 import { Colors, Fonts } from "@/constants/theme";
 
 /* ───────────────── types ───────────────── */
@@ -174,7 +175,8 @@ const ProfileHeader = ({
   const theme = isDark ? Colors.dark : Colors.light;
 
   const initials = item.name.slice(0, 2).toUpperCase() || "CT";
-  const avatarUri = item.avatar;
+  const isValidAvatar = item.avatar && typeof item.avatar === 'string' && !item.avatar.includes('default-avatar') && (item.avatar.startsWith('http') || item.avatar.startsWith('file:') || item.avatar.startsWith('data:'));
+  const avatarUri = isValidAvatar ? item.avatar : null;
   if (__DEV__) console.log("avatarUri:", avatarUri);
 
   return (
@@ -695,29 +697,25 @@ export default function ProfileScreen(): React.JSX.Element {
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
-        base64: true,
       });
 
-      if (!result.canceled && result.assets?.[0]?.base64) {
+      if (!result.canceled && result.assets?.[0]?.uri) {
         const asset = result.assets[0];
-        uploadAvatar(asset.base64, asset.uri);
+        uploadAvatar(asset.uri);
       }
     } catch (err) {
       Alert.alert("Error", "Failed to pick image.");
     }
   };
 
-  const uploadAvatar = async (
-    base64: string | null | undefined,
-    uri: string
-  ) => {
-    if (!base64) return;
+  const uploadAvatar = async (uri: string) => {
+    if (!uri) return;
     try {
       setIsUploading(true);
-      const extension = uri.split(".").pop() || "jpg";
+      // 🚀 PERFORMANCE: Upload direct to ImageKit CDN, skipping backend memory RAM buffer
+      const cdnUrl = await uploadDirectToImageKit(uri, { folder: "avatars" });
       const { data } = await api.post("/api/user/avatar", {
-        imageData: base64,
-        fileExtension: extension,
+        avatarUrl: cdnUrl,
       });
 
       if (__DEV__) {

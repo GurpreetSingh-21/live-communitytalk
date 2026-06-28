@@ -30,4 +30,8 @@ async function uploadToImageKit(file, fileName, folder = "avatars") {
   }
 }
 
-module.exports = { uploadToImageKit };
+function getAuthenticationParameters() {
+  return imagekit.getAuthenticationParameters();
+}
+
+module.exports = { uploadToImageKit, getAuthenticationParameters };

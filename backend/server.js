@@ -148,6 +148,7 @@ app.use(rateLimiter);
 
 // Upload routes need a larger body limit, mount them before the global 1mb limit
 app.use('/api/upload', express.json({ limit: "50mb" }), authenticate, uploadRoutes);
+app.use('/api/user/avatar', express.json({ limit: "15mb" }));
 
 // Default JSON body limit: F-33 (Moved from 50mb to 1mb for non-upload endpoints)
 app.use(express.json({ limit: "1mb" })); 

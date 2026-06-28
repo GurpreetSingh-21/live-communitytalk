@@ -20,6 +20,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthContext } from '@/src/context/AuthContext';
 import { api } from '@/src/api/api';
 import * as ImagePicker from 'expo-image-picker';
+import { uploadDirectToImageKit } from '@/src/utils/imagekitUpload';
 
 // Force a visible green for the save button to ensure it stands out
 const ACTION_COLOR = '#10B981';
@@ -86,19 +87,13 @@ export default function EditProfileScreen() {
     const handleUpload = async (uri: string) => {
         setUploading(true);
         try {
-            const formData = new FormData();
-            // @ts-ignore
-            formData.append('profilePicture', {
-                uri,
-                name: 'profile.jpg',
-                type: 'image/jpeg',
+            // 🚀 PERFORMANCE: Upload direct to ImageKit CDN
+            const cdnUrl = await uploadDirectToImageKit(uri, { folder: "avatars" });
+            const res = await api.post('/api/user/avatar', {
+                avatarUrl: cdnUrl,
             });
 
-            const res = await api.put('/api/user/profile-picture', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
-
-            const newUrl = res.data?.user?.profilePicture || res.data?.user?.avatar;
+            const newUrl = res.data?.avatar || cdnUrl;
 
             if (newUrl) {
                 setAvatar(newUrl);
@@ -244,7 +239,7 @@ export default function EditProfileScreen() {
                                 >
                                     {uploading ? (
                                         <ActivityIndicator color={ACTION_COLOR} />
-                                    ) : avatar ? (
+                                    ) : (avatar && !avatar.includes('default-avatar') && (avatar.startsWith('http') || avatar.startsWith('file:') || avatar.startsWith('data:'))) ? (
                                         <Image source={{ uri: avatar }} style={{ width: '100%', height: '100%' }} />
                                     ) : (
                                         <Text style={{ fontSize: 40, fontFamily: Fonts.bold, color: colors.textMuted }}>
