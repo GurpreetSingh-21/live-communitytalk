@@ -224,8 +224,11 @@ router.get("/my-threads", async (req, res) => {
       }),
       prisma.message.findMany({
         where: { communityId: { in: communityIds } },
-        orderBy: { createdAt: 'desc' },
-        take: communityIds.length * 2
+        orderBy: [
+          { communityId: 'asc' },
+          { createdAt: 'desc' }
+        ],
+        distinct: ['communityId']
       })
     ]);
     const t4 = Date.now();
