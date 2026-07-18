@@ -58,20 +58,20 @@ router.get("/", async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // 🚀 PERFORMANCE: Check Redis cache first
-    const cacheKey = `dm_inbox:${currentUserId}`;
+    const context = (req.query.context || "community").trim();
+
+    // 🚀 PERFORMANCE: Check Redis cache first (context-aware to prevent cache collisions)
+    const cacheKey = `dm_inbox:${context}:${currentUserId}`;
     try {
       const cached = await req.redisClient.get(cacheKey);
       if (cached) {
-        if (process.env.NODE_ENV !== 'production') console.log(`[DM Inbox] 💾 Cache HIT for user ${currentUserId.substring(0, 8)}`);
+        if (process.env.NODE_ENV !== 'production') console.log(`[DM Inbox] 💾 Cache HIT for user ${currentUserId.substring(0, 8)} (${context})`);
         return res.json(JSON.parse(cached));
       }
-      if (process.env.NODE_ENV !== 'production') console.log(`[DM Inbox] 💾 Cache MISS for user ${currentUserId.substring(0, 8)}`);
+      if (process.env.NODE_ENV !== 'production') console.log(`[DM Inbox] 💾 Cache MISS for user ${currentUserId.substring(0, 8)} (${context})`);
     } catch (cacheErr) {
       console.warn('[DM Inbox] Cache read failed:', cacheErr);
     }
-
-    const context = (req.query.context || "community").trim();
 
     // 🚀 PERFORMANCE: Fetch last 100 messages (was 1000!) with only needed fields
     // ✅ Filter out deleted messages
@@ -137,7 +137,20 @@ router.get("/", async (req, res) => {
     const [users, unreadCounts] = await Promise.all([
       prisma.user.findMany({
         where: { id: { in: partnerIds } },
-        select: { id: true, fullName: true, email: true, avatar: true }
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          avatar: true,
+          datingProfile: {
+            select: {
+              photos: {
+                where: { isMain: true },
+                take: 1
+              }
+            }
+          }
+        }
       }),
       prisma.directMessage.groupBy({
         by: ['fromId'],
@@ -157,13 +170,19 @@ router.get("/", async (req, res) => {
     // Map headers to normalized conversations
     let normalized = headers.map(h => {
       const u = userMap.get(h.partnerId);
+      
+      let avatar = u?.avatar || "/default-avatar.png";
+      if (context === "dating" && u?.datingProfile?.photos?.[0]?.url) {
+        avatar = u.datingProfile.photos[0].url;
+      }
+
       return {
         ...h,
         fullName: u?.fullName || u?.email || "Unknown User",
         firstName: u?.firstName,
         lastName: u?.lastName,
         email: u?.email || "",
-        avatar: u?.avatar || "/default-avatar.png",
+        avatar: avatar,
         hasAttachment: Array.isArray(h.lastAttachments) && h.lastAttachments.length > 0
       };
     });
@@ -385,6 +404,19 @@ const handleSend = async (req, res) => {
     req.io?.to(String(to)).emit("dm:message", payload);
     req.io?.to(String(from)).emit("dm:message", payload);
 
+    // 🧹 CACHE INVALIDATION: Clear inbox cache for both users immediately
+    if (req.redisClient) {
+      const context = dm.context || "community";
+      const cacheKey1 = `dm_inbox:${context}:${from}`;
+      const cacheKey2 = `dm_inbox:${context}:${to}`;
+      try {
+        await req.redisClient.del(cacheKey1, cacheKey2);
+        if (process.env.NODE_ENV !== 'production') console.log(`[DM Routes] 🧹 Invalidated inbox cache for ${from} and ${to} (${context})`);
+      } catch (cacheErr) {
+        console.warn('[DM Routes] Cache invalidation failed:', cacheErr);
+      }
+    }
+
     return res.status(201).json(payload);
   } catch (err) {
     console.error("[DM Routes] POST error:", err);
@@ -486,10 +518,12 @@ router.delete("/:partnerId", async (req, res) => {
 
     // 🧹 CACHE INVALIDATION: Clear inbox cache for both users
     if (req.redisClient) {
-      const cacheKey1 = `dm_inbox:${me}`;
-      const cacheKey2 = `dm_inbox:${partnerId}`;
+      const cacheKey1 = `dm_inbox:community:${me}`;
+      const cacheKey2 = `dm_inbox:dating:${me}`;
+      const cacheKey3 = `dm_inbox:community:${partnerId}`;
+      const cacheKey4 = `dm_inbox:dating:${partnerId}`;
       try {
-        await req.redisClient.del(cacheKey1, cacheKey2);
+        await req.redisClient.del(cacheKey1, cacheKey2, cacheKey3, cacheKey4);
 
         // F-15: Invalidate message cache explicitly with SCAN instead of KEYS
         const patterns = [`dm:messages:${me}:${partnerId}:*`, `dm:messages:${partnerId}:${me}:*`];

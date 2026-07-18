@@ -157,34 +157,36 @@ router.post("/profile", async (req, res) => {
             spotifyTopArtists: spotifyTopArtists || [],
             instagramHandle,
             isProfileVisible: true,
+            approvalStatus: 'APPROVED', // 🚀 Auto-approve all profiles by default for now
             score: 0 // Initial score
           }
         });
       }
 
       // Upsert Preferences
-      if (preferences) {
-        await tx.datingPreference.upsert({
-          where: { datingProfileId: profile.id },
-          create: {
-            datingProfileId: profile.id,
-            ageMin: preferences.ageMin || 18,
-            ageMax: preferences.ageMax || 30,
-            maxDistance: preferences.maxDistance || 50,
-            interestedInGender: preferences.interestedInGender || [],
-            preferredColleges: preferences.preferredColleges || [],
-            showToPeopleOnCampusOnly: preferences.showToPeopleOnCampusOnly || false
-          },
-          update: {
-            ageMin: preferences.ageMin !== undefined ? preferences.ageMin : undefined,
-            ageMax: preferences.ageMax !== undefined ? preferences.ageMax : undefined,
-            maxDistance: preferences.maxDistance !== undefined ? preferences.maxDistance : undefined,
-            interestedInGender: preferences.interestedInGender !== undefined ? preferences.interestedInGender : undefined,
-            preferredColleges: preferences.preferredColleges !== undefined ? preferences.preferredColleges : undefined,
-            showToPeopleOnCampusOnly: preferences.showToPeopleOnCampusOnly !== undefined ? preferences.showToPeopleOnCampusOnly : undefined
-          }
-        });
-      }
+      const defaultInterested = gender === 'MALE' ? ['FEMALE'] : gender === 'FEMALE' ? ['MALE'] : ['MALE', 'FEMALE'];
+      const prefsData = preferences || {};
+      
+      await tx.datingPreference.upsert({
+        where: { datingProfileId: profile.id },
+        create: {
+          datingProfileId: profile.id,
+          ageMin: prefsData.ageMin || 18,
+          ageMax: prefsData.ageMax || 30,
+          maxDistance: prefsData.maxDistance || 50,
+          interestedInGender: prefsData.interestedInGender || defaultInterested, // 🚀 Default fallback
+          preferredColleges: prefsData.preferredColleges || [],
+          showToPeopleOnCampusOnly: prefsData.showToPeopleOnCampusOnly || false
+        },
+        update: {
+          ageMin: prefsData.ageMin !== undefined ? prefsData.ageMin : undefined,
+          ageMax: prefsData.ageMax !== undefined ? prefsData.ageMax : undefined,
+          maxDistance: prefsData.maxDistance !== undefined ? prefsData.maxDistance : undefined,
+          interestedInGender: prefsData.interestedInGender !== undefined ? prefsData.interestedInGender : undefined,
+          preferredColleges: prefsData.preferredColleges !== undefined ? prefsData.preferredColleges : undefined,
+          showToPeopleOnCampusOnly: prefsData.showToPeopleOnCampusOnly !== undefined ? prefsData.showToPeopleOnCampusOnly : undefined
+        }
+      });
 
       // F-26: Handle Photos (Replace Strategy) with domain validation
       if (photos && Array.isArray(photos)) {
@@ -492,16 +494,63 @@ router.post("/swipe", async (req, res) => {
           select: { firstName: true, photos: { take: 1 }, user: { select: { avatar: true } } }
         });
 
-        // Emit Socket Event (if IO available)
+        // Emit Socket Event (if IO available) and Send Push Notifications
         if (req.io) {
           // Need Target's userId to send socket
-          const targetUser = await prisma.datingProfile.findUnique({ where: { id: targetId }, select: { userId: true } });
+          const targetUser = await prisma.datingProfile.findUnique({
+            where: { id: targetId },
+            select: {
+              userId: true,
+              user: { select: { id: true, pushTokens: true } }
+            }
+          });
           if (targetUser) {
             req.io.to(targetUser.userId).emit("match:new", {
               matchId: match.id,
               partnerName: myProfile.firstName,
               partnerId: myProfile.id
             });
+
+            // 🚀 Send Push Notifications to both matching users
+            try {
+              const { sendPushNotificationToUser } = require("../services/notificationService");
+
+              // Send to Target User
+              if (targetUser.user && targetUser.user.pushTokens && targetUser.user.pushTokens.length > 0) {
+                console.log(`[Swipe] Sending match push notification to target user ${targetUser.userId}`);
+                sendPushNotificationToUser(targetUser.user, {
+                  title: "New Match! ❤️",
+                  body: `You and ${myProfile.firstName} have matched! Say hi!`,
+                  data: {
+                    type: "match",
+                    matchId: match.id,
+                    partnerId: myProfile.id,
+                    partnerName: myProfile.firstName
+                  }
+                }).catch(err => console.error("Error sending match notification to target:", err));
+              }
+
+              // Send to Self (Swiper)
+              const swiperUserObj = await prisma.user.findUnique({
+                where: { id: userId },
+                select: { id: true, pushTokens: true }
+              });
+              if (swiperUserObj && swiperUserObj.pushTokens && swiperUserObj.pushTokens.length > 0) {
+                console.log(`[Swipe] Sending match push notification to swiper user ${userId}`);
+                sendPushNotificationToUser(swiperUserObj, {
+                  title: "New Match! ❤️",
+                  body: `You matched with ${partnerProfile?.firstName || 'someone'}!`,
+                  data: {
+                    type: "match",
+                    matchId: match.id,
+                    partnerId: targetId,
+                    partnerName: partnerProfile?.firstName
+                  }
+                }).catch(err => console.error("Error sending match notification to self:", err));
+              }
+            } catch (notifyErr) {
+              console.error("[Swipe] Match notification error:", notifyErr);
+            }
           }
         }
 

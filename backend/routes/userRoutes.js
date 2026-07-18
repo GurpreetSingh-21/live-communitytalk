@@ -95,13 +95,14 @@ router.post("/avatar", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    const context = (req.query.context || "community").trim();
 
-    // 🚀 Try Redis cache first
-    const cacheKey = `user:profile:${id}`;
+    // 🚀 Try Redis cache first (context-aware to prevent cache collisions)
+    const cacheKey = `user:profile:${context}:${id}`;
     if (req.redisClient) {
       const cached = await req.redisClient.get(cacheKey);
       if (cached) {
-        console.log(`✅ [Cache HIT] User profile ${id}`);
+        console.log(`✅ [Cache HIT] User profile ${id} (${context})`);
         return res.json(JSON.parse(cached));
       }
     }
@@ -115,7 +116,15 @@ router.get("/:id", async (req, res) => {
         email: true,
         collegeSlug: true,
         religionKey: true,
-        bio: true
+        bio: true,
+        datingProfile: {
+          select: {
+            photos: {
+              where: { isMain: true },
+              take: 1
+            }
+          }
+        }
       }
     });
 
@@ -123,15 +132,26 @@ router.get("/:id", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    let resolvedAvatar = user.avatar || "/default-avatar.png";
+    if (context === "dating" && user.datingProfile?.photos?.[0]?.url) {
+      resolvedAvatar = user.datingProfile.photos[0].url;
+    }
+
     const responseUser = {
       _id: user.id,
-      ...user
+      id: user.id,
+      fullName: user.fullName,
+      avatar: resolvedAvatar,
+      email: user.email,
+      collegeSlug: user.collegeSlug,
+      religionKey: user.religionKey,
+      bio: user.bio
     };
 
     // 💾 Cache for 30 minutes (aggressive)
     if (req.redisClient) {
       await req.redisClient.setex(cacheKey, 1800, JSON.stringify(responseUser));
-      console.log(`💾 [Cache MISS] Cached user profile ${id}`);
+      console.log(`💾 [Cache MISS] Cached user profile ${id} (${context})`);
     }
 
     return res.json(responseUser);

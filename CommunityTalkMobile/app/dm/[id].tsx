@@ -312,9 +312,9 @@ export default function DMThreadScreen() {
   /* ─────── Partner header fetch ─────── */
   const USER_ENDPOINTS = useMemo(
     () => [
-      `/api/user/${partnerId}`, // Correct endpoint
+      `/api/user/${partnerId}?context=${context}`, // Correct endpoint
     ],
-    [partnerId]
+    [partnerId, context]
   );
 
   const fetchPartnerMeta = useCallback(async (): Promise<PartnerMeta> => {

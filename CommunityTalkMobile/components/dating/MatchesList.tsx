@@ -1,11 +1,39 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, StyleSheet, FlatList, Image, TouchableOpacity, ActivityIndicator, Dimensions, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import DatingAPI, { ReportReason } from '@/src/api/dating';
 import { Ionicons } from '@expo/vector-icons';
+import { AuthContext } from '@/src/context/AuthContext';
+import { decryptMessage } from '@/src/utils/e2ee';
+import { fetchPublicKey } from '@/src/api/e2eeApi';
 
 const { width } = Dimensions.get('window');
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/thumbs/png?seed=campustry';
+
+const PUBLIC_KEY_CACHE = new Map<string, string>();
+
+const getCachedPublicKey = async (userId: string): Promise<string | null> => {
+    if (PUBLIC_KEY_CACHE.has(userId)) {
+        return PUBLIC_KEY_CACHE.get(userId)!;
+    }
+    try {
+        const key = await fetchPublicKey(userId);
+        if (key) {
+            PUBLIC_KEY_CACHE.set(userId, key);
+        }
+        return key;
+    } catch (err) {
+        console.error('🔐 [Dating Matches] Failed to fetch public key for:', userId.substring(0, 8), err);
+        return null;
+    }
+};
+
+const getAvatarUri = (avatarUrl: string | null | undefined) => {
+    if (avatarUrl && (avatarUrl.startsWith('http') || avatarUrl.startsWith('file'))) {
+        return avatarUrl;
+    }
+    return DEFAULT_AVATAR;
+};
 
 type Match = {
     matchId: string;
@@ -32,9 +60,12 @@ export default function MatchesList() {
     const [loading, setLoading] = useState(true);
     const router = useRouter();
 
+    const { user } = useContext(AuthContext) as any;
+    const myId = String(user?._id || user?.id || "");
+
     useEffect(() => {
         fetchData();
-    }, []);
+    }, [myId]);
 
     const fetchData = async () => {
         try {
@@ -44,8 +75,55 @@ export default function MatchesList() {
                 DatingAPI.getConversations()
             ]);
 
-            setMatches((matchesData as any) || []);
-            setThreads((threadsData as any) || []);
+            const rawThreads = (threadsData as any) || [];
+            const threadPartnerUserIds = new Set(rawThreads.map((t: any) => String(t.partnerId)));
+
+            const filteredMatches = ((matchesData as any) || []).filter((m: any) => !threadPartnerUserIds.has(String(m.userId)));
+            setMatches(filteredMatches);
+            
+            // Decrypt previews and map fields context-safely
+            const mappedThreads = await Promise.all(
+                rawThreads.map(async (t: any) => {
+                    const partnerId = t.partnerId;
+                    const partnerName = t.fullName || t.partnerName || t.firstName || 'Unknown User';
+                    const avatar = t.avatar || null;
+                    const isEncrypted = t.isEncrypted || false;
+                    const lastMessage = t.lastMessage || '';
+
+                    let decryptedMessage = lastMessage;
+
+                    const looksLikeCipherText = lastMessage.length > 40 && /^[A-Za-z0-9+/=]+$/.test(lastMessage);
+                    if ((isEncrypted || looksLikeCipherText) && lastMessage && myId) {
+                        try {
+                            const partnerPubKey = await getCachedPublicKey(partnerId);
+                            if (partnerPubKey) {
+                                const decrypted = await decryptMessage(lastMessage, partnerPubKey, myId);
+                                if (!decrypted.startsWith('[') || !decrypted.includes('Failed')) {
+                                    decryptedMessage = decrypted;
+                                } else {
+                                    decryptedMessage = '🔒 Encrypted';
+                                }
+                            } else {
+                                decryptedMessage = '🔒 Encrypted';
+                            }
+                        } catch (decryptErr) {
+                            console.error(`🔐 [Dating Matches] Decryption error for ${partnerName}:`, decryptErr);
+                            decryptedMessage = '🔒 Encrypted';
+                        }
+                    }
+
+                    return {
+                        partnerId,
+                        partnerName,
+                        avatar,
+                        lastMessage: decryptedMessage,
+                        lastTimestamp: t.lastTimestamp,
+                        unread: Number(t.unread || 0)
+                    };
+                })
+            );
+
+            setThreads(mappedThreads);
         } catch (err) {
             console.error("Fetch matches/threads error:", err);
         } finally {
@@ -113,7 +191,7 @@ export default function MatchesList() {
 
     const renderThread = ({ item }: { item: Thread }) => (
         <TouchableOpacity style={styles.matchItem} onPress={() => openChat(item.partnerId, item.partnerName)}>
-            <Image source={{ uri: item.avatar || DEFAULT_AVATAR }} style={styles.avatar} />
+            <Image source={{ uri: getAvatarUri(item.avatar) }} style={styles.avatar} />
             <View style={styles.info}>
                 <View style={styles.row}>
                     <Text style={styles.name}>{item.partnerName}</Text>
@@ -177,7 +255,7 @@ export default function MatchesList() {
                                     )
                                 }
                             >
-                                <Image source={{ uri: m.photo || DEFAULT_AVATAR }} style={styles.bubbleImage} />
+                                <Image source={{ uri: getAvatarUri(m.photo) }} style={styles.bubbleImage} />
                                 <Text style={styles.bubbleName} numberOfLines={1}>{m.firstName}</Text>
                             </TouchableOpacity>
                         ))}

@@ -9,6 +9,19 @@ CommunityTalkMobile/.env
 .env.local
 .env.production
 
-# LOW-6/7 SECURITY FIX: Ignore debug and test artifacts
+# Duplicate / old env files
+communitytalkv1*
+**(1).env
+
+# macOS system files
+.DS_Store
+**/.DS_Store
+
+# JetBrains IDE
+.idea/
+
+# Backend debug and test artifacts
 debug_*.json
 *load-test-results*
+backend/test_connection.sql
+backend/load-balancer.js
