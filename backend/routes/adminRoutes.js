@@ -119,16 +119,21 @@ router.get('/dating/profiles/pending', authenticate, requireModerator, async (re
     try {
         const profiles = await prisma.datingProfile.findMany({
             where: { approvalStatus: 'PENDING' },
-            include: { user: true, photos: true }
+            include: {
+                user: { select: { id: true, email: true, name: true, avatar: true, collegeSlug: true, createdAt: true, isVerified: true } },
+                photos: { orderBy: { order: 'asc' } },
+                preference: true
+            },
+            orderBy: { createdAt: 'asc' } // oldest first — review queue order
         });
 
-        // Map to frontend format with _id
         const items = profiles.map(p => ({
             ...p,
             _id: p.id
         }));
 
-        res.status(200).json({ profiles: items });
+        // Return as { items } — what the frontend reads
+        res.status(200).json({ items });
     } catch (error) {
         console.error('GET /api/admin/dating/profiles/pending error:', error);
         return res.status(500).json({ message: 'Internal server error' });
@@ -153,6 +158,20 @@ router.put('/dating/profiles/:id/approve', authenticate, requireModerator, async
     }
 });
 
+// PATCH alias — frontend calls adminApi.patch(...)
+router.patch('/dating/profiles/:id/approve', authenticate, requireModerator, async (req, res) => {
+    try {
+        const updatedProfile = await prisma.datingProfile.update({
+            where: { id: req.params.id },
+            data: { approvalStatus: 'APPROVED', isProfileVisible: true }
+        });
+        res.status(200).json(updatedProfile);
+    } catch (error) {
+        console.error('PATCH /api/admin/dating/profiles/:id/approve error:', error);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
 /**
  * @route   PUT /api/admin/dating/profiles/:id/reject
  * @desc    Reject/Suspend dating profile
@@ -167,6 +186,20 @@ router.put('/dating/profiles/:id/reject', authenticate, requireModerator, async 
         res.status(200).json(updatedProfile);
     } catch (error) {
         console.error('PUT /api/admin/dating/profiles/:id/reject error:', error);
+        return res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// PATCH alias — frontend calls adminApi.patch(...)
+router.patch('/dating/profiles/:id/suspend', authenticate, requireModerator, async (req, res) => {
+    try {
+        const updatedProfile = await prisma.datingProfile.update({
+            where: { id: req.params.id },
+            data: { approvalStatus: 'REJECTED', isProfileVisible: false, rejectionReason: req.body.reason || 'Rejected by moderator' }
+        });
+        res.status(200).json(updatedProfile);
+    } catch (error) {
+        console.error('PATCH /api/admin/dating/profiles/:id/suspend error:', error);
         return res.status(500).json({ message: 'Internal server error' });
     }
 });
