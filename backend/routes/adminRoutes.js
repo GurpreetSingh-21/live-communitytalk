@@ -158,8 +158,27 @@ router.put('/dating/profiles/:id/approve', authenticate, requireModerator, async
     try {
         const updatedProfile = await prisma.datingProfile.update({
             where: { id: req.params.id },
-            data: { approvalStatus: 'APPROVED', isProfileVisible: true }
+            data: { approvalStatus: 'APPROVED', isProfileVisible: true },
+            include: { user: true }
         });
+
+        // 1. Emit Socket event to user
+        if (req.io && updatedProfile.user) {
+            req.io.to(updatedProfile.userId).emit("profile:approved", {
+                message: "Your dating profile has been approved!"
+            });
+        }
+
+        // 2. Send Push Notification
+        if (updatedProfile.user) {
+            const { sendPushNotificationToUser } = require('../services/notificationService');
+            sendPushNotificationToUser(updatedProfile.user, {
+                title: 'Profile Approved 💖',
+                body: 'Your dating profile has been reviewed and approved! You can now start matching.',
+                data: { screen: 'dating' }
+            }).catch(e => console.error("Push notify error for dating approve:", e));
+        }
+
         res.status(200).json(updatedProfile);
     } catch (error) {
         console.error('PUT /api/admin/dating/profiles/:id/approve error:', error);
@@ -172,8 +191,27 @@ router.patch('/dating/profiles/:id/approve', authenticate, requireModerator, asy
     try {
         const updatedProfile = await prisma.datingProfile.update({
             where: { id: req.params.id },
-            data: { approvalStatus: 'APPROVED', isProfileVisible: true }
+            data: { approvalStatus: 'APPROVED', isProfileVisible: true },
+            include: { user: true }
         });
+
+        // 1. Emit Socket event to user
+        if (req.io && updatedProfile.user) {
+            req.io.to(updatedProfile.userId).emit("profile:approved", {
+                message: "Your dating profile has been approved!"
+            });
+        }
+
+        // 2. Send Push Notification
+        if (updatedProfile.user) {
+            const { sendPushNotificationToUser } = require('../services/notificationService');
+            sendPushNotificationToUser(updatedProfile.user, {
+                title: 'Profile Approved 💖',
+                body: 'Your dating profile has been reviewed and approved! You can now start matching.',
+                data: { screen: 'dating' }
+            }).catch(e => console.error("Push notify error for dating approve:", e));
+        }
+
         res.status(200).json(updatedProfile);
     } catch (error) {
         console.error('PATCH /api/admin/dating/profiles/:id/approve error:', error);

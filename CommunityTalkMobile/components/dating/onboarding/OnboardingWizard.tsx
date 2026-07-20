@@ -1,4 +1,4 @@
-import React, { useState, useContext, useCallback, useMemo } from 'react';
+import React, { useState, useContext, useCallback, useMemo, useRef } from 'react';
 import { Linking } from 'react-native';
 import {
     View,
@@ -106,7 +106,7 @@ const CAMPUS_ACTIVITIES_OPTIONS = [
 
 const PROFILE_PROMPTS = [
     'My go-to campus spot is…',
-    'You'll catch me on campus…',
+    "You'll catch me on campus…",
     'The best thing about my major is…',
     'My ideal campus date would be…',
     'I procrastinate by…',
@@ -114,12 +114,12 @@ const PROFILE_PROMPTS = [
     'A fun fact about me is…',
     'My love language is…',
     'Together, we could…',
-    'I'm looking for someone who…',
+    "I'm looking for someone who…",
     'The way to my heart is…',
     'I get way too excited about…',
     'My most controversial opinion is…',
     'Two truths and a lie about me…',
-    'After class, you'll find me…',
+    "After class, you'll find me…",
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -212,6 +212,7 @@ function SelectRow({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
     const [step, setStep] = useState(0);
+    const scrollViewRef = useRef<ScrollView>(null);
     const [loading, setLoading] = useState(false);
     const { user } = useContext(AuthContext) as any;
     const router = useRouter();
@@ -281,6 +282,7 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             if (!allConsentsGiven) return Alert.alert('Agreement Required', 'Please check all boxes to continue.');
             await logConsent();
             setStep(1);
+            scrollViewRef.current?.scrollTo({ y: 0, animated: true });
             return;
         }
         if (step === 2) {
@@ -307,10 +309,18 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
         if (step === 7) {
             if (formData.photos.length < 2) return Alert.alert('Required', 'Please add at least 2 photos.');
         }
-        if (step < STEPS.length - 1) setStep(s => s + 1);
+        if (step < STEPS.length - 1) {
+            setStep(s => s + 1);
+            scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+        }
     };
 
-    const prevStep = () => { if (step > 0) setStep(s => s - 1); };
+    const prevStep = () => { 
+        if (step > 0) {
+            setStep(s => s - 1); 
+            scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+        }
+    };
 
     // ── Photo handling ────────────────────────────────────────────────────────
     const pickImage = async () => {
@@ -408,12 +418,12 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     // Step 0 — Legal Agreement
     const renderAgreement = () => (
         <View style={styles.stepContainer}>
-            <View style={[styles.iconCircle, { backgroundColor: '#EF444415' }]}>
-                <Ionicons name="shield-checkmark" size={60} color="#EF4444" />
+            <View style={[styles.iconCircle, { backgroundColor: '#FEF2F2' }]}>
+                <Ionicons name="shield-checkmark" size={56} color="#EF4444" />
             </View>
             <Text style={[styles.title, { color: theme.text }]}>Before You Continue</Text>
-            <Text style={[styles.text, { color: theme.textMuted }]}>
-                Campustry Dating is an adults-only feature. Please confirm the following.
+            <Text style={[styles.text, { color: theme.textMuted, marginTop: -8 }]}>
+                Campustry Dating is an adults-only space. Please confirm the following rules to proceed.
             </Text>
             {[
                 { state: agreedAge, set: setAgreedAge, text: 'I confirm I am 18 years of age or older. Misrepresenting my age will result in a permanent ban.' },
@@ -422,11 +432,15 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             ].map((item, idx) => (
                 <TouchableOpacity
                     key={idx}
-                    style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: item.state ? theme.primary : theme.border }]}
+                    style={[
+                        styles.consentRow, 
+                        { backgroundColor: theme.surface },
+                        item.state && { borderColor: theme.primary, borderWidth: 1.5, backgroundColor: theme.primary + '08' }
+                    ]}
                     onPress={() => item.set(!item.state)}
                     activeOpacity={0.8}
                 >
-                    <View style={[styles.checkbox, { backgroundColor: item.state ? theme.primary : 'transparent', borderColor: item.state ? theme.primary : theme.textMuted }]}>
+                    <View style={[styles.checkbox, { borderColor: item.state ? theme.primary : '#D1D5DB', backgroundColor: item.state ? theme.primary : 'transparent' }]}>
                         {item.state && <Ionicons name="checkmark" size={14} color="#FFF" />}
                     </View>
                     <Text style={[styles.consentText, { color: theme.text }]}>
@@ -440,7 +454,7 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                 </TouchableOpacity>
             ))}
             <TouchableOpacity
-                style={[styles.primaryButton, { backgroundColor: allConsentsGiven ? theme.primary : theme.muted, marginTop: 8 }]}
+                style={[styles.primaryButton, { backgroundColor: allConsentsGiven ? theme.primary : theme.muted, marginTop: 12, width: '100%' }]}
                 onPress={nextStep}
                 disabled={!allConsentsGiven}
             >
@@ -902,26 +916,32 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     // ─────────────────────────────────────────────────────────────────────────
     return (
         <View style={[styles.container, { backgroundColor: theme.background }]}>
-            <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 12) : 8 }]}>
-                {step > 0 && (
-                    <TouchableOpacity onPress={prevStep} style={styles.backButton}>
-                        <Ionicons name="arrow-back" size={24} color={theme.text} />
-                    </TouchableOpacity>
-                )}
-                <Text style={[styles.stepTitle, { color: theme.text }]}>{STEPS[step]}</Text>
-                <View style={{ width: 40 }} />
-            </View>
-
-            {/* Progress bar */}
-            <View style={styles.progressBarContainer}>
-                <View style={[styles.progressTrack, { backgroundColor: theme.muted, height: 4 }]}>
-                    <View style={[styles.progressFill, { width: `${((step) / (STEPS.length - 1)) * 100}%` as any, backgroundColor: theme.primary, height: 4 }]} />
+            {/* STICKY TOP BAR */}
+            <View style={[styles.topBar, { backgroundColor: theme.background, paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 12) : 8 }]}>
+                <View style={styles.header}>
+                    {step > 0 ? (
+                        <TouchableOpacity onPress={prevStep} style={styles.backButton}>
+                            <Ionicons name="arrow-back" size={24} color={theme.text} />
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={{ width: 40 }} />
+                    )}
+                    <Text style={[styles.stepTitle, { color: theme.text }]}>{STEPS[step]}</Text>
+                    <View style={{ width: 40 }} />
                 </View>
-                <Text style={[styles.hint, { color: theme.textMuted, textAlign: 'center', marginTop: 4 }]}>Step {step + 1} of {STEPS.length}</Text>
+
+                {/* Progress bar */}
+                <View style={styles.progressBarContainer}>
+                    <View style={[styles.progressTrack, { backgroundColor: theme.muted, height: 4 }]}>
+                        <View style={[styles.progressFill, { width: `${((step) / (STEPS.length - 1)) * 100}%` as any, backgroundColor: theme.primary, height: 4 }]} />
+                    </View>
+                    <Text style={[styles.hint, { color: theme.textMuted, textAlign: 'center', marginTop: 6 }]}>Step {step + 1} of {STEPS.length}</Text>
+                </View>
             </View>
 
             <ScrollView
-                contentContainerStyle={[styles.content, { paddingBottom: 140 }]}
+                ref={scrollViewRef}
+                contentContainerStyle={[styles.content, { paddingBottom: 220 }]}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
                 overScrollMode="never"
@@ -930,7 +950,7 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             </ScrollView>
 
             {step > 0 && (
-                <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}>
+                <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background, paddingBottom: insets.bottom + 70 }]}>
                     {step === STEPS.length - 1 ? (
                         <TouchableOpacity
                             style={[styles.primaryButton, { backgroundColor: theme.primary }]}
@@ -960,29 +980,38 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
 // ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
     container: { flex: 1 },
+    topBar: {
+        zIndex: 10,
+        paddingBottom: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 3,
+    },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingBottom: 8,
+        paddingHorizontal: 16,
+        paddingBottom: 12,
     },
-    backButton: { padding: 8, width: 40 },
+    backButton: { padding: 8, width: 40, alignItems: 'center' },
     stepTitle: { fontSize: 18, fontFamily: Fonts.bold },
-    progressBarContainer: { paddingHorizontal: 24, marginBottom: 8 },
+    progressBarContainer: { paddingHorizontal: 24 },
     progressTrack: { borderRadius: 4, overflow: 'hidden' },
     progressFill: { borderRadius: 4 },
-    content: { padding: 24, flexGrow: 1 },
+    content: { padding: 24, flexGrow: 1, paddingTop: 32 },
     footer: {
         padding: 24,
         paddingBottom: 36,
         borderTopWidth: 1,
     },
-    stepContainer: { alignItems: 'center', gap: 18 },
-    formContainer: { gap: 20 },
+    stepContainer: { alignItems: 'center', gap: 20 },
+    formContainer: { gap: 22 },
     iconCircle: {
-        width: 120, height: 120, borderRadius: 60,
-        alignItems: 'center', justifyContent: 'center', marginBottom: 10,
+        width: 100, height: 100, borderRadius: 50,
+        alignItems: 'center', justifyContent: 'center', marginBottom: 6,
     },
     title: { fontSize: 26, fontFamily: Fonts.bold, textAlign: 'center' },
     text: { fontSize: 15, textAlign: 'center', lineHeight: 22, fontFamily: Fonts.regular },
@@ -1054,11 +1083,23 @@ const styles = StyleSheet.create({
     reviewStatItem: { alignItems: 'center' },
     reviewStatVal: { fontFamily: Fonts.bold, fontSize: 22 },
     reviewStatLabel: { fontFamily: Fonts.regular, fontSize: 12, marginTop: 2 },
-    primaryButton: { paddingVertical: 16, borderRadius: 14, alignItems: 'center' },
+    primaryButton: { 
+        paddingVertical: 16, 
+        borderRadius: 14, 
+        alignItems: 'center', 
+        alignSelf: 'stretch',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
+    },
     primaryButtonText: { color: '#FFF', fontFamily: Fonts.bold, fontSize: 16 },
     consentRow: {
-        flexDirection: 'row', alignItems: 'flex-start', padding: 14,
-        borderRadius: 14, borderWidth: 1.5, gap: 12, alignSelf: 'stretch',
+        flexDirection: 'row', alignItems: 'flex-start', padding: 16,
+        borderRadius: 16, borderWidth: 1, borderColor: 'transparent', 
+        gap: 12, alignSelf: 'stretch',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 2,
     },
     checkbox: {
         width: 22, height: 22, borderRadius: 6, borderWidth: 2,

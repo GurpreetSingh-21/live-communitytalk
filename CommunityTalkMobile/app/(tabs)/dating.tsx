@@ -51,7 +51,7 @@ export default function DatingScreen() {
     // 2. If NO Dating Profile -> Show Onboarding Wizard
     if (!user.hasDatingProfile) {
         return (
-            <View style={{ flex: 1, backgroundColor: '#FFF', paddingTop: insets.top }}>
+            <View style={{ flex: 1, backgroundColor: '#FFF' }}>
                 <OnboardingWizard onComplete={() => refreshBootstrap()} />
             </View>
         );
@@ -130,6 +130,10 @@ export default function DatingScreen() {
             <SettingsModal
                 visible={settingsVisible}
                 onClose={() => setSettingsVisible(false)}
+                onDeleteSuccess={() => {
+                    setSettingsVisible(false);
+                    refreshBootstrap();
+                }}
             />
         </View>
     );

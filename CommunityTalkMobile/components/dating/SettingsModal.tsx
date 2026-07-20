@@ -9,6 +9,7 @@ import DatingAPI, { DatingProfile, DatingPhoto } from '@/src/api/dating';
 interface SettingsModalProps {
     visible: boolean;
     onClose: () => void;
+    onDeleteSuccess?: () => void;
 }
 
 const PRESET_INTERESTS = [
@@ -25,7 +26,7 @@ const PRESET_PROMPTS = [
     "I geek out on..."
 ];
 
-export default function SettingsModal({ visible, onClose }: SettingsModalProps) {
+export default function SettingsModal({ visible, onClose, onDeleteSuccess }: SettingsModalProps) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -120,12 +121,26 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
         try {
             await DatingAPI.deleteDatingProfile();
             setDeleteConfirmVisible(false);
-            onClose();
-            Alert.alert(
-                'Profile Deleted',
-                'Your dating profile has been permanently deleted.',
-                [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
-            );
+            // Delay closing the main modal and routing so the iOS view hierarchy has time to remove the nested modal
+            setTimeout(() => {
+                onClose();
+                Alert.alert(
+                    'Profile Deleted',
+                    'Your dating profile has been permanently deleted.',
+                    [
+                        { 
+                            text: 'OK', 
+                            onPress: () => {
+                                if (onDeleteSuccess) {
+                                    onDeleteSuccess();
+                                } else {
+                                    router.replace('/(tabs)');
+                                }
+                            }
+                        }
+                    ]
+                );
+            }, 300);
         } catch (err: any) {
             Alert.alert('Error', err?.response?.data?.error || 'Failed to delete profile. Please try again.');
         } finally {

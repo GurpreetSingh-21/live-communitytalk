@@ -69,7 +69,7 @@ export const useSocket = () => React.useContext(SocketContext);
 export const SocketProvider: React.FC<React.PropsWithChildren> = ({
   children,
 }) => {
-  const { isAuthed, user, communities } =
+  const { isAuthed, user, communities, refreshBootstrap } =
     React.useContext(AuthContext) as any;
 
   const [ready, setReady] = useState(false);
@@ -306,12 +306,26 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
 
       /* ------------------ BIND LISTENERS ------------------ */
 
+      const onProfileApproved = (payload: any) => {
+        import("react-native").then(({ Alert }) => {
+          Alert.alert(
+            "Profile Approved 💖",
+            payload?.message || "Your dating profile has been reviewed and approved! You can now start matching.",
+            [{ text: "Awesome!" }]
+          );
+        });
+        if (refreshBootstrap) {
+          refreshBootstrap();
+        }
+      };
+
       socket.on?.("connect", onConnect);
       socket.on?.("disconnect", onDisconnect);
       socket.on?.("receive_direct_message", onDM);
       socket.on?.("dm:message", onDM);
       socket.on?.("receive_message", onCommunityMessage);
       socket.on?.("message:new", onCommunityMessage);
+      socket.on?.("profile:approved", onProfileApproved);
 
       /* ------------------ INITIAL UNREADS ------------------ */
       await refreshUnread();
@@ -326,6 +340,7 @@ export const SocketProvider: React.FC<React.PropsWithChildren> = ({
         socket?.off?.("dm:message", onDM);
         socket?.off?.("receive_message", onCommunityMessage);
         socket?.off?.("message:new", onCommunityMessage);
+        socket?.off?.("profile:approved", onProfileApproved);
       };
     };
 
