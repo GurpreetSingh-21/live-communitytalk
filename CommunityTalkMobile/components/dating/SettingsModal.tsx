@@ -48,33 +48,51 @@ function SelectRow({
 }) {
     const [open, setOpen] = useState(false);
     return (
-        <View style={{ marginBottom: 12 }}>
+        <View style={{ marginBottom: 14 }}>
             <TouchableOpacity
-                style={{ flexDirection: 'row', alignItems: 'center', padding: 14, backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB' }}
+                style={{ flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: '#FFFFFF', borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 }}
                 onPress={() => setOpen(!open)}
                 activeOpacity={0.7}
             >
-                <Ionicons name={icon as any} size={18} color="#FF6B6B" style={{ marginRight: 10 }} />
-                <Text style={{ flex: 1, fontSize: 16, color: '#0D0D0D', fontWeight: '500' }}>{label}</Text>
-                <Text style={{ fontSize: 15, color: value ? '#FF6B6B' : '#8A8A8E', marginRight: 6, fontWeight: value ? '600' : '400' }}>
+                <Ionicons name={icon as any} size={24} color="#FF6B6B" style={{ marginRight: 16 }} />
+                <Text style={{ flex: 1, fontSize: 16, color: '#111827', fontWeight: '700' }}>{label}</Text>
+                <Text style={{ fontSize: 15, color: value ? '#FF6B6B' : '#9CA3AF', marginRight: 10, fontWeight: value ? '700' : '500' }}>
                     {value || 'Select'}
                 </Text>
-                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#8A8A8E" />
+                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={20} color="#9CA3AF" />
             </TouchableOpacity>
             {open && (
-                <View style={{ backgroundColor: '#FFFFFF', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB', marginTop: 4, overflow: 'hidden' }}>
+                <View style={{ backgroundColor: '#FFFFFF', borderRadius: 20, marginTop: 8, paddingVertical: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4 }}>
                     {options.map(opt => (
                         <TouchableOpacity
                             key={opt}
-                            style={[{ padding: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, value === opt && { backgroundColor: 'rgba(255, 107, 107, 0.08)' }]}
+                            style={[{ paddingVertical: 16, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, value === opt && { backgroundColor: 'rgba(255, 107, 107, 0.06)' }]}
                             onPress={() => { onSelect(opt === value ? '' : opt); setOpen(false); }}
                         >
-                            <Text style={{ fontSize: 15, color: value === opt ? '#FF6B6B' : '#0D0D0D', fontWeight: value === opt ? '600' : '400' }}>{opt}</Text>
-                            {value === opt && <Ionicons name="checkmark" size={18} color="#FF6B6B" />}
+                            <Text style={{ fontSize: 16, color: value === opt ? '#FF6B6B' : '#4B5563', fontWeight: value === opt ? '700' : '500' }}>{opt}</Text>
+                            {value === opt && <Ionicons name="checkmark-circle" size={22} color="#FF6B6B" />}
                         </TouchableOpacity>
                     ))}
                 </View>
             )}
+        </View>
+    );
+}
+
+function InputRow({ icon, label, value, onChange, placeholder, keyboardType = 'default', autoCapitalize = 'sentences' }: any) {
+    return (
+        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 20, backgroundColor: '#FFFFFF', borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2, marginBottom: 14 }}>
+            <Ionicons name={icon as any} size={24} color="#9CA3AF" style={{ marginRight: 16 }} />
+            <Text style={{ width: 100, fontSize: 13, color: '#9CA3AF', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</Text>
+            <TextInput
+                style={{ flex: 1, fontSize: 16, color: '#111827', fontWeight: '600' }}
+                value={value}
+                onChangeText={onChange}
+                placeholder={placeholder}
+                placeholderTextColor="#D1D5DB"
+                keyboardType={keyboardType}
+                autoCapitalize={autoCapitalize}
+            />
         </View>
     );
 }
@@ -442,18 +460,19 @@ export default function SettingsModal({ visible, onClose, onDeleteSuccess }: Set
 
                     {/* BIO EDIT */}
                     <Text style={styles.sectionTitle}>About Me</Text>
+                    
+                    <InputRow 
+                        icon="text-outline" 
+                        label="Headline" 
+                        value={headline} 
+                        onChange={setHeadline} 
+                        placeholder="A catchy headline..." 
+                    />
+
                     <View style={styles.glassCard}>
-                        <View style={{ marginBottom: 16 }}>
-                            <Text style={styles.label}>Headline</Text>
-                            <TextInput
-                                style={[styles.basicInput, { paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#E5E7EB', fontWeight: '500' }]}
-                                value={headline}
-                                onChangeText={setHeadline}
-                                placeholder="A catchy headline..."
-                                placeholderTextColor="#9CA3AF"
-                            />
-                        </View>
-                        <Text style={styles.label}>Bio</Text>
+                        <Text style={{ fontSize: 13, color: '#9CA3AF', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+                            Bio
+                        </Text>
                         <TextInput
                             style={styles.bioInput}
                             multiline
@@ -461,69 +480,19 @@ export default function SettingsModal({ visible, onClose, onDeleteSuccess }: Set
                             value={bio}
                             onChangeText={setBio}
                             placeholderTextColor="#9CA3AF"
+                            placeholder="Write something interesting..."
                         />
                         <Text style={styles.charCount}>{bio.length}/500</Text>
                     </View>
 
-                    {/* THE "BASICS" (COLLEGE VITALS) */}
+                    {/* BASIC INFO */}
                     <Text style={styles.sectionTitle}>The Basics</Text>
-                    <View style={styles.glassCard}>
-                        <View style={styles.inputRow}>
-                            <Ionicons name="book-outline" size={20} color="#8A8A8E" />
-                            <TextInput
-                                style={styles.basicInput}
-                                value={major}
-                                onChangeText={setMajor}
-                                placeholder="Major (e.g. Computer Science)"
-                                placeholderTextColor="#9CA3AF"
-                            />
-                        </View>
-                        <View style={styles.divider} />
-                        <View style={styles.inputRow}>
-                            <Ionicons name="school-outline" size={20} color="#8A8A8E" />
-                            <TextInput
-                                style={styles.basicInput}
-                                value={gradYear}
-                                onChangeText={setGradYear}
-                                placeholder="Class of 2026"
-                                placeholderTextColor="#9CA3AF"
-                            />
-                        </View>
-                        <View style={styles.divider} />
-                        <View style={styles.inputRow}>
-                            <Ionicons name="body-outline" size={20} color="#8A8A8E" />
-                            <TextInput
-                                style={styles.basicInput}
-                                value={height}
-                                onChangeText={setHeight}
-                                placeholder="Height (cm)"
-                                keyboardType="numeric"
-                                placeholderTextColor="#9CA3AF"
-                            />
-                        </View>
-                        <View style={styles.divider} />
-                        <View style={styles.inputRow}>
-                            <Ionicons name="home-outline" size={20} color="#8A8A8E" />
-                            <TextInput
-                                style={styles.basicInput}
-                                value={hometown}
-                                onChangeText={setHometown}
-                                placeholder="Hometown"
-                                placeholderTextColor="#9CA3AF"
-                            />
-                        </View>
-                        <View style={styles.divider} />
-                        <View style={styles.inputRow}>
-                            <Ionicons name="logo-instagram" size={20} color="#8A8A8E" />
-                            <TextInput
-                                style={styles.basicInput}
-                                value={instagramHandle}
-                                onChangeText={setInstagramHandle}
-                                placeholder="Instagram handle (without @)"
-                                placeholderTextColor="#9CA3AF"
-                                autoCapitalize="none"
-                            />
-                        </View>
+                    <View style={{ paddingBottom: 10 }}>
+                        <InputRow icon="book-outline" label="Major" value={major} onChange={setMajor} placeholder="e.g. Computer Science" />
+                        <InputRow icon="school-outline" label="Year" value={gradYear} onChange={setGradYear} placeholder="e.g. Class of 2026" />
+                        <InputRow icon="body-outline" label="Height" value={height} onChange={setHeight} placeholder="e.g. 178" keyboardType="numeric" />
+                        <InputRow icon="home-outline" label="Hometown" value={hometown} onChange={setHometown} placeholder="e.g. New York, NY" />
+                        <InputRow icon="logo-instagram" label="Social" value={instagramHandle} onChange={setInstagramHandle} placeholder="Insta handle" autoCapitalize="none" />
                     </View>
 
                     <Text style={styles.sectionTitle}>Lifestyle & Campus</Text>
@@ -743,45 +712,45 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 17, fontWeight: '700', color: '#0D0D0D', letterSpacing: -0.3 },
     doneText: { fontSize: 16, fontWeight: '700', color: '#FF6B6B' },
     closeButton: { width: 40 },
-    content: { flex: 1, paddingHorizontal: 16, paddingTop: 4 },
-    sectionTitle: { fontSize: 12, fontWeight: '700', color: '#8A8A8E', marginTop: 28, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8, marginLeft: 4 },
-    sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 28, marginBottom: 8, paddingRight: 4 },
+    content: { flex: 1, paddingHorizontal: 20, paddingTop: 10 },
+    sectionTitle: { fontSize: 13, fontWeight: '800', color: '#9CA3AF', marginTop: 32, marginBottom: 12, textTransform: 'uppercase', letterSpacing: 1.2, marginLeft: 8 },
+    sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 32, marginBottom: 12, paddingRight: 4 },
     
 
     // DYNAMIC PHOTO GRID
-    photoGrid: { flexDirection: 'row', gap: 12, marginBottom: 8 },
-    heroPhoto: { flex: 2, aspectRatio: 0.8, borderRadius: 16, overflow: 'hidden', backgroundColor: '#D1D5DB' },
-    heroPhotoAdd: { flex: 2, aspectRatio: 0.8, borderRadius: 16, backgroundColor: '#E5E7EB', borderWidth: 2, borderColor: '#D1D5DB', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
-    smallPhotosContainer: { flex: 1, gap: 10, justifyContent: 'flex-start' },
-    smallPhoto: { width: '100%', aspectRatio: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: '#D1D5DB' },
-    smallPhotoAdd: { width: '100%', aspectRatio: 1, borderRadius: 12, backgroundColor: '#E5E7EB', borderWidth: 2, borderColor: '#D1D5DB', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+    photoGrid: { flexDirection: 'row', gap: 14, marginBottom: 12 },
+    heroPhoto: { flex: 2, aspectRatio: 0.8, borderRadius: 20, overflow: 'hidden', backgroundColor: '#F3F4F6' },
+    heroPhotoAdd: { flex: 2, aspectRatio: 0.8, borderRadius: 20, backgroundColor: '#F9FAFB', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
+    smallPhotosContainer: { flex: 1, gap: 14, justifyContent: 'flex-start' },
+    smallPhoto: { width: '100%', aspectRatio: 1, borderRadius: 16, overflow: 'hidden', backgroundColor: '#F3F4F6' },
+    smallPhotoAdd: { width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: '#F9FAFB', borderWidth: 2, borderColor: '#E5E7EB', borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center' },
     photoImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-    removeButton: { position: 'absolute', top: 4, right: 4, backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 12, padding: 4, zIndex: 2 },
-    mainBadge: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#FF6B6B', paddingVertical: 4, alignItems: 'center' },
-    mainBadgeText: { color: '#FFF', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
-    hintText: { fontSize: 13, color: '#9CA3AF', marginBottom: 20, marginLeft: 4 },
+    removeButton: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 14, padding: 6, zIndex: 2 },
+    mainBadge: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: '#FF6B6B', paddingVertical: 6, alignItems: 'center' },
+    mainBadgeText: { color: '#FFF', fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1.5 },
+    hintText: { fontSize: 14, color: '#9CA3AF', marginBottom: 24, marginLeft: 8, fontWeight: '500' },
 
 
     // GLASS CARDS & INPUTS
-    glassCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
-    bioInput: { fontSize: 16, color: '#0D0D0D', minHeight: 80, textAlignVertical: 'top' },
-    charCount: { textAlign: 'right', fontSize: 12, color: '#AEAEB2', marginTop: 4 },
-    inputRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-    basicInput: { flex: 1, fontSize: 16, color: '#0D0D0D' },
+    glassCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 22, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2, marginBottom: 14 },
+    bioInput: { fontSize: 17, color: '#111827', minHeight: 90, textAlignVertical: 'top', lineHeight: 24 },
+    charCount: { textAlign: 'right', fontSize: 13, color: '#9CA3AF', marginTop: 8, fontWeight: '500' },
+    inputRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 14 },
+    basicInput: { flex: 1, fontSize: 17, color: '#111827' },
     
 
     // PILLS (INTERESTS)
-    pillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-    pill: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 20, backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#E5E7EB' },
-    pillSelected: { backgroundColor: '#FF6B6B', borderColor: '#FF6B6B' },
-    pillText: { fontSize: 14, fontWeight: '500', color: '#3C3C43' },
-    pillTextSelected: { color: '#FFFFFF', fontWeight: '700' },
+    pillsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, paddingHorizontal: 4 },
+    pill: { paddingHorizontal: 18, paddingVertical: 10, borderRadius: 24, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E5E7EB', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.02, shadowRadius: 4, elevation: 1 },
+    pillSelected: { backgroundColor: '#FF6B6B', borderColor: '#FF6B6B', shadowOpacity: 0.15, shadowColor: '#FF6B6B', shadowRadius: 8, shadowOffset: { width: 0, height: 4 } },
+    pillText: { fontSize: 15, fontWeight: '600', color: '#4B5563' },
+    pillTextSelected: { color: '#FFFFFF', fontWeight: '800' },
 
 
     // PROMPTS
-    promptCard: { backgroundColor: '#FFFFFF', borderRadius: 14, padding: 16, marginBottom: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 2 },
-    promptQuestionInput: { fontSize: 13, fontWeight: '700', color: '#FF6B6B', marginBottom: 10, textTransform: 'uppercase', letterSpacing: 0.5 },
-    promptAnswerInput: { fontSize: 20, fontWeight: '600', color: '#0D0D0D', minHeight: 40 },
+    promptCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 22, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+    promptQuestionInput: { fontSize: 14, fontWeight: '800', color: '#FF6B6B', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.8 },
+    promptAnswerInput: { fontSize: 20, fontWeight: '600', color: '#111827', minHeight: 48, lineHeight: 28 },
     promptRemoveBtn: { position: 'absolute', top: 12, right: 12, zIndex: 10 },
 
 
