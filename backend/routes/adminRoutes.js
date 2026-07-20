@@ -120,11 +120,21 @@ router.get('/dating/profiles/pending', authenticate, requireModerator, async (re
         const profiles = await prisma.datingProfile.findMany({
             where: { approvalStatus: 'PENDING' },
             include: {
-                user: { select: { id: true, email: true, name: true, avatar: true, collegeSlug: true, createdAt: true, isVerified: true } },
+                user: {
+                    select: {
+                        id: true,
+                        email: true,
+                        fullName: true,       // correct field (not 'name')
+                        avatar: true,
+                        collegeSlug: true,
+                        createdAt: true,
+                        emailVerified: true,  // correct field (not 'isVerified')
+                    }
+                },
                 photos: { orderBy: { order: 'asc' } },
                 preference: true
             },
-            orderBy: { createdAt: 'asc' } // oldest first — review queue order
+            orderBy: { createdAt: 'asc' }
         });
 
         const items = profiles.map(p => ({
@@ -132,11 +142,10 @@ router.get('/dating/profiles/pending', authenticate, requireModerator, async (re
             _id: p.id
         }));
 
-        // Return as { items } — what the frontend reads
         res.status(200).json({ items });
     } catch (error) {
         console.error('GET /api/admin/dating/profiles/pending error:', error);
-        return res.status(500).json({ message: 'Internal server error' });
+        return res.status(500).json({ message: 'Internal server error', detail: error.message });
     }
 });
 

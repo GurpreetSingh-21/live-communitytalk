@@ -48,11 +48,11 @@ type DatingPreference = {
 type DatingUser = {
   id: string;
   email: string;
-  name: string;
+  fullName: string | null;  // correct: fullName not name
   avatar: string | null;
-  collegeSlug: string;
+  collegeSlug: string | null;
   createdAt: string;
-  isVerified: boolean;
+  emailVerified: boolean;   // correct: emailVerified not isVerified
 };
 
 type DatingProfile = {
@@ -583,12 +583,12 @@ function ProfilePanel({
                     <InfoRow
                       icon={User}
                       label="Full Name (Account)"
-                      value={profile.user.name}
+                      value={profile.user.fullName}
                     />
                     <InfoRow
                       icon={Shield}
                       label="Email Verified"
-                      value={profile.user.isVerified ? "Yes ✓" : "No"}
+                      value={profile.user.emailVerified ? "Yes ✓" : "No"}
                     />
                     <InfoRow
                       icon={Clock}
@@ -875,7 +875,7 @@ export default function AdminDatingPage() {
 
                       <div className="flex flex-wrap gap-1">
                         <Chip label="Pending" tone="amber" />
-                        {p.user.isVerified && (
+                        {p.user.emailVerified && (
                           <Chip label="Verified" tone="green" />
                         )}
                         {p.photos.length === 0 && (
