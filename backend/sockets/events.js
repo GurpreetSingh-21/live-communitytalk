@@ -41,7 +41,7 @@ module.exports = function registerEventSockets(io) {
       io.to(room).emit("events:created", event);
     },
     broadcastUpdated: (event) => {
-      if (!event?._id || !event?.collegeId || !event?.faithId) return;
+      if (!event?.id || !event?.collegeId || !event?.faithId) return;
       const room = `college:${event.collegeId}:faith:${event.faithId}`;
       io.to(room).emit("events:updated", event);
     },

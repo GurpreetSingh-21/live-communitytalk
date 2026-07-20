@@ -53,7 +53,7 @@ router.get("/", async (req, res) => {
     // Iterate and pick first occurrence of each partner.
     // Stop after `limit` partners found (with some buffer).
 
-    const currentUserId = req.user?._id || req.user?.id;
+    const currentUserId = req.user?.id;
     if (!currentUserId) {
       return res.status(401).json({ error: 'Unauthorized' });
     }

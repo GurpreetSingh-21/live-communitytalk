@@ -11,7 +11,7 @@ const USER_COMMUNITIES_PREFIX = "presence:user:communities:"; // SET: (per-user)
 
 /**
  * Initialize the presence module with a Redis client.
- * @param {object} redisClient - An ioredis client instance
+ * @param {object} redisClient - A node-redis client instance
  */
 function init(redisClient) {
   if (!redisClient) {
@@ -36,7 +36,7 @@ async function reset() {
     do {
       const [nextCursor, keys] = await redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
       cursor = nextCursor;
-      if (keys.length > 0) await redis.del(...keys);
+      if (keys && keys.length > 0) await redis.del(...keys);
     } while (cursor !== '0');
     console.log("🧹 Presence state reset on startup.");
   } catch (e) {
@@ -247,20 +247,7 @@ async function socketsForUser(userId) {
   return Number(count) || 0;
 }
 
-/* ───────────────────────── Admin / Debug ───────────────────────── */
-
-/**
- * Clear all in-memory presence (dev only).
- * NOTE: This clears the *entire* Redis presence state.
- */
-async function reset() {
-  if (!redis) return;
-  console.warn("⚠️ Resetting all presence state in Redis...");
-  const keys = await redis.keys("presence:*");
-  if (keys && keys.length) {
-    await redis.del(keys);
-  }
-}
+/* ─── duplicate reset() removed (was using redis.keys() — O(N) blocking) ─── */
 
 /**
  * Quick summary for dashboards/logging.

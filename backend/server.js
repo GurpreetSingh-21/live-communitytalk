@@ -48,11 +48,6 @@ const reactionRoutes = require('./routes/reactionRoutes');
 const twoFactorRoutes = require('./routes/twoFactorRoutes');
 const safetyRoutes = require('./routes/safetyRoutes'); // Safety & Moderation
 
-// 📦 Models
-// const Person = require("./person");
-// const Member = require("./models/Member");
-// const Message = require("./models/Message");
-
 // ⚙️ App + Server
 const app = express();
 const server = http.createServer(app);
@@ -75,39 +70,43 @@ if (!JWT_SECRET) {
   process.exit(1);
 }
 
-// Redis Configuration
-const REDIS_URL = process.env.REDIS_URL || "redis://127.0.0.1:6379";
-if (!process.env.REDIS_URL) {
-  console.warn(
-    "⚠️ Missing REDIS_URL. Using fallback. This is required for scaling."
-  );
-}
-const redisOptions = {};
-
 // ───────────────────────── Redis & Presence Init ─────────────────────────
-// Client for presence
-const redisClient = new Redis(REDIS_URL, redisOptions);
+// Uses ioredis over Upstash TCP (rediss://) — supports caching, presence, AND pub/sub.
+// Connection is passed as explicit options to work around URL parsing issues with TLS.
+const UPSTASH_URL = new URL(process.env.REDIS_URL || 'redis://127.0.0.1:6379');
+const redisTLS = (process.env.REDIS_URL || '').startsWith('rediss://') 
+  ? { rejectUnauthorized: false, servername: UPSTASH_URL.hostname } 
+  : undefined;
 
-redisClient.on("connect", () =>
-  console.log("✅ Redis connected for Presence.")
-);
-redisClient.on("error", (err) =>
-  console.error("❌ Redis Presence error:", err)
+const redisClient = new Redis({
+  host: UPSTASH_URL.hostname,
+  port: parseInt(UPSTASH_URL.port) || 6379,
+  username: UPSTASH_URL.username || undefined,
+  password: UPSTASH_URL.password ? decodeURIComponent(UPSTASH_URL.password) : undefined,
+  tls: redisTLS,
+  maxRetriesPerRequest: 3,
+  enableReadyCheck: true,
+  retryStrategy(times) {
+    if (times > 10) return null; // stop retrying after 10 attempts
+    return Math.min(times * 200, 2000); // backoff: 200ms → 2s
+  },
+  lazyConnect: true,
+});
+
+redisClient.on('error', (err) => console.error('❌ Redis error:', err.message));
+redisClient.on('ready', () => console.log('✅ Redis (Upstash TCP) connected.'));
+
+// Connect eagerly so presence & caching are ready before first request
+redisClient.connect().catch((err) => 
+  console.warn('⚠️ Redis initial connect failed (will retry):', err.message)
 );
 
-// Pass the client to our presence module
 presence.init(redisClient);
-// F-14: Clear ghost connections on server start
-presence.reset();
 
-// Pub/Sub clients for the Socket.io adapter
-const pubClient = new Redis(REDIS_URL, redisOptions);
-const subClient = pubClient.duplicate();
-
-pubClient.on("connect", () => console.log("✅ Redis PubClient connected."));
-pubClient.on("error", (err) => console.error("❌ Redis PubClient error:", err));
-subClient.on("connect", () => console.log("✅ Redis SubClient connected."));
-subClient.on("error", (err) => console.error("❌ Redis SubClient error:", err));
+// F-14: Clear ghost connections on server start (non-blocking)
+presence.reset().catch((err) =>
+  console.warn("⚠️ Could not reset presence on startup:", err.message)
+);
 
 // ───────────────────────── Middleware ─────────────────────────
 // 🔧 Trust proxy settings
@@ -189,7 +188,7 @@ io = new Server(server, {
 });
 
 // 🔥 Scaling Socket.IO with Redis adapter
-io.adapter(createAdapter(pubClient, subClient));
+// io.adapter(createAdapter(pubClient, subClient));
 
 registerEventSockets(io);
 
@@ -427,7 +426,7 @@ io.on("connection", async (socket) => {
       // Ack to sender (swap pending bubble)
       socket.emit("message:ack", {
         clientMessageId,
-        serverId: saved._id,
+        serverId: saved.id,
       });
     } catch (err) {
       console.error("💥 Socket message send error:", err);
@@ -648,11 +647,6 @@ process.on("unhandledRejection", (reason) => {
     // Graceful shutdown
     const shutdown = (signal) => {
       console.log(`\n🛑 Received ${signal}. Shutting down gracefully...`);
-
-      // Close Redis connections
-      redisClient.quit();
-      pubClient.quit();
-      subClient.quit();
 
       server.close((err) => {
         if (err) {

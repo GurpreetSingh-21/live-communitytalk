@@ -61,7 +61,7 @@ jest.mock('../middleware/authenticate', () => {
 
 // Avoid missing module errors for other services
 jest.mock('firebase-admin', () => ({ initializeApp: jest.fn(), credential: { cert: jest.fn() } }));
-jest.mock('../services/RateLimiter', () => ({ checkLimit: jest.fn().mockReturnValue(true), checkRepetition: jest.fn().mockReturnValue(true) }));
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BUILD MINIMAL TEST APP
