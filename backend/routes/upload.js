@@ -240,8 +240,15 @@ router.post('/base64', async (req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Base64 Upload Error:", error.message);
-    return res.status(500).json({ error: "Upload failed" });
+    console.error("❌ Base64 Upload Error — full details:");
+    console.error("  Message:", error.message);
+    console.error("  HTTP code:", error.http_code);
+    console.error("  Error object:", JSON.stringify(error, null, 2));
+    return res.status(500).json({
+      error: "Upload failed",
+      detail: error.message || "Unknown error",
+      cloudinary_code: error.http_code || null,
+    });
   }
 });
 

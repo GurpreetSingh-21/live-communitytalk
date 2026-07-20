@@ -60,6 +60,7 @@ type DatingProfile = {
   _id: string;
   firstName: string;
   bio: string | null;
+  headline: string | null;
   gender: string;
   birthDate: string;
   height: number | null;
@@ -73,6 +74,19 @@ type DatingProfile = {
   prompts: Array<{ question: string; answer: string }> | null;
   spotifyTopArtists: string[];
   instagramHandle: string | null;
+  lookingFor: string[];
+  // Lifestyle
+  loveLanguage: string | null;
+  physicallyActive: string | null;
+  drinking: string | null;
+  smoking: string | null;
+  diet: string | null;
+  religion: string | null;
+  hometown: string | null;
+  // College-specific
+  campusActivities: string[];
+  studyStyle: string | null;
+  livingArrangement: string | null;
   isProfileVisible: boolean;
   isPaused: boolean;
   approvalStatus: string;
@@ -481,6 +495,16 @@ function ProfilePanel({
                   </div>
                 </div>
 
+                {/* Headline */}
+                {profile.headline && (
+                  <div>
+                    <SectionLabel>Headline</SectionLabel>
+                    <p className="rounded-xl bg-violet-50 border border-violet-200 p-3 text-sm font-semibold leading-relaxed text-violet-800 italic">
+                      "{profile.headline}"
+                    </p>
+                  </div>
+                )}
+
                 {/* Bio */}
                 {profile.bio && (
                   <div>
@@ -516,12 +540,45 @@ function ProfilePanel({
                   <div>
                     <SectionLabel>Hobbies &amp; Interests</SectionLabel>
                     <div className="flex flex-wrap gap-1.5">
-                      {[...profile.hobbies, ...profile.interests].map(
+                      {[...new Set([...profile.hobbies, ...profile.interests])].map(
                         (tag, i) => (
                           <Chip key={i} label={tag} />
                         )
                       )}
                     </div>
+                  </div>
+                )}
+
+                {/* Lifestyle */}
+                {(profile.lookingFor?.length > 0 || profile.loveLanguage || profile.drinking || profile.smoking || profile.diet || profile.physicallyActive || profile.religion || profile.hometown) && (
+                  <div>
+                    <SectionLabel>Lifestyle Details</SectionLabel>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {profile.lookingFor?.length > 0 && <InfoRow icon={Heart} label="Looking For" value={profile.lookingFor.map(capitalize).join(", ")} />}
+                      {profile.loveLanguage && <InfoRow icon={Heart} label="Love Language" value={profile.loveLanguage} />}
+                      {profile.physicallyActive && <InfoRow icon={Info} label="Physically Active" value={profile.physicallyActive} />}
+                      {profile.diet && <InfoRow icon={Info} label="Diet" value={profile.diet} />}
+                      {profile.drinking && <InfoRow icon={Info} label="Drinking" value={profile.drinking} />}
+                      {profile.smoking && <InfoRow icon={Info} label="Smoking" value={profile.smoking} />}
+                      {profile.religion && <InfoRow icon={Info} label="Religion" value={profile.religion} />}
+                      {profile.hometown && <InfoRow icon={Info} label="Hometown" value={profile.hometown} />}
+                    </div>
+                  </div>
+                )}
+
+                {/* Campus Life */}
+                {(profile.livingArrangement || profile.studyStyle || profile.campusActivities?.length > 0) && (
+                  <div>
+                    <SectionLabel>Campus Life</SectionLabel>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {profile.livingArrangement && <InfoRow icon={Info} label="Lives In" value={profile.livingArrangement} />}
+                      {profile.studyStyle && <InfoRow icon={BookOpen} label="Study Style" value={profile.studyStyle} />}
+                    </div>
+                    {profile.campusActivities?.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {profile.campusActivities.map((a, i) => <Chip key={i} label={a} tone="green" />)}
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -540,6 +597,7 @@ function ProfilePanel({
                 {/* Preferences */}
                 {profile.preference && (
                   <div>
+
                     <SectionLabel>Matching Preferences</SectionLabel>
                     <div className="grid gap-2 sm:grid-cols-2">
                       <InfoRow

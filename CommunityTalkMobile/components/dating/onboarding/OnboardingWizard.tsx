@@ -1,4 +1,4 @@
-import React, { useState, useContext, useCallback } from 'react';
+import React, { useState, useContext, useCallback, useMemo } from 'react';
 import { Linking } from 'react-native';
 import {
     View,
@@ -10,10 +10,7 @@ import {
     ActivityIndicator,
     TextInput,
     Image,
-    FlatList,
-    Modal,
-    StatusBar,
-    Platform
+    Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,44 +21,195 @@ import { Colors, Fonts } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-// ── TYPES ────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPES
+// ─────────────────────────────────────────────────────────────────────────────
 type FormData = {
+    // Basics
     firstName: string;
     gender: string;
-    birthDate: {
-        day: string;
-        month: string;
-        year: string;
-    };
+    birthDate: { day: string; month: string; year: string };
+    height: string;
+    // Campus
     major: string;
     year: string;
+    gradYear: string;
+    livingArrangement: string;
+    campusActivities: string[];
+    studyStyle: string;
+    // Lifestyle
+    lookingFor: string;
+    loveLanguage: string;
+    physicallyActive: string;
+    drinking: string;
+    smoking: string;
+    diet: string;
+    religion: string;
+    hometown: string;
+    // Vibe
+    headline: string;
     bio: string;
     hobbies: string[];
-    photos: string[]; // local uris
     instagramHandle: string;
-    height: string;
+    // Prompts
+    prompts: { question: string; answer: string }[];
+    // Photos
+    photos: string[];
 };
 
-// ToS version — bump this string whenever terms change; stored server-side with consent
+// ─────────────────────────────────────────────────────────────────────────────
+// CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
 const TOS_VERSION = '2025-04-15';
 
 const STEPS = [
-    'Agreement',   // Step 0 — legal gate
-    'Welcome',
-    'The Basics',
-    'Your Vibe',
-    'Photos',
-    'Review'
+    'Agreement',     // 0
+    'Welcome',       // 1
+    'The Basics',    // 2
+    'Campus Life',   // 3
+    'Lifestyle',     // 4
+    'Your Vibe',     // 5
+    'Prompts',       // 6
+    'Photos',        // 7
+    'Review',        // 8
 ];
 
-const PREDEFINED_HOBBIES = [
-    "Gym", "Coffee", "Hiking", "Anime", "Gaming", "Study",
-    "Music", "Art", "Travel", "Foodie", "Nightlife", "Sports",
-    "Reading", "Movies", "Photography", "Fashion", "Cooking", "Dancing"
+const HOBBIES = [
+    "Gym", "Coffee", "Hiking", "Anime", "Gaming", "Study", "Music", "Art",
+    "Travel", "Foodie", "Nightlife", "Sports", "Reading", "Movies",
+    "Photography", "Fashion", "Cooking", "Dancing", "Thrifting", "Yoga",
+    "Running", "Swimming", "Cycling", "Chess", "Volunteering", "Coding",
 ];
 
 const STUDY_YEARS = ["Freshman", "Sophomore", "Junior", "Senior", "Grad Student", "Alumni"];
 
+const LOOKING_FOR_OPTIONS = [
+    { key: 'RELATIONSHIP', label: '❤️  Relationship', sub: 'Looking for something serious' },
+    { key: 'CASUAL', label: '✨  Casual Dating', sub: 'Exploring and seeing what happens' },
+    { key: 'FRIENDS', label: '🤝  Friends First', sub: 'Build a connection first' },
+    { key: 'UNSURE', label: '🤷  Not Sure Yet', sub: 'Open to anything' },
+];
+
+const LOVE_LANGUAGES = ['Words of Affirmation', 'Acts of Service', 'Receiving Gifts', 'Quality Time', 'Physical Touch'];
+const PHYSICALLY_ACTIVE = ['Not active', 'Sometimes active', 'Moderately active', 'Very active', 'Fitness fanatic'];
+const DRINKING_OPTIONS = ['No', 'Occasionally', 'Socially', 'Yes'];
+const SMOKING_OPTIONS = ['No', 'Occasionally', 'Yes'];
+const DIET_OPTIONS = ['Everything', 'Vegetarian', 'Vegan', 'Halal', 'Kosher', 'Gluten-free'];
+const RELIGION_OPTIONS = ['Agnostic', 'Atheist', 'Buddhist', 'Christian', 'Hindu', 'Jewish', 'Muslim', 'Sikh', 'Spiritual', 'Other', 'Prefer not to say'];
+const LIVING_OPTIONS = ['Dorm / Residence Hall', 'Off-campus apartment', 'Commuter (live at home)', 'Greek house / Sorority/Fraternity'];
+const STUDY_STYLES = ['Night owl 🦉', 'Early bird 🌅', 'Library person 📚', 'Café worker ☕', 'Wherever-I-can 🏃'];
+const CAMPUS_ACTIVITIES_OPTIONS = [
+    'Student Government', 'Sports Team', 'Debate Club', 'Music/Band', 'Theater/Drama',
+    'Cultural Club', 'Pre-Med Society', 'Engineering Club', 'Business Club',
+    'Greek Life', 'Volunteer/Community Service', 'Research', 'ROTC', 'Other',
+];
+
+const PROFILE_PROMPTS = [
+    'My go-to campus spot is…',
+    'You'll catch me on campus…',
+    'The best thing about my major is…',
+    'My ideal campus date would be…',
+    'I procrastinate by…',
+    'On weekends, I usually…',
+    'A fun fact about me is…',
+    'My love language is…',
+    'Together, we could…',
+    'I'm looking for someone who…',
+    'The way to my heart is…',
+    'I get way too excited about…',
+    'My most controversial opinion is…',
+    'Two truths and a lie about me…',
+    'After class, you'll find me…',
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROFILE COMPLETION CALCULATOR
+// ─────────────────────────────────────────────────────────────────────────────
+function calcCompletion(f: FormData): number {
+    let pct = 20; // name/gender/dob always present once past basics
+    if (f.photos.length >= 2) pct += 20;
+    if (f.bio.trim().length > 20) pct += 15;
+    if (f.headline.trim().length > 0) pct += 10;
+    if (f.lookingFor || f.loveLanguage || f.drinking) pct += 15;
+    if (f.hobbies.length >= 3) pct += 10;
+    if (f.prompts.filter(p => p.answer.trim()).length >= 1) pct += 10;
+    return Math.min(pct, 100);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const genderMap: Record<string, string> = { Male: 'MALE', Female: 'FEMALE', 'Non-binary': 'NON_BINARY' };
+const yearMap: Record<string, string> = {
+    Freshman: 'FRESHMAN', Sophomore: 'SOPHOMORE', Junior: 'JUNIOR',
+    Senior: 'SENIOR', 'Grad Student': 'GRADUATE', Alumni: 'ALUMNI',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REUSABLE CHIP
+// ─────────────────────────────────────────────────────────────────────────────
+function Chip({
+    label, selected, onPress, theme,
+}: { label: string; selected: boolean; onPress: () => void; theme: any }) {
+    return (
+        <TouchableOpacity
+            style={[
+                styles.chip,
+                { backgroundColor: selected ? theme.primary + '20' : theme.muted, borderColor: selected ? theme.primary : 'transparent' }
+            ]}
+            onPress={onPress}
+            activeOpacity={0.7}
+        >
+            <Text style={[styles.chipText, { color: selected ? theme.primary : theme.textMuted }]}>{label}</Text>
+        </TouchableOpacity>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SINGLE-SELECT ROW (like Dil Mil's "Dil Details")
+// ─────────────────────────────────────────────────────────────────────────────
+function SelectRow({
+    icon, label, value, options, onSelect, theme,
+}: {
+    icon: string; label: string; value: string; options: string[];
+    onSelect: (v: string) => void; theme: any;
+}) {
+    const [open, setOpen] = useState(false);
+    return (
+        <View style={{ marginBottom: 4 }}>
+            <TouchableOpacity
+                style={[styles.detailRow, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                onPress={() => setOpen(!open)}
+                activeOpacity={0.7}
+            >
+                <Ionicons name={icon as any} size={18} color={theme.primary} style={{ marginRight: 10 }} />
+                <Text style={[styles.detailLabel, { color: theme.text }]}>{label}</Text>
+                <Text style={[styles.detailValue, { color: value ? theme.text : theme.textMuted }]}>
+                    {value || 'Select'}
+                </Text>
+                <Ionicons name={open ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textMuted} />
+            </TouchableOpacity>
+            {open && (
+                <View style={[styles.dropdownContainer, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    {options.map(opt => (
+                        <TouchableOpacity
+                            key={opt}
+                            style={[styles.dropdownItem, value === opt && { backgroundColor: theme.primary + '15' }]}
+                            onPress={() => { onSelect(opt === value ? '' : opt); setOpen(false); }}
+                        >
+                            <Text style={[styles.dropdownItemText, { color: value === opt ? theme.primary : theme.text }]}>{opt}</Text>
+                            {value === opt && <Ionicons name="checkmark" size={16} color={theme.primary} />}
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            )}
+        </View>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
 export default function OnboardingWizard({ onComplete }: { onComplete: () => void }) {
     const [step, setStep] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -71,27 +219,50 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     const theme = Colors[colorScheme];
     const insets = useSafeAreaInsets();
 
-    // ── Legal Consent State ────────────────────────────────────────────────────
+    // Legal consent
     const [agreedAge, setAgreedAge] = useState(false);
     const [agreedTos, setAgreedTos] = useState(false);
     const [agreedPrivacy, setAgreedPrivacy] = useState(false);
     const allConsentsGiven = agreedAge && agreedTos && agreedPrivacy;
 
-    // Form State
+    // Form state
     const [formData, setFormData] = useState<FormData>({
         firstName: user?.fullName?.split(' ')[0] || '',
         gender: '',
         birthDate: { day: '', month: '', year: '' },
+        height: '',
         major: '',
         year: '',
+        gradYear: '',
+        livingArrangement: '',
+        campusActivities: [],
+        studyStyle: '',
+        lookingFor: '',
+        loveLanguage: '',
+        physicallyActive: '',
+        drinking: '',
+        smoking: '',
+        diet: '',
+        religion: '',
+        hometown: '',
+        headline: '',
         bio: '',
         hobbies: [],
-        photos: [],
         instagramHandle: '',
-        height: ''
+        prompts: [
+            { question: '', answer: '' },
+            { question: '', answer: '' },
+        ],
+        photos: [],
     });
 
-    // ── Log consent to backend before proceeding from Agreement step ──────────
+    const update = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
+        setFormData(prev => ({ ...prev, [key]: value }));
+    }, []);
+
+    const completionPct = useMemo(() => calcCompletion(formData), [formData]);
+
+    // ── Consent ───────────────────────────────────────────────────────────────
     const logConsent = useCallback(async () => {
         try {
             await api.post('/api/dating/consent', {
@@ -100,266 +271,141 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                 platform: Platform.OS,
             });
         } catch (e) {
-            // Non-blocking: consent is already tracked client-side via state.
-            // Backend should also validate presence of consent on profile creation.
             console.warn('[Dating] consent log failed:', e);
         }
     }, []);
 
+    // ── Navigation ────────────────────────────────────────────────────────────
     const nextStep = async () => {
-        // ── Step 0: Legal Agreement Gate ──────────────────────────────────────
         if (step === 0) {
-            if (!allConsentsGiven) {
-                return Alert.alert(
-                    'Agreement Required',
-                    'You must confirm your age and agree to our Terms of Service and Privacy Policy to continue.'
-                );
-            }
+            if (!allConsentsGiven) return Alert.alert('Agreement Required', 'Please check all boxes to continue.');
             await logConsent();
             setStep(1);
             return;
         }
-
-        // ── Step 2: Basics ────────────────────────────────────────────────────
         if (step === 2) {
             if (!formData.firstName.trim()) return Alert.alert('Required', 'Please enter your first name.');
             if (!formData.gender) return Alert.alert('Required', 'Please select your gender.');
-
             const { day, month, year } = formData.birthDate;
-            if (!day || !month || !year || year.length < 4) {
-                return Alert.alert('Required', 'Please enter your complete date of birth.');
-            }
-
-            // ── Accurate age check using real calendar date ────────────────
-            const dayN = parseInt(day, 10);
-            const monthN = parseInt(month, 10) - 1; // JS months are 0-indexed
-            const yearN = parseInt(year, 10);
+            if (!day || !month || !year || year.length < 4) return Alert.alert('Required', 'Please enter your complete date of birth.');
+            const dayN = parseInt(day, 10), monthN = parseInt(month, 10) - 1, yearN = parseInt(year, 10);
             const birthDate = new Date(yearN, monthN, dayN);
             const today = new Date();
-
-            // Validate that the parsed date is a real date
-            if (
-                birthDate.getFullYear() !== yearN ||
-                birthDate.getMonth() !== monthN ||
-                birthDate.getDate() !== dayN
-            ) {
+            if (birthDate.getFullYear() !== yearN || birthDate.getMonth() !== monthN || birthDate.getDate() !== dayN)
                 return Alert.alert('Invalid Date', 'Please enter a valid date of birth.');
-            }
-
             let age = today.getFullYear() - yearN;
-            if (
-                today.getMonth() < monthN ||
-                (today.getMonth() === monthN && today.getDate() < dayN)
-            ) {
-                age -= 1; // Birthday hasn't occurred yet this year
-            }
-
-            if (yearN < 1900 || yearN > today.getFullYear()) {
-                return Alert.alert('Invalid Date', 'Please enter a valid birth year.');
-            }
-
-            if (age < 18) {
-                return Alert.alert(
-                    'Age Restriction',
-                    'You must be 18 years of age or older to use Campustry Dating. This is strictly enforced.'
-                );
-            }
-
-            if (!formData.major.trim() || !formData.year) {
-                return Alert.alert('Required', 'Please tell us your major and year.');
-            }
+            if (today.getMonth() < monthN || (today.getMonth() === monthN && today.getDate() < dayN)) age--;
+            if (yearN < 1900 || yearN > today.getFullYear()) return Alert.alert('Invalid Date', 'Please enter a valid birth year.');
+            if (age < 18) return Alert.alert('Age Restriction', 'You must be 18 or older to use Campustry Dating.');
         }
-
-        // ── Step 3: Vibe (Bio) ────────────────────────────────────────────────
         if (step === 3) {
+            if (!formData.major.trim() || !formData.year) return Alert.alert('Required', 'Please enter your major and year.');
+        }
+        if (step === 5) {
             if (!formData.bio.trim()) return Alert.alert('Required', 'Please write a short bio.');
         }
-
-        // ── Step 4: Photos ────────────────────────────────────────────────────
-        if (step === 4) {
+        if (step === 7) {
             if (formData.photos.length < 2) return Alert.alert('Required', 'Please add at least 2 photos.');
         }
-
-        if (step < STEPS.length - 1) setStep(step + 1);
+        if (step < STEPS.length - 1) setStep(s => s + 1);
     };
 
-    const prevStep = () => {
-        if (step > 0) setStep(step - 1);
-    };
+    const prevStep = () => { if (step > 0) setStep(s => s - 1); };
 
+    // ── Photo handling ────────────────────────────────────────────────────────
     const pickImage = async () => {
-        // Permission
-        const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (permissionResult.granted === false) {
-            Alert.alert("Permission to access camera roll is required!");
-            return;
-        }
-
+        const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!perm.granted) { Alert.alert('Permission required', 'Please allow photo access.'); return; }
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: 'images',
-            allowsEditing: false,
-            quality: 0.7,
-            base64: true,
+            mediaTypes: 'images', allowsEditing: false, quality: 0.7, base64: true,
         });
-
-        if (!result.canceled && result.assets && result.assets.length > 0) {
-            const asset = result.assets[0];
-            // Store URI for preview, but we might need to store base64 for upload?
-            // Actually, let's just store the URI in state, but we need the base64 for upload.
-            // Problem: formData.photos is string[]. Changing it to object might break things.
-            // Solution: We will stick to URI in state, but when uploading, we need base64. 
-            // Since ImagePicker returns base64 NOW, we can hack it: 
-            // append base64 data to the URI string or store it separately? 
-            // Better: Let's read the file as base64 during upload if use `FileSystem`? 
-            // OR: Just upload immediately? No that blocks UI.
-
-            // Simplest: `result.assets[0].base64` is available now.
-            // Let's attach the base64 to a sophisticated object or temp storage.
-            // But refactoring State `photos: string[]` to `photos: PhotoObj[]` is risky.
-
-            // Hack: Store base64 in a parallel map or just re-read it? 
-            // Re-reading needs `expo-file-system`.
-
-            // ALTERNATIVE: Pass base64 instantly to a "pre-upload" state? No.
-
-            // Let's modify state to hold an object if possible? 
-            // Check usage: `renderPhotos` uses `uri`.
-            // Let's stick to URI in state, but we attach the base64 to it? 
-            // `uri` is a string.
-
-            // OK, let's use `FileSystem.readAsStringAsync` in `uploadPhoto`? 
-            // Or change `photos` state to `{ uri: string, base64?: string }[]`.
-            // Let's try changing the type definition of FormData slightly or just cast it.
-
-            // WAIT - I can just attach it to the component instance (ref) if I don't want to change state types?
-            // Or just change state. `photos: {uri, base64}[]`. 
-            // Let's check `FormData` type definition in this file.
-
-            // Type FormData on line 22 defined photos: string[].
-            // I should update that type definition first to be safe.
-
-            // Actually, let's just return the base64 string from `pickImage`? 
-            // No, `pickImage` is void.
-
-            // LET'S DO THIS: 
-            // Update `pickImage` to NOT set state immediately but return the asset?
-            // No, `pickImage` is triggered by UI.
-
-            // Plan B: Update `FormData` type to allow photos to receive objects? 
-            // Or simpler:
-            // Use `data:image/jpeg;base64,...` string as the "URI" in the state?
-            // The `Image` component supports data URIs!
-            // `param uri`: `data:image/jpeg;base64,${base64}`.
-            // This is perfect! It works for Image source AND gives us the data for upload.
-
-            if (asset.base64) {
-                const dataUri = `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}`;
-                if (formData.photos.length >= 6) return Alert.alert("Max 6 photos allowed");
-                setFormData(prev => ({ ...prev, photos: [...prev.photos, dataUri] }));
-            }
+        if (!result.canceled && result.assets[0]?.base64) {
+            const { base64, mimeType } = result.assets[0];
+            const dataUri = `data:${mimeType || 'image/jpeg'};base64,${base64}`;
+            if (formData.photos.length >= 6) return Alert.alert('Max 6 photos allowed');
+            update('photos', [...formData.photos, dataUri]);
         }
     };
 
     const removePhoto = (index: number) => {
-        setFormData(prev => ({
-            ...prev,
-            photos: prev.photos.filter((_, i) => i !== index)
-        }));
+        update('photos', formData.photos.filter((_, i) => i !== index));
     };
 
-    const uploadPhoto = async (dataUri: string) => {
-        // If already remote (http), return as is
+    const uploadPhoto = async (dataUri: string): Promise<string> => {
         if (dataUri.startsWith('http')) return dataUri;
-
-        // If it's a data URI (base64)
         if (dataUri.startsWith('data:')) {
-            console.log("Uploading base64 photo...");
             const base64Data = dataUri.split(',')[1];
-
-            // Uses new backend route that leverages ImageKit (same as Avatar)
             const { data } = await api.post('/api/upload/base64', {
                 image: base64Data,
                 fileName: `dating_photo_${Date.now()}.jpg`,
-                folder: "community_talk_dating"
+                folder: 'community_talk_dating',
             });
             return data.url;
         }
-
-        // Fallback for file:// URIs using the old fetch method if needed, 
-        // but we are converting everything to base64 data URIs now.
         return dataUri;
     };
 
+    // ── Submit ────────────────────────────────────────────────────────────────
     const handleSubmit = async () => {
-        // Guard: consent must have been given at step 0 before we ever reach here.
-        // This is a client-side safety net; backend also enforces via tosVersion field.
-        if (!allConsentsGiven) {
-            Alert.alert('Error', 'Agreement step was not completed. Please restart.');
-            setStep(0);
-            return;
-        }
-
+        if (!allConsentsGiven) { setStep(0); return; }
         try {
             setLoading(true);
-
-            // 1. Upload Photos Sequentially
             const uploadedUrls: string[] = [];
             for (const photoUri of formData.photos) {
-                const url = await uploadPhoto(photoUri);
-                uploadedUrls.push(url);
+                uploadedUrls.push(await uploadPhoto(photoUri));
             }
-
-            // 2. Construct ISO Date
             const isoDate = `${formData.birthDate.year}-${formData.birthDate.month.padStart(2, '0')}-${formData.birthDate.day.padStart(2, '0')}T00:00:00.000Z`;
-
-            const genderMap: Record<string, string> = {
-                'Male': 'MALE',
-                'Female': 'FEMALE',
-                'Non-binary': 'NON_BINARY',
-            };
-            const yearMap: Record<string, string> = {
-                'Freshman': 'FRESHMAN',
-                'Sophomore': 'SOPHOMORE',
-                'Junior': 'JUNIOR',
-                'Senior': 'SENIOR',
-                'Grad Student': 'GRADUATE',
-                'Alumni': 'ALUMNI',
-            };
+            const validPrompts = formData.prompts.filter(p => p.question && p.answer.trim());
 
             const payload = {
                 firstName: formData.firstName.trim(),
                 gender: genderMap[formData.gender] || 'OTHER',
                 birthDate: isoDate,
+                height: formData.height ? parseInt(formData.height, 10) : null,
                 major: formData.major.trim(),
                 year: yearMap[formData.year] || 'OTHER',
+                gradYear: formData.gradYear || null,
+                livingArrangement: formData.livingArrangement || null,
+                campusActivities: formData.campusActivities,
+                studyStyle: formData.studyStyle || null,
+                lookingFor: formData.lookingFor ? [formData.lookingFor] : [],
+                loveLanguage: formData.loveLanguage || null,
+                physicallyActive: formData.physicallyActive || null,
+                drinking: formData.drinking || null,
+                smoking: formData.smoking || null,
+                diet: formData.diet || null,
+                religion: formData.religion || null,
+                hometown: formData.hometown || null,
+                headline: formData.headline.trim() || null,
                 bio: formData.bio.trim(),
                 hobbies: formData.hobbies,
+                interests: formData.hobbies,
                 instagramHandle: formData.instagramHandle.trim() || null,
-                height: formData.height ? parseInt(formData.height, 10) : null,
+                prompts: validPrompts,
                 photos: uploadedUrls,
-                // Consent metadata sent with every profile creation request
                 tosVersion: TOS_VERSION,
                 tosAgreedAt: new Date().toISOString(),
             };
 
             await api.post('/api/dating/profile', payload);
-
             Alert.alert(
-                'Welcome to Campustry Dating! 🎉',
-                'Your profile is under review. You can start swiping while your photos are approved.',
-                [{ text: 'OK', onPress: () => onComplete() }]
+                '🎉 Profile Submitted!',
+                'Your profile is under review by our team. You\'ll be notified once approved!',
+                [{ text: 'Got it!', onPress: () => onComplete() }]
             );
         } catch (err: any) {
             console.error('Profile creation error:', err);
-            Alert.alert('Error', err.response?.data?.error || 'Failed to create profile. Please check your connection.');
+            Alert.alert('Error', err.response?.data?.error || 'Failed to create profile. Please try again.');
         } finally {
             setLoading(false);
         }
     };
 
-    // ── RENDERERS ──────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
+    // STEP RENDERERS
+    // ─────────────────────────────────────────────────────────────────────────
 
-    // Step 0 — Legal Agreement (required gate before any profile data is entered)
+    // Step 0 — Legal Agreement
     const renderAgreement = () => (
         <View style={styles.stepContainer}>
             <View style={[styles.iconCircle, { backgroundColor: '#EF444415' }]}>
@@ -367,342 +413,495 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             </View>
             <Text style={[styles.title, { color: theme.text }]}>Before You Continue</Text>
             <Text style={[styles.text, { color: theme.textMuted }]}>
-                Campustry Dating is an adults-only feature. You must confirm the following before creating a profile.
+                Campustry Dating is an adults-only feature. Please confirm the following.
             </Text>
-
-            {/* Age Confirmation */}
-            <TouchableOpacity
-                style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: agreedAge ? theme.primary : theme.border }]}
-                onPress={() => setAgreedAge(!agreedAge)}
-                activeOpacity={0.8}
-            >
-                <View style={[styles.checkbox, { backgroundColor: agreedAge ? theme.primary : 'transparent', borderColor: agreedAge ? theme.primary : theme.textMuted }]}>
-                    {agreedAge && <Ionicons name="checkmark" size={14} color="#FFF" />}
-                </View>
-                <Text style={[styles.consentText, { color: theme.text }]}>
-                    I confirm that I am <Text style={{ fontFamily: Fonts.bold }}>18 years of age or older.</Text> I understand that misrepresenting my age will result in a permanent ban and may have legal consequences.
-                </Text>
-            </TouchableOpacity>
-
-            {/* Terms of Service */}
-            <TouchableOpacity
-                style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: agreedTos ? theme.primary : theme.border }]}
-                onPress={() => setAgreedTos(!agreedTos)}
-                activeOpacity={0.8}
-            >
-                <View style={[styles.checkbox, { backgroundColor: agreedTos ? theme.primary : 'transparent', borderColor: agreedTos ? theme.primary : theme.textMuted }]}>
-                    {agreedTos && <Ionicons name="checkmark" size={14} color="#FFF" />}
-                </View>
-                <Text style={[styles.consentText, { color: theme.text }]}>
-                    I agree to Campustry's{' '}
-                    <Text style={{ color: theme.primary, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('https://campustry.com/terms')}>
-                        Terms of Service
+            {[
+                { state: agreedAge, set: setAgreedAge, text: 'I confirm I am 18 years of age or older. Misrepresenting my age will result in a permanent ban.' },
+                { state: agreedTos, set: setAgreedTos, text: 'I agree to Campustry\'s Terms of Service and Community Guidelines.', link: { label: 'Terms of Service', url: 'https://campustry.com/terms' } },
+                { state: agreedPrivacy, set: setAgreedPrivacy, text: 'I have read and agree to Campustry\'s Privacy Policy.', link: { label: 'Privacy Policy', url: 'https://campustry.com/privacy' } },
+            ].map((item, idx) => (
+                <TouchableOpacity
+                    key={idx}
+                    style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: item.state ? theme.primary : theme.border }]}
+                    onPress={() => item.set(!item.state)}
+                    activeOpacity={0.8}
+                >
+                    <View style={[styles.checkbox, { backgroundColor: item.state ? theme.primary : 'transparent', borderColor: item.state ? theme.primary : theme.textMuted }]}>
+                        {item.state && <Ionicons name="checkmark" size={14} color="#FFF" />}
+                    </View>
+                    <Text style={[styles.consentText, { color: theme.text }]}>
+                        {item.text}
+                        {item.link && (
+                            <Text style={{ color: theme.primary, textDecorationLine: 'underline' }} onPress={() => Linking.openURL(item.link!.url)}>
+                                {' '}{item.link.label}
+                            </Text>
+                        )}
                     </Text>
-                    {', including the Community Guidelines and Safety Policies.  '}
-                </Text>
-            </TouchableOpacity>
-
-            {/* Privacy Policy */}
+                </TouchableOpacity>
+            ))}
             <TouchableOpacity
-                style={[styles.consentRow, { backgroundColor: theme.surface, borderColor: agreedPrivacy ? theme.primary : theme.border }]}
-                onPress={() => setAgreedPrivacy(!agreedPrivacy)}
-                activeOpacity={0.8}
-            >
-                <View style={[styles.checkbox, { backgroundColor: agreedPrivacy ? theme.primary : 'transparent', borderColor: agreedPrivacy ? theme.primary : theme.textMuted }]}>
-                    {agreedPrivacy && <Ionicons name="checkmark" size={14} color="#FFF" />}
-                </View>
-                <Text style={[styles.consentText, { color: theme.text }]}>
-                    I have read and agree to Campustry's{' '}
-                    <Text style={{ color: theme.primary, textDecorationLine: 'underline' }} onPress={() => Linking.openURL('https://campustry.com/privacy')}>
-                        Privacy Policy
-                    </Text>
-                    {', including how my location, photos, and profile data are used.  '}
-                </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-                style={[
-                    styles.primaryButton,
-                    { backgroundColor: allConsentsGiven ? theme.primary : theme.muted, marginTop: 8 }
-                ]}
+                style={[styles.primaryButton, { backgroundColor: allConsentsGiven ? theme.primary : theme.muted, marginTop: 8 }]}
                 onPress={nextStep}
                 disabled={!allConsentsGiven}
-                activeOpacity={0.8}
             >
                 <Text style={[styles.primaryButtonText, { color: allConsentsGiven ? '#FFF' : theme.textMuted }]}>
-                    {allConsentsGiven ? 'I Agree — Continue' : 'Please check all boxes above'}
+                    {allConsentsGiven ? 'I Agree — Let\'s Go' : 'Please check all boxes'}
                 </Text>
             </TouchableOpacity>
         </View>
     );
 
-    // Step 1 — Welcome / What to expect
+    // Step 1 — Welcome
     const renderIntro = () => (
         <View style={styles.stepContainer}>
             <View style={[styles.iconCircle, { backgroundColor: theme.primary + '20' }]}>
-                <Ionicons name="shield-checkmark" size={60} color={theme.primary} />
+                <Ionicons name="heart" size={60} color={theme.primary} />
             </View>
-            <Text style={[styles.title, { color: theme.text }]}>Verified & Exclusive</Text>
+            <Text style={[styles.title, { color: theme.text }]}>Welcome to Campustry Dating ❤️</Text>
             <Text style={[styles.text, { color: theme.textMuted }]}>
-                Campustry Dating is exclusively for verified CUNY students.
+                The exclusive dating space for verified CUNY students.
             </Text>
             <View style={[styles.bulletList, { backgroundColor: theme.surface }]}>
-                <Text style={[styles.bullet, { color: theme.text }]}>• Real Names Only</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• Verified .edu Emails</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• Zero Tolerance for Fake Profiles</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• Respect Boundaries & Consent</Text>
-                <Text style={[styles.bullet, { color: theme.text }]}>• Report anything suspicious immediately</Text>
+                {['✅  Real Names & Verified .edu Emails', '🛡️  Every profile manually reviewed', '🚫  Zero tolerance for fake profiles', '📸  Photos reviewed for authenticity', '🔒  Your safety is our top priority'].map(b => (
+                    <Text key={b} style={[styles.bullet, { color: theme.text }]}>{b}</Text>
+                ))}
             </View>
+            <Text style={[styles.hint, { color: theme.textMuted, textAlign: 'center', marginTop: 4 }]}>
+                Building your profile takes about 3 minutes. Let's make it count!
+            </Text>
         </View>
     );
 
+    // Step 2 — The Basics
     const renderBasics = () => (
         <View style={styles.formContainer}>
-            <Text style={[styles.label, { color: theme.text }]}>First Name</Text>
-            <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                value={formData.firstName}
-                onChangeText={t => setFormData({ ...formData, firstName: t })}
-                placeholder="Your Name"
-                placeholderTextColor={theme.textMuted}
-            />
-
-            <Text style={[styles.label, { color: theme.text }]}>Gender</Text>
-            <View style={styles.chipRow}>
-                {['Male', 'Female', 'Non-binary'].map(g => (
-                    <TouchableOpacity
-                        key={g}
-                        style={[
-                            styles.chip,
-                            { backgroundColor: theme.muted, borderColor: 'transparent' },
-                            formData.gender === g && { backgroundColor: theme.primary + '20', borderColor: theme.primary }
-                        ]}
-                        onPress={() => setFormData({ ...formData, gender: g })}
-                    >
-                        <Text style={[
-                            styles.chipText,
-                            { color: theme.textMuted },
-                            formData.gender === g && { color: theme.primary }
-                        ]}>{g}</Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-
-            <Text style={[styles.label, { color: theme.text }]}>Date of Birth</Text>
-            <View style={styles.dateRow}>
+            <View>
+                <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>ABOUT YOU</Text>
+                <Text style={[styles.label, { color: theme.text }]}>First Name</Text>
                 <TextInput
-                    style={[styles.input, { flex: 1, backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                    placeholder="MM"
+                    style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.firstName}
+                    onChangeText={t => update('firstName', t)}
+                    placeholder="Your first name"
                     placeholderTextColor={theme.textMuted}
-                    keyboardType="numeric"
-                    maxLength={2}
-                    value={formData.birthDate.month}
-                    onChangeText={t => setFormData({ ...formData, birthDate: { ...formData.birthDate, month: t } })}
-                />
-                <TextInput
-                    style={[styles.input, { flex: 1, backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                    placeholder="DD"
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="numeric"
-                    maxLength={2}
-                    value={formData.birthDate.day}
-                    onChangeText={t => setFormData({ ...formData, birthDate: { ...formData.birthDate, day: t } })}
-                />
-                <TextInput
-                    style={[styles.input, { flex: 2, backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                    placeholder="YYYY"
-                    placeholderTextColor={theme.textMuted}
-                    keyboardType="numeric"
-                    maxLength={4}
-                    value={formData.birthDate.year}
-                    onChangeText={t => setFormData({ ...formData, birthDate: { ...formData.birthDate, year: t } })}
                 />
             </View>
 
-            <Text style={[styles.label, { color: theme.text }]}>Major</Text>
-            <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                value={formData.major}
-                onChangeText={t => setFormData({ ...formData, major: t })}
-                placeholder="e.g. Computer Science"
-                placeholderTextColor={theme.textMuted}
-            />
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Gender</Text>
+                <View style={styles.chipRow}>
+                    {['Male', 'Female', 'Non-binary'].map(g => (
+                        <Chip key={g} label={g} selected={formData.gender === g} onPress={() => update('gender', g)} theme={theme} />
+                    ))}
+                </View>
+            </View>
 
-            <Text style={[styles.label, { color: theme.text }]}>Year</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4 }}>
-                {STUDY_YEARS.map(y => (
-                    <TouchableOpacity
-                        key={y}
-                        style={[
-                            styles.chip,
-                            { backgroundColor: theme.muted, borderColor: 'transparent' },
-                            formData.year === y && { backgroundColor: theme.primary + '20', borderColor: theme.primary }
-                        ]}
-                        onPress={() => setFormData({ ...formData, year: y })}
-                    >
-                        <Text style={[
-                            styles.chipText,
-                            { color: theme.textMuted },
-                            formData.year === y && { color: theme.primary }
-                        ]}>{y}</Text>
-                    </TouchableOpacity>
-                ))}
-            </ScrollView>
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Date of Birth</Text>
+                <View style={styles.dateRow}>
+                    {[
+                        { placeholder: 'MM', field: 'month', len: 2, flex: 1 },
+                        { placeholder: 'DD', field: 'day', len: 2, flex: 1 },
+                        { placeholder: 'YYYY', field: 'year', len: 4, flex: 2 },
+                    ].map(f => (
+                        <TextInput
+                            key={f.field}
+                            style={[styles.input, { flex: f.flex, backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                            placeholder={f.placeholder}
+                            placeholderTextColor={theme.textMuted}
+                            keyboardType="numeric"
+                            maxLength={f.len}
+                            value={(formData.birthDate as any)[f.field]}
+                            onChangeText={t => update('birthDate', { ...formData.birthDate, [f.field]: t })}
+                        />
+                    ))}
+                </View>
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Height <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(cm, Optional)</Text></Text>
+                <TextInput
+                    style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.height}
+                    onChangeText={t => update('height', t)}
+                    placeholder="e.g. 175"
+                    placeholderTextColor={theme.textMuted}
+                    keyboardType="numeric"
+                />
+            </View>
         </View>
     );
 
-    const renderVibe = () => (
+    // Step 3 — Campus Life
+    const renderCampus = () => (
         <View style={styles.formContainer}>
-            <Text style={[styles.label, { color: theme.text }]}>Bio</Text>
-            <TextInput
-                style={[styles.input, { height: 100, textAlignVertical: 'top', backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                value={formData.bio}
-                onChangeText={t => setFormData({ ...formData, bio: t })}
-                placeholder="Tell us about yourself..."
-                placeholderTextColor={theme.textMuted}
-                multiline
-                maxLength={500}
-            />
-            <Text style={[styles.hint, { color: theme.textMuted }]}>{formData.bio.length}/500</Text>
+            <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>CAMPUS INFO</Text>
 
-            <Text style={[styles.label, { color: theme.text }]}>Height (cm) (Optional)</Text>
-            <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                value={formData.height}
-                onChangeText={t => setFormData({ ...formData, height: t })}
-                placeholder="e.g. 175"
-                placeholderTextColor={theme.textMuted}
-                keyboardType="numeric"
-            />
-
-            <Text style={[styles.label, { color: theme.text }]}>Hobbies / Interests (Pick up to 5)</Text>
-            <View style={styles.chipRowWrap}>
-                {PREDEFINED_HOBBIES.map(h => {
-                    const selected = formData.hobbies.includes(h);
-                    return (
-                        <TouchableOpacity
-                            key={h}
-                            style={[
-                                styles.chip,
-                                { backgroundColor: theme.muted, borderColor: 'transparent' },
-                                selected && { backgroundColor: theme.primary + '20', borderColor: theme.primary }
-                            ]}
-                            onPress={() => {
-                                const newHobbies = selected
-                                    ? formData.hobbies.filter(i => i !== h)
-                                    : formData.hobbies.length < 5 ? [...formData.hobbies, h] : formData.hobbies;
-                                setFormData({ ...formData, hobbies: newHobbies });
-                            }}
-                        >
-                            <Text style={[
-                                styles.chipText,
-                                { color: theme.textMuted },
-                                selected && { color: theme.primary }
-                            ]}>{h}</Text>
-                        </TouchableOpacity>
-                    );
-                })}
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Major</Text>
+                <TextInput
+                    style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.major}
+                    onChangeText={t => update('major', t)}
+                    placeholder="e.g. Computer Science"
+                    placeholderTextColor={theme.textMuted}
+                />
             </View>
 
-            {/* Instagram — disclosed as optional + shown on profile */}
-            <Text style={[styles.label, { color: theme.text }]}>Instagram Handle{' '}
-                <Text style={{ fontFamily: Fonts.regular, fontSize: 12, color: theme.textMuted }}>(Optional)</Text>
-            </Text>
-            <Text style={[styles.hint, { color: theme.textMuted, marginTop: -6, marginBottom: 8 }]}>
-                If provided, this will be visible on your public dating profile.
-            </Text>
-            <TextInput
-                style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
-                value={formData.instagramHandle}
-                onChangeText={t => setFormData({ ...formData, instagramHandle: t.replace('@', '') })}
-                placeholder="yourhandle  (without @)"
-                placeholderTextColor={theme.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-            />
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Year</Text>
+                <View style={styles.chipRowWrap}>
+                    {STUDY_YEARS.map(y => (
+                        <Chip key={y} label={y} selected={formData.year === y} onPress={() => update('year', y)} theme={theme} />
+                    ))}
+                </View>
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Grad Year <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Optional)</Text></Text>
+                <TextInput
+                    style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.gradYear}
+                    onChangeText={t => update('gradYear', t)}
+                    placeholder="e.g. Class of 2027"
+                    placeholderTextColor={theme.textMuted}
+                />
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Where do you live?</Text>
+                <View style={styles.chipRowWrap}>
+                    {LIVING_OPTIONS.map(o => (
+                        <Chip key={o} label={o} selected={formData.livingArrangement === o} onPress={() => update('livingArrangement', formData.livingArrangement === o ? '' : o)} theme={theme} />
+                    ))}
+                </View>
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Study Style <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Optional)</Text></Text>
+                <View style={styles.chipRowWrap}>
+                    {STUDY_STYLES.map(s => (
+                        <Chip key={s} label={s} selected={formData.studyStyle === s} onPress={() => update('studyStyle', formData.studyStyle === s ? '' : s)} theme={theme} />
+                    ))}
+                </View>
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Campus Activities <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Optional, pick all that apply)</Text></Text>
+                <View style={styles.chipRowWrap}>
+                    {CAMPUS_ACTIVITIES_OPTIONS.map(a => {
+                        const sel = formData.campusActivities.includes(a);
+                        return (
+                            <Chip
+                                key={a}
+                                label={a}
+                                selected={sel}
+                                onPress={() => update('campusActivities', sel ? formData.campusActivities.filter(x => x !== a) : [...formData.campusActivities, a])}
+                                theme={theme}
+                            />
+                        );
+                    })}
+                </View>
+            </View>
         </View>
     );
 
-    const renderPhotos = () => (
+    // Step 4 — Lifestyle (Dil Mil parity "Dil Details")
+    const renderLifestyle = () => (
         <View style={styles.formContainer}>
-            <Text style={[styles.label, { color: theme.text }]}>Add Photos (Min 2)</Text>
-            <Text style={[styles.text, { color: theme.textMuted, textAlign: 'left', marginBottom: 4 }]}>First photo is your main profile picture.</Text>
+            <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>ABOUT YOUR LIFESTYLE</Text>
 
-            <View style={styles.photoGrid}>
-                {formData.photos.map((uri, idx) => (
-                    <View key={idx} style={[styles.photoSlot, { 
-                        backgroundColor: theme.muted,
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 2 },
-                        shadowOpacity: 0.15,
-                        shadowRadius: 6,
-                        elevation: 4,
-                    }]}>
-                        <Image source={{ uri }} style={styles.photoImage} resizeMode="cover" />
-                        <TouchableOpacity style={styles.removeButton} onPress={() => removePhoto(idx)}>
-                            <Ionicons name="close-circle" size={22} color="#FF3B30" />
-                        </TouchableOpacity>
-                        {idx === 0 && (
-                            <View style={[styles.mainBadge, { backgroundColor: theme.primary }]}>
-                                <Text style={styles.mainBadgeText}>MAIN</Text>
-                            </View>
-                        )}
-                    </View>
-                ))}
-
-                {formData.photos.length < 6 && (
-                    <TouchableOpacity 
-                        style={[styles.addPhotoSlot, { backgroundColor: theme.surface, borderColor: theme.primary + '40' }]} 
-                        onPress={pickImage}
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Looking For</Text>
+                {LOOKING_FOR_OPTIONS.map(opt => (
+                    <TouchableOpacity
+                        key={opt.key}
+                        style={[styles.lookingForCard, {
+                            backgroundColor: theme.surface,
+                            borderColor: formData.lookingFor === opt.key ? theme.primary : theme.border,
+                            borderWidth: formData.lookingFor === opt.key ? 2 : 1,
+                        }]}
+                        onPress={() => update('lookingFor', formData.lookingFor === opt.key ? '' : opt.key)}
                         activeOpacity={0.7}
                     >
-                        <View style={{ 
-                            width: 44, height: 44, borderRadius: 22, 
-                            backgroundColor: theme.primary + '15', 
-                            alignItems: 'center', justifyContent: 'center', 
-                            marginBottom: 6 
-                        }}>
-                            <Ionicons name="camera" size={22} color={theme.primary} />
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.lookingForLabel, { color: theme.text }]}>{opt.label}</Text>
+                            <Text style={[styles.lookingForSub, { color: theme.textMuted }]}>{opt.sub}</Text>
                         </View>
-                        <Text style={{ fontSize: 12, color: theme.textMuted, fontFamily: Fonts.bold }}>Add Photo</Text>
+                        {formData.lookingFor === opt.key && <Ionicons name="checkmark-circle" size={22} color={theme.primary} />}
                     </TouchableOpacity>
-                )}
+                ))}
+            </View>
+
+            <View style={{ gap: 2 }}>
+                <Text style={[styles.label, { color: theme.text, marginBottom: 8 }]}>Details <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(All optional)</Text></Text>
+                <SelectRow icon="heart-outline" label="Love Language" value={formData.loveLanguage} options={LOVE_LANGUAGES} onSelect={v => update('loveLanguage', v)} theme={theme} />
+                <SelectRow icon="barbell-outline" label="Physically Active" value={formData.physicallyActive} options={PHYSICALLY_ACTIVE} onSelect={v => update('physicallyActive', v)} theme={theme} />
+                <SelectRow icon="restaurant-outline" label="Diet" value={formData.diet} options={DIET_OPTIONS} onSelect={v => update('diet', v)} theme={theme} />
+                <SelectRow icon="wine-outline" label="Drinking" value={formData.drinking} options={DRINKING_OPTIONS} onSelect={v => update('drinking', v)} theme={theme} />
+                <SelectRow icon="cloud-outline" label="Smoking" value={formData.smoking} options={SMOKING_OPTIONS} onSelect={v => update('smoking', v)} theme={theme} />
+                <SelectRow icon="sunny-outline" label="Religion" value={formData.religion} options={RELIGION_OPTIONS} onSelect={v => update('religion', v)} theme={theme} />
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Hometown <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Raised in)</Text></Text>
+                <TextInput
+                    style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.hometown}
+                    onChangeText={t => update('hometown', t)}
+                    placeholder="e.g. Queens, NY"
+                    placeholderTextColor={theme.textMuted}
+                />
             </View>
         </View>
     );
 
-    const renderReview = () => (
-        <View style={styles.stepContainer}>
-            <Image source={{ uri: formData.photos[0] }} style={{ width: 150, height: 200, borderRadius: 12, marginBottom: 20 }} />
-            <Text style={[styles.title, { color: theme.text }]}>{formData.firstName}, {new Date().getFullYear() - parseInt(formData.birthDate.year)}</Text>
-            <Text style={[styles.text, { color: theme.textMuted }]}>{formData.major} • {formData.year}</Text>
-            <Text style={[styles.text, { fontStyle: 'italic', marginTop: 10, color: theme.textMuted }]}>&quot;{formData.bio}&quot;</Text>
+    // Step 5 — Your Vibe (Bio, Headline, Hobbies, Instagram)
+    const renderVibe = () => (
+        <View style={styles.formContainer}>
+            <View>
+                <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>YOUR VIBE</Text>
+                <Text style={[styles.label, { color: theme.text }]}>Headline <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Optional)</Text></Text>
+                <TextInput
+                    style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.headline}
+                    onChangeText={t => update('headline', t)}
+                    placeholder="A punchy one-liner about you…"
+                    placeholderTextColor={theme.textMuted}
+                    maxLength={100}
+                />
+                <Text style={[styles.hint, { color: theme.textMuted }]}>{formData.headline.length}/100</Text>
+            </View>
 
-            <View style={{ height: 20 }} />
-            <Text style={[styles.label, { color: theme.text }]}>Ready to join the pool?</Text>
-            <Text style={[styles.hint, { color: theme.textMuted }]}>You can edit your profile later.</Text>
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>About Me</Text>
+                <TextInput
+                    style={[styles.input, { height: 110, textAlignVertical: 'top', backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.bio}
+                    onChangeText={t => update('bio', t)}
+                    placeholder="Tell people who you really are…"
+                    placeholderTextColor={theme.textMuted}
+                    multiline
+                    maxLength={500}
+                />
+                <Text style={[styles.hint, { color: formData.bio.length > 430 ? theme.primary : theme.textMuted }]}>{formData.bio.length}/500</Text>
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Hobbies & Interests <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Pick up to 6)</Text></Text>
+                <View style={styles.chipRowWrap}>
+                    {HOBBIES.map(h => {
+                        const sel = formData.hobbies.includes(h);
+                        return (
+                            <Chip
+                                key={h}
+                                label={h}
+                                selected={sel}
+                                onPress={() => {
+                                    if (sel) update('hobbies', formData.hobbies.filter(x => x !== h));
+                                    else if (formData.hobbies.length < 6) update('hobbies', [...formData.hobbies, h]);
+                                }}
+                                theme={theme}
+                            />
+                        );
+                    })}
+                </View>
+            </View>
+
+            <View>
+                <Text style={[styles.label, { color: theme.text }]}>Instagram <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Optional — visible on profile)</Text></Text>
+                <TextInput
+                    style={[styles.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]}
+                    value={formData.instagramHandle}
+                    onChangeText={t => update('instagramHandle', t.replace('@', ''))}
+                    placeholder="yourhandle  (without @)"
+                    placeholderTextColor={theme.textMuted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                />
+            </View>
         </View>
     );
+
+    // Step 6 — Prompts (Hinge-style)
+    const renderPrompts = () => (
+        <View style={styles.formContainer}>
+            <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>PROFILE PROMPTS</Text>
+            <Text style={[styles.text, { color: theme.textMuted, textAlign: 'left', fontSize: 14 }]}>
+                Prompts give matches a reason to message you. Pick 1–2 questions and write your answers.
+            </Text>
+            {formData.prompts.map((p, idx) => (
+                <View key={idx} style={[styles.promptCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <Text style={[styles.promptCardTitle, { color: theme.textMuted }]}>Prompt {idx + 1} {idx === 0 ? '' : '(Optional)'}</Text>
+
+                    {/* Question picker */}
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
+                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                            {PROFILE_PROMPTS.map(q => (
+                                <TouchableOpacity
+                                    key={q}
+                                    style={[styles.promptPill, {
+                                        backgroundColor: p.question === q ? theme.primary : theme.muted,
+                                        borderColor: p.question === q ? theme.primary : 'transparent',
+                                    }]}
+                                    onPress={() => {
+                                        const newPrompts = [...formData.prompts];
+                                        newPrompts[idx] = { question: q, answer: newPrompts[idx].answer };
+                                        update('prompts', newPrompts);
+                                    }}
+                                >
+                                    <Text style={[styles.promptPillText, { color: p.question === q ? '#FFF' : theme.textMuted }]}>{q}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </ScrollView>
+
+                    {p.question ? (
+                        <>
+                            <Text style={[styles.promptQuestion, { color: theme.primary }]}>"{p.question}"</Text>
+                            <TextInput
+                                style={[styles.input, { height: 80, textAlignVertical: 'top', backgroundColor: theme.muted, borderColor: 'transparent', color: theme.text, marginTop: 8 }]}
+                                value={p.answer}
+                                onChangeText={t => {
+                                    const newPrompts = [...formData.prompts];
+                                    newPrompts[idx] = { question: p.question, answer: t };
+                                    update('prompts', newPrompts);
+                                }}
+                                placeholder="Your answer…"
+                                placeholderTextColor={theme.textMuted}
+                                multiline
+                                maxLength={300}
+                            />
+                            <Text style={[styles.hint, { color: theme.textMuted }]}>{p.answer.length}/300</Text>
+                        </>
+                    ) : (
+                        <Text style={[styles.hint, { color: theme.textMuted, textAlign: 'left' }]}>← Scroll to pick a question</Text>
+                    )}
+                </View>
+            ))}
+        </View>
+    );
+
+    // Step 7 — Photos
+    const renderPhotos = () => {
+        const slots = [...formData.photos, ...Array(Math.max(0, 6 - formData.photos.length)).fill(null)];
+        return (
+            <View style={styles.formContainer}>
+                <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>YOUR PHOTOS</Text>
+                <Text style={[styles.label, { color: theme.text }]}>Add Photos <Text style={{ fontFamily: Fonts.regular, fontSize: 13, color: theme.textMuted }}>(Min 2, Max 6)</Text></Text>
+                <Text style={[styles.text, { color: theme.textMuted, textAlign: 'left', fontSize: 13, marginTop: -8 }]}>
+                    First photo is your main profile picture. Use clear, recent photos of your face.
+                </Text>
+                <View style={styles.photoGrid}>
+                    {slots.map((uri, idx) => uri ? (
+                        <View key={idx} style={[styles.photoSlot, { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4 }]}>
+                            <Image source={{ uri }} style={styles.photoImage} resizeMode="cover" />
+                            <TouchableOpacity style={styles.removeButton} onPress={() => removePhoto(idx)}>
+                                <Ionicons name="close-circle" size={22} color="#FF3B30" />
+                            </TouchableOpacity>
+                            {idx === 0 && (
+                                <View style={[styles.mainBadge, { backgroundColor: theme.primary }]}>
+                                    <Text style={styles.mainBadgeText}>MAIN</Text>
+                                </View>
+                            )}
+                        </View>
+                    ) : (
+                        <TouchableOpacity key={idx} style={[styles.addPhotoSlot, { backgroundColor: theme.surface, borderColor: theme.primary + '40' }]} onPress={pickImage} activeOpacity={0.7}>
+                            <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: theme.primary + '15', alignItems: 'center', justifyContent: 'center', marginBottom: 6 }}>
+                                <Ionicons name="camera" size={22} color={theme.primary} />
+                            </View>
+                            <Text style={{ fontSize: 12, color: theme.textMuted, fontFamily: Fonts.bold }}>Add Photo</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+
+                {/* Profile completion bar */}
+                <View style={[styles.completionBar, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={[styles.completionLabel, { color: theme.text }]}>Profile Strength</Text>
+                        <Text style={[styles.completionPct, { color: theme.primary }]}>{completionPct}%</Text>
+                    </View>
+                    <View style={[styles.progressTrack, { backgroundColor: theme.muted }]}>
+                        <View style={[styles.progressFill, { width: `${completionPct}%` as any, backgroundColor: completionPct >= 80 ? '#22c55e' : completionPct >= 50 ? theme.primary : '#f59e0b' }]} />
+                    </View>
+                    <Text style={[styles.hint, { textAlign: 'left', marginTop: 6, color: theme.textMuted }]}>
+                        {completionPct < 50 ? 'Add more details to stand out!' : completionPct < 80 ? 'Looking good — add a headline or prompt!' : 'Great profile! You\'re ready to go 🎉'}
+                    </Text>
+                </View>
+            </View>
+        );
+    };
+
+    // Step 8 — Review
+    const renderReview = () => {
+        const age = formData.birthDate.year ? new Date().getFullYear() - parseInt(formData.birthDate.year) : null;
+        return (
+            <View style={styles.stepContainer}>
+                {formData.photos[0] ? (
+                    <Image source={{ uri: formData.photos[0] }} style={styles.reviewPhoto} resizeMode="cover" />
+                ) : (
+                    <View style={[styles.reviewPhoto, { backgroundColor: theme.muted, alignItems: 'center', justifyContent: 'center' }]}>
+                        <Ionicons name="person" size={60} color={theme.textMuted} />
+                    </View>
+                )}
+                <Text style={[styles.title, { color: theme.text }]}>
+                    {formData.firstName}{age ? `, ${age}` : ''}
+                </Text>
+                {formData.headline ? <Text style={[styles.reviewHeadline, { color: theme.primary }]}>"{formData.headline}"</Text> : null}
+                <Text style={[styles.text, { color: theme.textMuted }]}>{formData.major} • {formData.year}</Text>
+                {formData.bio ? <Text style={[styles.reviewBio, { color: theme.text, backgroundColor: theme.surface }]}>"{formData.bio}"</Text> : null}
+
+                <View style={[styles.reviewStats, { backgroundColor: theme.surface }]}>
+                    {[
+                        { label: 'Photos', val: `${formData.photos.length}` },
+                        { label: 'Hobbies', val: `${formData.hobbies.length}` },
+                        { label: 'Prompts', val: `${formData.prompts.filter(p => p.answer.trim()).length}` },
+                        { label: 'Complete', val: `${completionPct}%` },
+                    ].map(s => (
+                        <View key={s.label} style={styles.reviewStatItem}>
+                            <Text style={[styles.reviewStatVal, { color: theme.primary }]}>{s.val}</Text>
+                            <Text style={[styles.reviewStatLabel, { color: theme.textMuted }]}>{s.label}</Text>
+                        </View>
+                    ))}
+                </View>
+
+                <View style={[styles.completionBar, { backgroundColor: theme.surface, borderColor: theme.border, alignSelf: 'stretch' }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <Text style={[styles.completionLabel, { color: theme.text }]}>Profile Strength</Text>
+                        <Text style={[styles.completionPct, { color: theme.primary }]}>{completionPct}%</Text>
+                    </View>
+                    <View style={[styles.progressTrack, { backgroundColor: theme.muted }]}>
+                        <View style={[styles.progressFill, { width: `${completionPct}%` as any, backgroundColor: completionPct >= 80 ? '#22c55e' : completionPct >= 50 ? theme.primary : '#f59e0b' }]} />
+                    </View>
+                </View>
+
+                <Text style={[styles.hint, { color: theme.textMuted, textAlign: 'center', marginTop: 4 }]}>
+                    Our team will review your profile. You'll be notified once approved! You can edit your profile anytime.
+                </Text>
+            </View>
+        );
+    };
 
     const renderStepContent = () => {
         switch (step) {
             case 0: return renderAgreement();
             case 1: return renderIntro();
             case 2: return renderBasics();
-            case 3: return renderVibe();
-            case 4: return renderPhotos();
-            case 5: return renderReview();
+            case 3: return renderCampus();
+            case 4: return renderLifestyle();
+            case 5: return renderVibe();
+            case 6: return renderPrompts();
+            case 7: return renderPhotos();
+            case 8: return renderReview();
             default: return null;
         }
     };
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // MAIN RENDER
+    // ─────────────────────────────────────────────────────────────────────────
     return (
         <View style={[styles.container, { backgroundColor: theme.background }]}>
-            <StatusBar 
-                backgroundColor={theme.background} 
-                barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'}
-                translucent={false}
-            />
             <View style={[styles.header, { paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 12) : 8 }]}>
                 {step > 0 && (
                     <TouchableOpacity onPress={prevStep} style={styles.backButton}>
@@ -710,20 +909,20 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
                     </TouchableOpacity>
                 )}
                 <Text style={[styles.stepTitle, { color: theme.text }]}>{STEPS[step]}</Text>
-                <View style={{ width: 24 }} />
+                <View style={{ width: 40 }} />
             </View>
 
-            <View style={styles.progressBar}>
-                {STEPS.map((_, i) => (
-                    <View key={i} style={[styles.progressDot, { backgroundColor: i <= step ? theme.primary : theme.muted }]} />
-                ))}
+            {/* Progress bar */}
+            <View style={styles.progressBarContainer}>
+                <View style={[styles.progressTrack, { backgroundColor: theme.muted, height: 4 }]}>
+                    <View style={[styles.progressFill, { width: `${((step) / (STEPS.length - 1)) * 100}%` as any, backgroundColor: theme.primary, height: 4 }]} />
+                </View>
+                <Text style={[styles.hint, { color: theme.textMuted, textAlign: 'center', marginTop: 4 }]}>Step {step + 1} of {STEPS.length}</Text>
             </View>
 
-            <ScrollView 
-                contentContainerStyle={[styles.content, { paddingBottom: 120 }]} 
+            <ScrollView
+                contentContainerStyle={[styles.content, { paddingBottom: 140 }]}
                 showsVerticalScrollIndicator={false}
-                scrollEventThrottle={16}
-                decelerationRate="fast"
                 keyboardShouldPersistTaps="handled"
                 overScrollMode="never"
             >
@@ -731,21 +930,23 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
             </ScrollView>
 
             {step > 0 && (
-                <View style={[styles.footer, { borderTopColor: theme.border }]}>
+                <View style={[styles.footer, { borderTopColor: theme.border, backgroundColor: theme.background }]}>
                     {step === STEPS.length - 1 ? (
                         <TouchableOpacity
                             style={[styles.primaryButton, { backgroundColor: theme.primary }]}
                             onPress={handleSubmit}
                             disabled={loading}
                         >
-                            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>Create Profile</Text>}
+                            {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>Submit Profile 🎉</Text>}
                         </TouchableOpacity>
                     ) : (
-                        <TouchableOpacity
-                            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
-                            onPress={nextStep}
-                        >
-                            <Text style={styles.primaryButtonText}>Next</Text>
+                        <TouchableOpacity style={[styles.primaryButton, { backgroundColor: theme.primary }]} onPress={nextStep}>
+                            <Text style={styles.primaryButtonText}>Continue</Text>
+                        </TouchableOpacity>
+                    )}
+                    {step >= 4 && step < STEPS.length - 1 && (
+                        <TouchableOpacity onPress={nextStep} style={{ marginTop: 12, alignItems: 'center' }}>
+                            <Text style={[styles.hint, { color: theme.textMuted, textAlign: 'center' }]}>Skip for now</Text>
                         </TouchableOpacity>
                     )}
                 </View>
@@ -754,11 +955,11 @@ export default function OnboardingWizard({ onComplete }: { onComplete: () => voi
     );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES
+// ─────────────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: Colors.light.background,
-    },
+    container: { flex: 1 },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -766,228 +967,102 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingBottom: 8,
     },
-    backButton: {
-        padding: 8,
-    },
-    stepTitle: {
-        fontSize: 18,
-        fontFamily: Fonts.bold,
-        color: Colors.light.text,
-    },
-    progressBar: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        gap: 8,
-        marginBottom: 10
-    },
-    progressDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: Colors.light.muted
-    },
-    progressDotActive: {
-        backgroundColor: Colors.light.primary
-    },
-    content: {
-        padding: 24,
-        flexGrow: 1,
-    },
+    backButton: { padding: 8, width: 40 },
+    stepTitle: { fontSize: 18, fontFamily: Fonts.bold },
+    progressBarContainer: { paddingHorizontal: 24, marginBottom: 8 },
+    progressTrack: { borderRadius: 4, overflow: 'hidden' },
+    progressFill: { borderRadius: 4 },
+    content: { padding: 24, flexGrow: 1 },
     footer: {
         padding: 24,
-        paddingBottom: 100, // Extra padding for TabBar/FAB
+        paddingBottom: 36,
         borderTopWidth: 1,
-        borderTopColor: Colors.light.border
     },
-    stepContainer: {
-        alignItems: 'center',
-        gap: 20
-    },
-    formContainer: {
-        gap: 20
-    },
+    stepContainer: { alignItems: 'center', gap: 18 },
+    formContainer: { gap: 20 },
     iconCircle: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        backgroundColor: Colors.light.primary + '20',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 10
+        width: 120, height: 120, borderRadius: 60,
+        alignItems: 'center', justifyContent: 'center', marginBottom: 10,
     },
-    title: {
-        fontSize: 24,
-        fontFamily: Fonts.bold,
-        textAlign: 'center',
-        color: Colors.light.text,
-    },
-    text: {
-        fontSize: 16,
-        textAlign: 'center',
-        color: Colors.light.textMuted,
-        lineHeight: 24,
-        fontFamily: Fonts.regular
-    },
-    bulletList: {
-        alignSelf: 'stretch',
-        backgroundColor: Colors.light.surface,
-        padding: 20,
-        borderRadius: 16,
-        marginTop: 10
-    },
-    bullet: {
-        fontSize: 16,
-        fontFamily: Fonts.bold,
-        marginBottom: 8,
-        color: Colors.light.text
-    },
-    label: {
-        fontSize: 16,
-        fontFamily: Fonts.bold,
-        color: Colors.light.text,
-        marginBottom: 4
-    },
-    hint: {
-        fontSize: 12,
-        color: Colors.light.textMuted,
-        marginTop: -10,
-        textAlign: 'right',
-        fontFamily: Fonts.regular
-    },
+    title: { fontSize: 26, fontFamily: Fonts.bold, textAlign: 'center' },
+    text: { fontSize: 15, textAlign: 'center', lineHeight: 22, fontFamily: Fonts.regular },
+    bulletList: { alignSelf: 'stretch', padding: 20, borderRadius: 16, marginTop: 6, gap: 8 },
+    bullet: { fontSize: 15, fontFamily: Fonts.regular, lineHeight: 22 },
+    sectionLabel: { fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 1, marginBottom: 8 },
+    label: { fontSize: 16, fontFamily: Fonts.bold, marginBottom: 8 },
+    hint: { fontSize: 12, marginTop: 4, fontFamily: Fonts.regular },
     input: {
-        backgroundColor: Colors.light.surface,
-        padding: 16,
-        borderRadius: 12,
-        fontSize: 16,
-        borderWidth: 1,
-        borderColor: Colors.light.border,
-        color: Colors.light.text,
-        fontFamily: Fonts.regular
+        padding: 14, borderRadius: 12, fontSize: 16,
+        borderWidth: 1, fontFamily: Fonts.regular,
     },
-    chipRow: {
-        flexDirection: 'row',
-        gap: 10
-    },
-    chipRowWrap: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 10
-    },
+    chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    chipRowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
     chip: {
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 20,
-        backgroundColor: Colors.light.muted,
-        borderWidth: 1,
-        borderColor: 'transparent'
-    },
-    chipActive: {
-        backgroundColor: Colors.light.primary + '20',
-        borderColor: Colors.light.primary
-    },
-    chipText: {
-        fontFamily: Fonts.bold,
-        color: Colors.light.textMuted
-    },
-    chipTextActive: {
-        color: Colors.light.primary
-    },
-    dateRow: {
-        flexDirection: 'row',
-        gap: 10
-    },
-    photoGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 10
-    },
-    photoSlot: {
-        width: '30%',
-        aspectRatio: 3 / 4,
-        borderRadius: 10,
-        overflow: 'hidden',
-        backgroundColor: Colors.light.muted
-    },
-    addPhotoSlot: {
-        width: '30%',
-        aspectRatio: 3 / 4,
-        borderRadius: 10,
-        backgroundColor: Colors.light.surface,
-        borderWidth: 2,
-        borderColor: Colors.light.border,
-        borderStyle: 'dashed',
-        alignItems: 'center',
-        justifyContent: 'center'
-    },
-    photoImage: {
-        width: '100%',
-        height: '100%'
-    },
-    removeButton: {
-        position: 'absolute',
-        top: 6,
-        right: 6,
-        backgroundColor: 'rgba(255,255,255,0.9)',
-        borderRadius: 12,
-        width: 24,
-        height: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.2,
-        shadowRadius: 2,
-        elevation: 3,
-    },
-    mainBadge: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: Colors.light.primary,
-        paddingVertical: 4,
-        alignItems: 'center'
-    },
-    mainBadgeText: {
-        color: '#FFF',
-        fontSize: 10,
-        fontFamily: Fonts.bold
-    },
-    primaryButton: {
-        backgroundColor: Colors.light.primary,
-        paddingVertical: 16,
-        borderRadius: 14,
-        alignItems: 'center',
-        alignSelf: 'stretch'
-    },
-    primaryButtonText: {
-        color: '#FFF',
-        fontFamily: Fonts.bold,
-        fontSize: 16
-    },
-    consentRow: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        padding: 14,
-        borderRadius: 14,
+        paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20,
         borderWidth: 1.5,
-        gap: 12,
-        alignSelf: 'stretch',
+    },
+    chipText: { fontFamily: Fonts.bold, fontSize: 14 },
+    dateRow: { flexDirection: 'row', gap: 10 },
+    detailRow: {
+        flexDirection: 'row', alignItems: 'center', padding: 14,
+        borderRadius: 12, borderWidth: 1, marginBottom: 6,
+    },
+    detailLabel: { flex: 1, fontFamily: Fonts.regular, fontSize: 15 },
+    detailValue: { fontFamily: Fonts.regular, fontSize: 14, marginRight: 6 },
+    dropdownContainer: { borderRadius: 12, borderWidth: 1, marginBottom: 6, overflow: 'hidden' },
+    dropdownItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 14 },
+    dropdownItemText: { fontFamily: Fonts.regular, fontSize: 15 },
+    lookingForCard: {
+        flexDirection: 'row', alignItems: 'center', padding: 16,
+        borderRadius: 14, marginBottom: 10,
+    },
+    lookingForLabel: { fontFamily: Fonts.bold, fontSize: 15, marginBottom: 2 },
+    lookingForSub: { fontFamily: Fonts.regular, fontSize: 13 },
+    promptCard: { padding: 16, borderRadius: 16, borderWidth: 1, gap: 6 },
+    promptCardTitle: { fontSize: 11, fontFamily: Fonts.bold, letterSpacing: 1, marginBottom: 4 },
+    promptPill: {
+        paddingHorizontal: 12, paddingVertical: 8,
+        borderRadius: 20, borderWidth: 1.5,
+    },
+    promptPillText: { fontFamily: Fonts.regular, fontSize: 13, whiteSpace: 'nowrap' } as any,
+    promptQuestion: { fontFamily: Fonts.bold, fontSize: 15 },
+    photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    photoSlot: { width: '30%', aspectRatio: 3 / 4, borderRadius: 12, overflow: 'hidden' },
+    addPhotoSlot: {
+        width: '30%', aspectRatio: 3 / 4, borderRadius: 12,
+        borderWidth: 2, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center',
+    },
+    photoImage: { width: '100%', height: '100%' },
+    removeButton: {
+        position: 'absolute', top: 6, right: 6,
+        backgroundColor: 'rgba(255,255,255,0.9)', borderRadius: 12, width: 24, height: 24,
+        alignItems: 'center', justifyContent: 'center',
+        shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 3,
+    },
+    mainBadge: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingVertical: 4, alignItems: 'center' },
+    mainBadgeText: { color: '#FFF', fontSize: 10, fontFamily: Fonts.bold },
+    completionBar: { padding: 16, borderRadius: 16, borderWidth: 1, marginTop: 8 },
+    completionLabel: { fontFamily: Fonts.bold, fontSize: 14 },
+    completionPct: { fontFamily: Fonts.bold, fontSize: 16 },
+    reviewPhoto: { width: 160, height: 210, borderRadius: 16, marginBottom: 12 },
+    reviewHeadline: { fontFamily: Fonts.bold, fontSize: 15, textAlign: 'center', fontStyle: 'italic' },
+    reviewBio: {
+        padding: 16, borderRadius: 14, fontFamily: Fonts.regular, fontSize: 14,
+        lineHeight: 20, textAlign: 'center', maxWidth: 320, fontStyle: 'italic',
+    },
+    reviewStats: { flexDirection: 'row', borderRadius: 16, padding: 16, gap: 8, alignSelf: 'stretch', justifyContent: 'space-around' },
+    reviewStatItem: { alignItems: 'center' },
+    reviewStatVal: { fontFamily: Fonts.bold, fontSize: 22 },
+    reviewStatLabel: { fontFamily: Fonts.regular, fontSize: 12, marginTop: 2 },
+    primaryButton: { paddingVertical: 16, borderRadius: 14, alignItems: 'center' },
+    primaryButtonText: { color: '#FFF', fontFamily: Fonts.bold, fontSize: 16 },
+    consentRow: {
+        flexDirection: 'row', alignItems: 'flex-start', padding: 14,
+        borderRadius: 14, borderWidth: 1.5, gap: 12, alignSelf: 'stretch',
     },
     checkbox: {
-        width: 22,
-        height: 22,
-        borderRadius: 6,
-        borderWidth: 2,
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        marginTop: 1,
+        width: 22, height: 22, borderRadius: 6, borderWidth: 2,
+        alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1,
     },
-    consentText: {
-        flex: 1,
-        fontSize: 14,
-        lineHeight: 20,
-        fontFamily: Fonts.regular,
-    },
+    consentText: { flex: 1, fontSize: 14, lineHeight: 20, fontFamily: Fonts.regular },
 });

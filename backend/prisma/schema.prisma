@@ -221,13 +221,17 @@ model DatingProfile {
   birthDate         DateTime
   gender            Gender
   bio               String?           @db.VarChar(500)
+  headline          String?           @db.VarChar(100)
   height            Int?
   collegeSlug       String
   major             String?
   year              StudyYear?
   lookingFor        LookingFor[]
   hobbies           String[]
+  interests         String[]
+  prompts           Json?
   instagramHandle   String?
+  spotifyTopArtists String[]
   latitude          Float?
   longitude         Float?
   isProfileVisible  Boolean           @default(true)
@@ -239,9 +243,20 @@ model DatingProfile {
   score             Float             @default(0)
   gradYear          String?
   greekLife         String?
-  interests         String[]
-  prompts           Json?
-  spotifyTopArtists String[]
+  // ── Lifestyle fields ──────────────────────────────────────────────────────
+  loveLanguage      String?
+  physicallyActive  String?
+  drinking          String?
+  smoking           String?
+  diet              String?
+  // ── Basic info ────────────────────────────────────────────────────────────
+  religion          String?
+  hometown          String?
+  // ── College-specific ──────────────────────────────────────────────────────
+  campusActivities  String[]
+  studyStyle        String?
+  livingArrangement String?
+  // ── Relations ─────────────────────────────────────────────────────────────
   blocksReceived    DatingBlock[]     @relation("Blocked")
   blocksGiven       DatingBlock[]     @relation("Blocker")
   matches1          DatingMatch[]     @relation("MatchProfile1")
@@ -257,6 +272,7 @@ model DatingProfile {
   @@index([userId])
   @@map("dating_profiles")
 }
+
 
 model DatingPreference {
   id                       String        @id @default(cuid())

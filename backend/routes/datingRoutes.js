@@ -68,6 +68,7 @@ router.post("/profile", async (req, res) => {
     const {
       firstName,
       bio,
+      headline,
       gender,
       birthDate,
       height,
@@ -83,7 +84,18 @@ router.post("/profile", async (req, res) => {
       spotifyTopArtists,
       photos,
       preferences,
-      pauseProfile  // from SettingsModal
+      pauseProfile,  // from SettingsModal
+      // ── New lifestyle & college fields ────────────────────────────────────
+      loveLanguage,
+      physicallyActive,
+      drinking,
+      smoking,
+      diet,
+      religion,
+      hometown,
+      campusActivities,
+      studyStyle,
+      livingArrangement,
     } = req.body;
 
     // 1. Check if profile exists to determine validation strictness
@@ -118,22 +130,37 @@ router.post("/profile", async (req, res) => {
         profile = await tx.datingProfile.update({
           where: { userId },
           data: {
-            firstName:       firstName       || undefined,
-            bio:             bio             !== undefined ? bio : undefined,
-            gender:          gender          || undefined,
-            birthDate:       birthDate       ? new Date(birthDate) : undefined,
-            height:          height          !== undefined ? (height ? parseInt(height) : null) : undefined,
-            major:           major           !== undefined ? major : undefined,
-            year:            year            !== undefined ? year : undefined,
-            gradYear:        gradYear        !== undefined ? gradYear : undefined,
-            greekLife:       greekLife       !== undefined ? greekLife : undefined,
-            hobbies:         hobbies         || undefined,
-            interests:       interests       || undefined,
-            prompts:         prompts         !== undefined ? prompts : undefined,
+            firstName:         firstName         || undefined,
+            bio:               bio               !== undefined ? bio : undefined,
+            headline:          headline          !== undefined ? headline : undefined,
+            gender:            gender            || undefined,
+            birthDate:         birthDate         ? new Date(birthDate) : undefined,
+            height:            height            !== undefined ? (height ? parseInt(height) : null) : undefined,
+            major:             major             !== undefined ? major : undefined,
+            year:              year              !== undefined ? year : undefined,
+            gradYear:          gradYear          !== undefined ? gradYear : undefined,
+            greekLife:         greekLife         !== undefined ? greekLife : undefined,
+            hobbies:           hobbies           !== undefined ? hobbies : undefined,
+            interests:         interests         !== undefined ? interests : undefined,
+            prompts:           prompts           !== undefined ? prompts : undefined,
             spotifyTopArtists: spotifyTopArtists !== undefined ? spotifyTopArtists : undefined,
-            instagramHandle: instagramHandle !== undefined ? instagramHandle : undefined,
+            instagramHandle:   instagramHandle   !== undefined ? instagramHandle : undefined,
+            // Lifestyle
+            loveLanguage:      loveLanguage      !== undefined ? loveLanguage : undefined,
+            physicallyActive:  physicallyActive  !== undefined ? physicallyActive : undefined,
+            drinking:          drinking          !== undefined ? drinking : undefined,
+            smoking:           smoking           !== undefined ? smoking : undefined,
+            diet:              diet              !== undefined ? diet : undefined,
+            religion:          religion          !== undefined ? religion : undefined,
+            hometown:          hometown          !== undefined ? hometown : undefined,
+            // College-specific
+            campusActivities:  campusActivities  !== undefined ? campusActivities : undefined,
+            studyStyle:        studyStyle        !== undefined ? studyStyle : undefined,
+            livingArrangement: livingArrangement !== undefined ? livingArrangement : undefined,
             // Pause / unpause profile visibility
-            isPaused:        pauseProfile    !== undefined ? Boolean(pauseProfile) : undefined,
+            isPaused:          pauseProfile      !== undefined ? Boolean(pauseProfile) : undefined,
+            // Re-submit for review on any profile edit
+            approvalStatus:    'PENDING',
           }
         });
       } else {
@@ -145,20 +172,33 @@ router.post("/profile", async (req, res) => {
             gender,
             birthDate: new Date(birthDate),
             bio,
-            height: height ? parseInt(height) : null,
+            headline:          headline          || null,
+            height:            height            ? parseInt(height) : null,
             major,
             year,
             gradYear,
             greekLife,
-            collegeSlug: collegeSlug || req.user.collegeSlug || 'unknown',
-            hobbies: hobbies || [],
-            interests: interests || [],
-            prompts: prompts || [],
+            collegeSlug:       collegeSlug       || req.user.collegeSlug || 'unknown',
+            hobbies:           hobbies           || [],
+            interests:         interests         || [],
+            prompts:           prompts           || [],
             spotifyTopArtists: spotifyTopArtists || [],
-            instagramHandle,
-            isProfileVisible: true,
-            approvalStatus: 'APPROVED', // 🚀 Auto-approve all profiles by default for now
-            score: 0 // Initial score
+            campusActivities:  campusActivities  || [],
+            instagramHandle:   instagramHandle   || null,
+            // Lifestyle
+            loveLanguage:      loveLanguage      || null,
+            physicallyActive:  physicallyActive  || null,
+            drinking:          drinking          || null,
+            smoking:           smoking           || null,
+            diet:              diet              || null,
+            religion:          religion          || null,
+            hometown:          hometown          || null,
+            // College-specific
+            studyStyle:        studyStyle        || null,
+            livingArrangement: livingArrangement || null,
+            isProfileVisible:  true,
+            approvalStatus:    'PENDING', // Force all new profiles to be manually reviewed
+            score:             0
           }
         });
       }
