@@ -137,12 +137,7 @@ router.get('/dating/profiles/pending', authenticate, requireModerator, async (re
             orderBy: { createdAt: 'asc' }
         });
 
-        const items = profiles.map(p => ({
-            ...p,
-            _id: p.id
-        }));
-
-        res.status(200).json({ items });
+        res.status(200).json({ items: profiles });
     } catch (error) {
         console.error('GET /api/admin/dating/profiles/pending error:', error);
         return res.status(500).json({ message: 'Internal server error', detail: error.message });

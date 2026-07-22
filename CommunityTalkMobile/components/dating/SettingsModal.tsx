@@ -33,11 +33,21 @@ const CAMPUS_ACTIVITIES_OPTIONS = [
 ];
 
 const PRESET_PROMPTS = [
-    "A shower thought I recently had...",
-    "Unpopular opinion...",
-    "Best spot to study on campus is...",
-    "Two truths and a lie...",
-    "I geek out on..."
+    'My go-to campus spot is…',
+    "You'll catch me on campus…",
+    'The best thing about my major is…',
+    'My ideal campus date would be…',
+    'I procrastinate by…',
+    'On weekends, I usually…',
+    'A fun fact about me is…',
+    'My love language is…',
+    'Together, we could…',
+    "I'm looking for someone who…",
+    'The way to my heart is…',
+    'I get way too excited about…',
+    'My most controversial opinion is…',
+    'Two truths and a lie about me…',
+    "After class, you'll find me…",
 ];
 
 function SelectRow({

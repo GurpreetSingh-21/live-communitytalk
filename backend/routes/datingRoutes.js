@@ -100,7 +100,8 @@ router.post("/profile", async (req, res) => {
 
     // 1. Check if profile exists to determine validation strictness
     const existingProfile = await prisma.datingProfile.findUnique({
-      where: { userId }
+      where: { userId },
+      include: { photos: { orderBy: { order: 'asc' } } }
     });
 
     // 2. Strict Validation for NEW profiles
@@ -119,6 +120,24 @@ router.post("/profile", async (req, res) => {
       if (age < 18) {
         return res.status(400).json({ error: "You must be at least 18 years old to use dating features." });
       }
+    }
+
+    // Determine if photos actually changed to avoid triggering unnecessary manual review
+    let photosChanged = false;
+    if (existingProfile && photos && Array.isArray(photos)) {
+      if (existingProfile.photos.length !== photos.length) {
+        photosChanged = true;
+      } else {
+        for (let i = 0; i < photos.length; i++) {
+          const pUrl = typeof photos[i] === 'string' ? photos[i] : photos[i].url;
+          if (existingProfile.photos[i].url !== pUrl || existingProfile.photos[i].isMain !== (i === 0)) {
+            photosChanged = true;
+            break;
+          }
+        }
+      }
+    } else if (!existingProfile) {
+      photosChanged = true;
     }
 
     // 3. Transaction to handle Profile + Preferences + Photos
@@ -159,8 +178,8 @@ router.post("/profile", async (req, res) => {
             livingArrangement: livingArrangement !== undefined ? livingArrangement : undefined,
             // Pause / unpause profile visibility
             isPaused:          pauseProfile      !== undefined ? Boolean(pauseProfile) : undefined,
-            // Re-submit for review on any profile edit
-            approvalStatus:    'PENDING',
+            // Only re-submit for review if photos were changed
+            approvalStatus:    photosChanged ? 'PENDING' : existingProfile.approvalStatus,
           }
         });
       } else {

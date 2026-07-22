@@ -57,7 +57,6 @@ type DatingUser = {
 
 type DatingProfile = {
   id: string;
-  _id: string;
   firstName: string;
   bio: string | null;
   headline: string | null;
